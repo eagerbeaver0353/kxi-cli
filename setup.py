@@ -1,17 +1,19 @@
-from setuptools import setup
+from setuptools import setup, find_packages
 
 setup(
     name='kxi',
     version='0.1',
-    py_modules=['kxi'],
+    packages=find_packages(),
+    include_package_data=True,
     install_requires=[
         'click',
         'requests',
         'tabulate',
         'kubernetes'
     ],
-    entry_points='''
-        [console_scripts]
-        kxi=kxi:cli
-    ''',
+    entry_points={
+        'console_scripts': [
+            'kxi=kxi.main:cli',
+        ],
+    },
 )

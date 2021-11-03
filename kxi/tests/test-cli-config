@@ -1,0 +1,6 @@
+[default]
+hostname = https://test.kx.com
+namespace = test
+client.id = client
+client.secret = secret
+
