@@ -1,0 +1,13 @@
+run tests:
+  stage: test
+  image: python:3
+  script:
+    - pip install -r kxi/tests/requirements.txt
+    - pip install .
+    - export KUBECONFIG=kxi/tests/test-kube-config
+    - coverage run -m pytest
+    - coverage report
+    - coverage xml
+  artifacts:
+    reports:
+      cobertura: coverage.xml

@@ -1,0 +1,15 @@
+# Dummy kube-config file for use in tessting
+
+apiVersion: v1
+clusters:
+- cluster:
+    server: https://localhost
+  name: test-cluster
+contexts:
+- context:
+    cluster: test-cluster
+    user: ""
+  name: test
+current-context: test
+kind: Config
+preferences: {}
