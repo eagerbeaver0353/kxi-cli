@@ -1,7 +1,7 @@
-import json
 import time
 import random
 import sys
+import yaml
 import click
 import kubernetes as k8s
 from kxi import common
@@ -30,16 +30,21 @@ def _assembly_status(namespace, name, print_status=False):
 
 @assembly.command()
 @click.option('--namespace', default=lambda: common.get_default_val('namespace'), help='Namespace to create assembly in')
-@click.option('--filepath', required=True, help='Path to JSON assembly file')
+@click.option('--filepath', required=True, help='Path to assembly file')
 @click.option('--wait', is_flag=True, help='Wait for all pods to be running')
 def create(namespace, filepath, wait):
     """Create an assembly given an assembly file"""
-    click.echo(f'Submitting assembly from {filepath}')
-
     api = k8s.client.CustomObjectsApi()
 
     with open(filepath) as f:
-        body = json.load(f)
+        try:
+            body = yaml.safe_load(f)
+        except yaml.YAMLError as e:
+            log.error(f'Invalid assembly file {filepath}')
+            click.echo(e)
+            sys.exit(1)
+
+    click.echo(f'Submitting assembly from {filepath}')
 
     api.create_namespaced_custom_object(
         group='insights.kx.com',

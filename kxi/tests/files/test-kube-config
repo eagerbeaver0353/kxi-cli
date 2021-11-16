@@ -1,4 +1,4 @@
-# Dummy kube-config file for use in tessting
+# Dummy kube-config file for use in testing
 
 apiVersion: v1
 clusters:
@@ -9,6 +9,7 @@ contexts:
 - context:
     cluster: test-cluster
     user: ""
+    namespace: test-namespace
   name: test
 current-context: test
 kind: Config

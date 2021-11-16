@@ -3,7 +3,7 @@ from click.testing import CliRunner
 from kxi import main
 from kxi import config
 
-config.config_file = os.path.dirname(__file__) + '/test-cli-config'
+config.config_file = os.path.dirname(__file__) + '/files/test-cli-config'
 
 def test_configure_output_is_correct():
     runner = CliRunner()

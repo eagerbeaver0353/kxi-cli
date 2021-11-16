@@ -1,0 +1,66 @@
+site_name: KX Insights CLI
+copyright: "© 2021 Kx Systems, Inc. KX and kdb+ are registered trademarks of Kx Systems, Inc., a subsidiary of FD Technologies plc."
+
+# use Insights scripts and stylesheets
+extra_css:
+  - https://code.kx.com/stylesheets/2021.css
+  - https://code.kx.com/stylesheets/prism.css
+  - https://code.kx.com/stylesheets/extra.css
+  - 'stylesheets/insights.css'
+
+extra_javascript:
+  - https://code.kx.com/scripts/prism.js
+  - https://code.kx.com/scripts/jquery-3.6.0.min.js # jQuery for scripts/qsearch.js
+  - https://code.kx.com/scripts/extra.js
+  # MathJax scripts
+  - https://code.kx.com/scripts/mathjax.js # configure MathJax object
+  - https://code.kx.com/scripts/polyfill.min.js
+  - https://code.kx.com/scripts/tex-mml-chtml.js
+
+markdown_extensions:
+  - abbr
+  - admonition
+  - attr_list
+  - meta
+  - pymdownx.arithmatex:
+      generic: true
+  - pymdownx.caret
+  - pymdownx.details
+  - pymdownx.emoji:
+      emoji_index: !!python/name:materialx.emoji.twemoji
+      emoji_generator: !!python/name:materialx.emoji.to_svg
+      options:
+        custom_icons:
+          - custom_theme/.icons
+  # - extra
+  - pymdownx.extra
+  - pymdownx.highlight:
+      use_pygments: false
+  - pymdownx.magiclink
+  - pymdownx.mark
+  - pymdownx.tabbed
+  - pymdownx.tilde
+  - pymdownx.superfences
+  - toc:
+      permalink: false
+  - mkdocs-click
+
+plugins:
+  - search
+
+theme:
+  # This theme dir is the same as the custom_theme dir from documentation/code-kx-com
+  # It's copied in here directly until it can be replaced with a submodule or another mechanism for doingt this
+  custom_dir: custom_theme
+  favicon: https://code.kx.com/favicon.ico
+  font: false
+  name: 'material'
+  language: en
+  logo: https://code.kx.com/img/kx.svg
+  palette:
+    accent: 'blue'
+    primary: 'black'
+    scheme: default
+  static_templates:
+    - 404.html
+
