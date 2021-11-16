@@ -8,7 +8,7 @@ from kxi import common
 from kxi import log
 
 @click.command()
-@click.option('--hostname', default=lambda: common.get_default_val('hostname'), help=common.help_text['hostname'])
+@click.option('--hostname', default=lambda: common.get_default_val('hostname'), help=common.get_help_text('hostname'))
 @click.option('--client-id', default=lambda: common.get_default_val('client.id'), help='Client ID to query with')
 @click.option('--client-secret', default=lambda: common.get_default_val('client.secret'), help='Client secret to request access token')
 @click.option('--table', required=True, help='Name of the table to query')

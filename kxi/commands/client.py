@@ -10,10 +10,11 @@ def client():
     """Commands for interacting with clients"""
 
 @client.command()
-@click.option('--hostname', default=lambda: common.get_default_val('hostname'), help=common.help_text['hostname'])
-@click.option('--client-id', default=lambda: common.get_default_val('client.id'), help='Client ID to enrol')
+@click.option('--hostname', default=lambda: common.get_default_val('hostname'), help=common.get_help_text('hostname'))
+@click.option('--name', required=True, help='Name of client to enrol')
+@click.option('--client-id', default=lambda: common.get_default_val('client.id'), help='Client ID to request an access token with')
 @click.option('--client-secret', default=lambda: common.get_default_val('client.secret'), help='Client secret to request access token')
-def enrol(hostname, client_id, client_secret):
+def enrol(hostname, name, client_id, client_secret):
     """Enrol a client in the system"""
     token = common.get_access_token(hostname, client_id, client_secret)
     url = hostname + '/clientcontroller/enrol'
@@ -21,7 +22,7 @@ def enrol(hostname, client_id, client_secret):
         'Authorization': 'Bearer ' + token
     }
     payload = {
-        'name': client_id,
+        'name': name,
         'topics': {
             'insert': 'data',
             'query': 'requests'
@@ -36,10 +37,11 @@ def enrol(hostname, client_id, client_secret):
         sys.exit(1)
 
 @client.command()
-@click.option('--hostname', default=lambda: common.get_default_val('hostname'), help=common.help_text['hostname'])
-@click.option('--client-id', default=lambda: common.get_default_val('client.id'), help='Client ID to remove')
+@click.option('--hostname', default=lambda: common.get_default_val('hostname'), help=common.get_help_text('hostname'))
+@click.option('--name', required=True, help='Name of the client to remove')
+@click.option('--client-id', default=lambda: common.get_default_val('client.id'), help='Client ID to request an access token with')
 @click.option('--client-secret', default=lambda: common.get_default_val('client.secret'), help='Client secret to request access token with')
-def remove(hostname, client_id, client_secret):
+def remove(hostname, name, client_id, client_secret):
     """Remove a client from the system"""
     token = common.get_access_token(hostname, client_id, client_secret)
     url = hostname + '/clientcontroller/leave'
@@ -47,7 +49,7 @@ def remove(hostname, client_id, client_secret):
         'Authorization': 'Bearer ' + token
     }
     payload = {
-        'name': client_id
+        'name': name
     }
 
     r = requests.post(url, headers=headers, json=payload)
@@ -58,7 +60,7 @@ def remove(hostname, client_id, client_secret):
         sys.exit(1)
 
 @client.command()
-@click.option('--hostname', default=lambda: common.get_default_val('hostname'), help=common.help_text['hostname'])
+@click.option('--hostname', default=lambda: common.get_default_val('hostname'), help=common.get_help_text('hostname'))
 @click.option('--uid', required=True, help='Client UID to request info for')
 def info(hostname, uid):
     """Get certs and endpoints for a client"""
@@ -71,7 +73,7 @@ def info(hostname, uid):
         sys.exit(1)
 
 @client.command('list')
-@click.option('--hostname', default=lambda: common.get_default_val('hostname'), help=common.help_text['hostname'])
+@click.option('--hostname', default=lambda: common.get_default_val('hostname'), help=common.get_help_text('hostname'))
 def list_clients(hostname):
     """List Keycloak clients in the system"""
     token = common.get_admin_token(hostname)

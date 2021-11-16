@@ -1,4 +1,5 @@
 import os
+import sys
 import click
 import kubernetes as k8s
 
@@ -7,6 +8,9 @@ from kxi import log
 from kxi.commands import client, assembly, query, auth, install
 
 CLI_VERSION = '0.1.0'
+PYTHON_VERSION = f'{sys.version_info.major}.{sys.version_info.minor}'
+PKG_DIR = os.path.dirname(os.path.abspath(__file__))
+VERSION_MSG=f'%(prog)s, version %(version)s from { PKG_DIR } (Python { PYTHON_VERSION })'
 
 # If running locally get config from kube-config
 # If we're in the cluster use the cluster config
@@ -16,11 +20,12 @@ else:
     k8s.config.load_incluster_config()
 
 @click.group()
+@click.version_option(CLI_VERSION, message=VERSION_MSG)
 @click.option('--debug', is_flag=True, default=False, help='Enable debug logging.')
 @click.option('--profile', default='default', help='Name of configuration profile to use.')
 @click.pass_context
 def cli(ctx, debug, profile):
-    """KX Insights test CLI"""
+    """KX Insights CLI"""
     if debug:
         log.GLOBAL_DEBUG_LOG=True
         log.debug(f'Version {CLI_VERSION}')
@@ -37,15 +42,9 @@ def configure(profile):
     config.set_config(profile)
     click.echo(f'CLI successfully configured, configuration stored in {config.config_file}')
 
-@click.command()
-def version():
-    """Print the version of the CLI"""
-    click.echo(f'Version {CLI_VERSION}')
-
 cli.add_command(client.client)
 cli.add_command(assembly.assembly)
 cli.add_command(query.query)
 cli.add_command(auth.auth)
 cli.add_command(install.install)
-cli.add_command(version)
 cli.add_command(configure)
