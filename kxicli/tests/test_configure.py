@@ -1,7 +1,7 @@
 import os
 from click.testing import CliRunner
-from kxi import main
-from kxi import config
+from kxicli import main
+from kxicli import config
 
 config.config_file = os.path.dirname(__file__) + '/files/test-cli-config'
 

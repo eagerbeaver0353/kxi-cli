@@ -1,6 +1,6 @@
 import responses
 from click.testing import CliRunner
-from kxi import main
+from kxicli import main
 
 test_host='https://test.kx.com'
 

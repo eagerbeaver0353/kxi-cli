@@ -23,7 +23,7 @@ pip_user=<redacted>
 pip_password=<redacted>
 cli_version=0.0.1 # replace this with the version you want to install
 
-pip install --extra-index-url https://$pip_user:$pip_password@nexus.internal-insights.kx.com/repository/kxi-cli/simple kxi==$cli_version
+pip install --extra-index-url https://$pip_user:$pip_password@nexus.internal-insights.kx.com/repository/kxi-cli/simple kxicli==$cli_version
 ```
 
 To install from source, clone the repository and run the following commands from inside the repository to create a virtual environment and run `pip install` inside the repository

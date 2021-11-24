@@ -3,9 +3,9 @@ import os
 import kubernetes as k8s
 import filecmp
 from click.testing import CliRunner
-from kxi import main
-from kxi import common
-from kxi import config
+from kxicli import main
+from kxicli import common
+from kxicli import config
 
 test_host = 'test.internal-insights.kx.com'
 test_chart_repo_name = 'internal-nexus-dev'
@@ -38,9 +38,9 @@ def mocked_helm_install(release, chart, values_file, version=None):
     pass
 
 def test_install_when_creating_secrets(mocker):
-    mocker.patch('kxi.commands.install.create_secret', mocked_create_secret)
-    mocker.patch('kxi.commands.install.helm_install', mocked_helm_install)
-    mocker.patch('kxi.commands.install.helm_add_repo', mocked_helm_add_repo)
+    mocker.patch('kxicli.commands.install.create_secret', mocked_create_secret)
+    mocker.patch('kxicli.commands.install.helm_install', mocked_helm_install)
+    mocker.patch('kxicli.commands.install.helm_add_repo', mocked_helm_add_repo)
 
     runner = CliRunner()
     with runner.isolated_filesystem():
@@ -123,9 +123,9 @@ Helm values file for installation saved in {test_output_file}
     assert filecmp.cmp(test_output_file, test_val_file)
 
 def test_install_when_providing_secrets(mocker):
-    mocker.patch('kxi.commands.install.create_secret', mocked_create_secret)
-    mocker.patch('kxi.commands.install.helm_install', mocked_helm_install)
-    mocker.patch('kxi.commands.install.helm_add_repo', mocked_helm_add_repo)
+    mocker.patch('kxicli.commands.install.create_secret', mocked_create_secret)
+    mocker.patch('kxicli.commands.install.helm_install', mocked_helm_install)
+    mocker.patch('kxicli.commands.install.helm_add_repo', mocked_helm_add_repo)
 
     runner = CliRunner()
     with runner.isolated_filesystem():

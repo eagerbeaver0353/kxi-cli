@@ -1,5 +1,5 @@
 import click
-from kxi import common
+from kxicli import common
 
 @click.group()
 def auth():

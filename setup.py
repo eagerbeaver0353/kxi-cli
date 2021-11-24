@@ -1,7 +1,7 @@
 from setuptools import setup, find_packages
 
 setup(
-    name='kxi',
+    name='kxicli',
     version='0.0.1',
     packages=find_packages(),
     include_package_data=True,
@@ -16,7 +16,7 @@ setup(
     python_requires='>=3.8',
     entry_points={
         'console_scripts': [
-            'kxi=kxi.main:cli',
+            'kxi=kxicli.main:cli',
         ],
     },
 )

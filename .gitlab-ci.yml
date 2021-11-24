@@ -31,9 +31,9 @@ run tests:
   stage: test
   image: python:3
   script:
-    - pip install -r kxi/tests/requirements.txt
+    - pip install -r kxicli/tests/requirements.txt
     - pip install dist/*.whl
-    - export KUBECONFIG=$(pwd)/kxi/tests/files/test-kube-config
+    - export KUBECONFIG=$(pwd)/kxicli/tests/files/test-kube-config
     - coverage run -m pytest
     - coverage report
     - coverage html
@@ -64,8 +64,8 @@ pages:
   script:
     - pip install -r mkdocs.requirements
     - pip install .
-    # can potentially remove this export when KXI-5994 is implemented
-    - export KUBECONFIG=$(pwd)/kxi/tests/files/test-kube-config
+    # can potentially remove this export when kxi-5994 is implemented
+    - export KUBECONFIG=$(pwd)/kxicli/tests/files/test-kube-config
     - mkdocs build --strict
     - mv site public/
   artifacts:

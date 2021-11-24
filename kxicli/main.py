@@ -3,9 +3,9 @@ import sys
 import click
 import kubernetes as k8s
 
-from kxi import config
-from kxi import log
-from kxi.commands import client, assembly, query, auth, install
+from kxicli import config
+from kxicli import log
+from kxicli.commands import client, assembly, query, auth, install
 
 CLI_VERSION = '0.1.0'
 PYTHON_VERSION = f'{sys.version_info.major}.{sys.version_info.minor}'
