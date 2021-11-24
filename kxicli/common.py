@@ -1,8 +1,8 @@
 import sys
 import click
 import requests
-from kxi import config
-from kxi import log
+from kxicli import config
+from kxicli import log
 
 # Help text dictionary for commands
 HELP_TEXT = {

@@ -4,8 +4,8 @@ import datetime
 import requests
 import click
 from tabulate import tabulate
-from kxi import common
-from kxi import log
+from kxicli import common
+from kxicli import log
 
 @click.command()
 @click.option('--hostname', default=lambda: common.get_default_val('hostname'), help=common.get_help_text('hostname'))

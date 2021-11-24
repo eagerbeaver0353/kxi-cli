@@ -4,8 +4,8 @@ import sys
 import yaml
 import click
 import kubernetes as k8s
-from kxi import common
-from kxi import log
+from kxicli import common
+from kxicli import log
 
 @click.group()
 def assembly():

@@ -10,9 +10,9 @@ import yaml
 from cryptography import x509
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization, asymmetric, hashes
-from kxi import log
-from kxi.common import get_default_val as default_val
-from kxi.common import get_help_text as help_text
+from kxicli import log
+from kxicli.common import get_default_val as default_val
+from kxicli.common import get_help_text as help_text
 
 docker_config_file_path = os.environ.get('HOME') + '/.docker/config.json'
 

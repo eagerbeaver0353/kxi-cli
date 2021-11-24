@@ -3,7 +3,7 @@
 This page provides documentation for our command line tools.
 
 ::: mkdocs-click
-    :module: kxi.main
+    :module: kxicli.main
     :command: cli
     :prog_name: kxi
     :depth: 1

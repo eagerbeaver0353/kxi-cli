@@ -2,7 +2,7 @@
 import os
 import base64
 import kubernetes as k8s
-from kxi.commands import install
+from kxicli.commands import install
 
 # Common test parameters
 
@@ -58,7 +58,7 @@ def test_create_docker_config():
     assert install.create_docker_config(test_repo, test_user, test_pass) == test_cfg
 
 def test_create_docker_secret(mocker):
-    mocker.patch('kxi.commands.install.create_secret', mocked_create_secret)
+    mocker.patch('kxicli.commands.install.create_secret', mocked_create_secret)
     test_cfg = install.create_docker_config(test_repo, test_user, test_pass)
     res = install.create_docker_config_secret(test_ns, test_secret, test_cfg)
 
@@ -67,7 +67,7 @@ def test_create_docker_secret(mocker):
     assert '.dockerconfigjson' in res.data
 
 def test_create_license_secret(mocker):
-    mocker.patch('kxi.commands.install.create_secret', mocked_create_secret)
+    mocker.patch('kxicli.commands.install.create_secret', mocked_create_secret)
     res = install.create_license_secret(test_ns, test_secret, test_lic_file)
 
     assert res.type == 'Opaque'
@@ -75,7 +75,7 @@ def test_create_license_secret(mocker):
     assert 'license' in res.string_data
 
 def test_create_tls_secret(mocker):
-    mocker.patch('kxi.commands.install.create_secret', mocked_create_secret)
+    mocker.patch('kxicli.commands.install.create_secret', mocked_create_secret)
     res = install.create_tls_secret(test_ns, test_secret, test_cert, test_key)
 
     assert res.type == 'kubernetes.io/tls'

@@ -2,8 +2,8 @@ import sys
 import json
 import click
 import requests
-from kxi import common
-from kxi import log
+from kxicli import common
+from kxicli import log
 
 @click.group()
 def client():
