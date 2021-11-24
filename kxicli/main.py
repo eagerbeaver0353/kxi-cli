@@ -1,13 +1,14 @@
 import os
 import sys
 import click
+import pkg_resources
 import kubernetes as k8s
 
 from kxicli import config
 from kxicli import log
 from kxicli.commands import client, assembly, query, auth, install
 
-CLI_VERSION = '0.1.0'
+CLI_VERSION = pkg_resources.require('kxicli')[0].version
 PYTHON_VERSION = f'{sys.version_info.major}.{sys.version_info.minor}'
 PKG_DIR = os.path.dirname(os.path.abspath(__file__))
 VERSION_MSG=f'%(prog)s, version %(version)s from { PKG_DIR } (Python { PYTHON_VERSION })'

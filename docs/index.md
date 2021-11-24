@@ -21,8 +21,14 @@ source venv/bin/activate
 
 pip_user=<redacted>
 pip_password=<redacted>
-cli_version=0.0.1 # replace this with the version you want to install
 
+pip install --extra-index-url https://$pip_user:$pip_password@nexus.internal-insights.kx.com/repository/kxi-cli/simple kxicli
+```
+
+To install a specific version, use
+
+```shell-session
+cli_version=x.y.z # replace with the version you want to install
 pip install --extra-index-url https://$pip_user:$pip_password@nexus.internal-insights.kx.com/repository/kxi-cli/simple kxicli==$cli_version
 ```
 
