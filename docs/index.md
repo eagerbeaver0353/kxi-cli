@@ -1,6 +1,6 @@
 # Overview
 
-The CLI provide features to perform operations such as
+The CLI provides features to perform operations such as
 
 * Installation setup
 * Enrolling/removing clients
@@ -11,7 +11,13 @@ etc
 
 The CLI makes use of the Python Kubernetes client to allow it to run easily outside and inside of a Kubernetes cluster.
 
-### Install
+## Requirements
+
+The CLI requires
+
+* Python 3.6 or greater
+
+## Install
 
 To install from Nexus, create a virtual environment and execute `pip install` with the appropriate credentials.
 
@@ -22,15 +28,17 @@ source venv/bin/activate
 pip_user=<redacted>
 pip_password=<redacted>
 
-pip install --extra-index-url https://$pip_user:$pip_password@nexus.internal-insights.kx.com/repository/kxi-cli/simple kxicli
+pip install -v --extra-index-url https://$pip_user:$pip_password@nexus.dl.kx.com/repository/kxi-cli/simple kxicli
 ```
 
 To install a specific version, use
 
 ```shell-session
 cli_version=x.y.z # replace with the version you want to install
-pip install --extra-index-url https://$pip_user:$pip_password@nexus.internal-insights.kx.com/repository/kxi-cli/simple kxicli==$cli_version
+pip install -v --extra-index-url https://$pip_user:$pip_password@nexus.dl.kx.com/repository/kxi-cli/simple kxicli==$cli_version
 ```
+
+Available versions can be viewed on [Nexus](https://nexus.dl.kx.com/#browse/browse:kxi-cli)
 
 To install from source, clone the repository and run the following commands from inside the repository to create a virtual environment and run `pip install` inside the repository
 
@@ -56,7 +64,7 @@ $ kxi --version
 kxi, version 0.1.0 from /home/rtuser/git/kxi-cli/kxi (Python 3.8)
 ```
 
-### Configuration
+## Configuration
 
 `kxi` is configured using a configuration file `~/.insights/cli-config`
 

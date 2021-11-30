@@ -27,7 +27,7 @@ build dist:
     paths:
       - dist
 
-run tests:
+.run-tests:
   stage: test
   image: python:3
   script:
@@ -43,6 +43,26 @@ run tests:
       - htmlcov
     reports:
       cobertura: coverage.xml
+
+run tests 3.6:
+    extends: .run-tests
+    image: python:3.6
+
+run tests 3.7:
+    extends: .run-tests
+    image: python:3.7
+
+run tests 3.8:
+    extends: .run-tests
+    image: python:3.8
+
+run tests 3.9:
+    extends: .run-tests
+    image: python:3.9
+
+run tests 3.10:
+    extends: .run-tests
+    image: python:3.10
 
 publish package:
   stage: publish
