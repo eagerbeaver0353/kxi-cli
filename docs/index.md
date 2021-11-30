@@ -21,7 +21,7 @@ The CLI requires
 
 To install from Nexus, create a virtual environment and execute `pip install` with the appropriate credentials.
 
-```shell-session
+```bash
 virtualenv venv
 source venv/bin/activate
 
@@ -33,20 +33,12 @@ pip install -v --extra-index-url https://$pip_user:$pip_password@nexus.dl.kx.com
 
 To install a specific version, use
 
-```shell-session
+```bash
 cli_version=x.y.z # replace with the version you want to install
 pip install -v --extra-index-url https://$pip_user:$pip_password@nexus.dl.kx.com/repository/kxi-cli/simple kxicli==$cli_version
 ```
 
 Available versions can be viewed on [Nexus](https://nexus.dl.kx.com/#browse/browse:kxi-cli)
-
-To install from source, clone the repository and run the following commands from inside the repository to create a virtual environment and run `pip install` inside the repository
-
-```shell-session
-virtualenv venv
-source venv/bin/activate
-pip install --editable .
-```
 
 Once installed, `kxi` will now be available for you to execute.
 
@@ -62,6 +54,21 @@ To allow `kxi` to be called from outside of the `venv`, add the `venv` bin direc
 $ export PATH=$PATH:/path/to/venv/bin
 $ kxi --version
 kxi, version 0.1.0 from /home/rtuser/git/kxi-cli/kxi (Python 3.8)
+```
+
+## Upgrade
+
+To upgrade the CLI, use the `--upgrade` option for `pip install`
+
+```bash
+# activate the virtual environment where the CLI was installed
+source venv/bin/activate
+
+pip_user=<redacted>
+pip_password=<redacted>
+
+# pass the '--upgrade' flag to pip
+pip install --upgrade -v --extra-index-url https://$pip_user:$pip_password@nexus.dl.kx.com/repository/kxi-cli/simple kxicli
 ```
 
 ## Configuration
