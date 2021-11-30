@@ -13,7 +13,7 @@ setup(
         'pyyaml>=6.0',
         'cryptography>=2.8'
     ],
-    python_requires='>=3.8',
+    python_requires='>=3.6',
     entry_points={
         'console_scripts': [
             'kxi=kxicli.main:cli',
