@@ -405,6 +405,6 @@ def helm_install(release, chart, values_file, version=None):
         base_command = base_command + ['--version', version]
 
     try:
-        subprocess.run(['helm', 'install', '-f', values_file, release, chart], check=True)
+        subprocess.run(base_command, check=True)
     except subprocess.CalledProcessError as e:
         click.echo(e)
