@@ -66,7 +66,7 @@ def setup(namespace, chart_repo_name, license_secret, client_cert_secret, image_
         click.secho('\nClient certificate issuer', bold=True)
         client_cert_secret = prompt_for_client_cert(namespace, client_cert_secret)
 
-    if not('--keycloak-secret' in sys.argv and '--keycloak-postgresql-secert' in sys.argv):
+    if not('--keycloak-secret' in sys.argv and '--keycloak-postgresql-secret' in sys.argv):
         click.secho('\nKeycloak', bold=True)
         keycloak_secret, keycloak_postgresql_secret = prompt_for_keycloak(namespace, keycloak_secret, keycloak_postgresql_secret)
 
