@@ -83,8 +83,6 @@ pages:
   script:
     - pip install -r mkdocs.requirements
     - pip install .
-    # can potentially remove this export when kxi-5994 is implemented
-    - export KUBECONFIG=$(pwd)/kxicli/tests/files/test-kube-config
     - mkdocs build --strict
     - mv site public/
   artifacts:
