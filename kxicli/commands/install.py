@@ -11,6 +11,7 @@ from cryptography import x509
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization, asymmetric, hashes
 from kxicli import log
+from kxicli import common
 from kxicli.common import get_default_val as default_val
 from kxicli.common import get_help_text as help_text
 
@@ -333,6 +334,7 @@ def create_secret(namespace, name, secret_type, data=None, string_data=None):
     log.debug(f'Creating secret called {name} with type {secret_type} in namespace {namespace}')
 
     secret = get_secret_body(name, secret_type, data, string_data)
+    common.load_kube_config()
     try:
         k8s.client.CoreV1Api().create_namespaced_secret(namespace, body=secret)
     except k8s.client.rest.ApiException as exception:

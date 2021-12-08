@@ -1,6 +1,8 @@
 import sys
+import os
 import click
 import requests
+import kubernetes as k8s
 from kxicli import config
 from kxicli import log
 
@@ -99,3 +101,13 @@ def get_admin_token(hostname):
     log.error('Failed to request admin access token')
     click.echo(r.text)
     sys.exit(1)
+
+def load_kube_config():
+    # If running locally get config from kube-config
+    # If we're in the cluster use the cluster config
+    if os.environ.get('KUBERNETES_SERVICE_HOST','') == '':
+        log.debug('Loading kube config')
+        k8s.config.load_kube_config()
+    else:
+        log.debug('Loading in cluster config')
+        k8s.config.load_incluster_config()

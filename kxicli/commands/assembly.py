@@ -13,6 +13,7 @@ def assembly():
 
 def _assembly_status(namespace, name, print_status=False):
     """Get status of assembly"""
+    common.load_kube_config()
     v1 = k8s.client.CoreV1Api()
     res = v1.list_namespaced_pod(namespace, label_selector=f'insights.kx.com/app={name}')
 
@@ -34,6 +35,7 @@ def _assembly_status(namespace, name, print_status=False):
 @click.option('--wait', is_flag=True, help='Wait for all pods to be running')
 def create(namespace, filepath, wait):
     """Create an assembly given an assembly file"""
+    common.load_kube_config()
     api = k8s.client.CustomObjectsApi()
 
     with open(filepath) as f:
@@ -89,6 +91,7 @@ def delete(namespace, name, wait, force):
             click.echo(f'Not deleting assembly {name}')
             sys.exit(0)
 
+    common.load_kube_config()
     api = k8s.client.CustomObjectsApi()
     try:
         api.delete_namespaced_custom_object(
