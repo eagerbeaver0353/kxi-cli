@@ -125,8 +125,12 @@ def setup(namespace, chart_repo_name, license_secret, client_cert_secret, image_
 @click.option('--release', default=lambda: default_val('release.name'), help=help_text('release.name'))
 @click.option('--repo', default=lambda: default_val('chart.repo.name'), help=help_text('chart.repo.name'))
 @click.option('--version', default=None, help='Version to install')
+@click.option('--operator-namespace', default='kxi-operator', help='Namespace to install the operator in')
+@click.option('--operator-version', default=None, help='Version of the operator to install')
+@click.option('--image-pull-secret', default=lambda: default_val('image.pullSecret'), help=help_text('image.pullSecret'))
+@click.option('--license-secret', default=lambda: default_val('license.secret'), help=help_text('license.secret'))
 @click.pass_context
-def run(ctx, filepath, release, repo, version):
+def run(ctx, filepath, release, repo, version, operator_namespace, operator_version, image_pull_secret, license_secret):
     """Install KX Insights with a values file"""
 
     # Run setup prompts if necessary
@@ -137,8 +141,24 @@ def run(ctx, filepath, release, repo, version):
         else:
             filepath = click.prompt('Please enter the path to the values file for the install')
 
+    install_operator = True
+    if common.crd_exists('assemblies.insights.kx.com'):
+        install_operator = False
+        if click.confirm('\nThe assemblies.insights.kx.com CRD exists, do you want to install the operator'):
+            install_operator = True
+
+    if install_operator:
+        create_namespace(operator_namespace)
+
+        _, active_context = k8s.config.list_kube_config_contexts()
+        from_ns = active_context['context']['namespace']
+        copy_secret(image_pull_secret, from_ns, operator_namespace)
+        copy_secret(license_secret, from_ns, operator_namespace)
+
+        chart=repo+'/kxi-operator'
+        helm_install(release, chart=chart, values_file=filepath, version=operator_version, namespace=operator_namespace)
+
     chart=repo+'/insights'
-    click.echo(f'Installing chart {chart} with values file from {filepath}')
     helm_install(release, chart=chart, values_file=filepath, version=version)
 
 def sanitize_ingress_host(raw_string):
@@ -399,14 +419,56 @@ def helm_add_repo(repo, url, username, password):
         # Pass here so that the password isn't printed in the log
         pass
 
-def helm_install(release, chart, values_file, version=None):
+def helm_install(release, chart, values_file, version=None, namespace=None):
     """Call 'helm install' using subprocess.run"""
+
+    click.echo(f'Installing chart {chart} with values file from {values_file}')
+
     base_command = ['helm', 'install', '-f', values_file, release, chart]
 
     if version:
         base_command = base_command + ['--version', version]
 
+    if namespace:
+        base_command = base_command + ['--namespace', namespace]
+        create_namespace(namespace)
+
     try:
+        log.debug('Install command {base_command}')
         subprocess.run(base_command, check=True)
     except subprocess.CalledProcessError as e:
         click.echo(e)
+
+def create_namespace(name):
+    api = k8s.client.CoreV1Api()
+    ns = k8s.client.V1Namespace()
+    ns.metadata = k8s.client.V1ObjectMeta(name=name)
+    try:
+        api_response = api.create_namespace(ns)
+    except k8s.client.rest.ApiException as exception:
+        if exception.status == 409:
+            pass
+        else:
+            log.error(f'Exception when trying to create namespace {exception}')
+            sys.exit(1)
+
+def copy_secret(name, from_ns, to_ns):
+    common.load_kube_config()
+    api = k8s.client.CoreV1Api()
+    try:
+        secret = api.read_namespaced_secret(namespace=from_ns, name=name)
+    except k8s.client.rest.ApiException as exception:
+        log.error(f'Exception when trying to get secret {exception}')
+        sys.exit(1)
+
+    secret.metadata = k8s.client.V1ObjectMeta(namespace=to_ns, name=name)
+
+    try:
+        secret = api.create_namespaced_secret(namespace=to_ns, body=secret)
+    except k8s.client.rest.ApiException as exception:
+        if exception.status == 409:
+            pass
+        else:
+            log.error(f'Exception when trying to create secret {exception}')
+            sys.exit(1)
+
