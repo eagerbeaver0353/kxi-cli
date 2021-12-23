@@ -41,6 +41,9 @@ DEFAULT_VALUES = {
     'release.name': 'insights'
 }
 
+# Flag to indicate if k8s.config.load_config has already been called
+CONFIG_ALREADY_LOADED = False
+
 def get_help_text(option):
     """Get help text for an option from configuration"""
     if option in HELP_TEXT:
@@ -103,11 +106,21 @@ def get_admin_token(hostname):
     sys.exit(1)
 
 def load_kube_config():
-    # If running locally get config from kube-config
-    # If we're in the cluster use the cluster config
-    if os.environ.get('KUBERNETES_SERVICE_HOST','') == '':
-        log.debug('Loading kube config')
-        k8s.config.load_kube_config()
-    else:
-        log.debug('Loading in cluster config')
-        k8s.config.load_incluster_config()
+    global CONFIG_ALREADY_LOADED
+
+    if not CONFIG_ALREADY_LOADED:
+        k8s.config.load_config()
+        CONFIG_ALREADY_LOADED = True
+
+def crd_exists(name):
+    load_kube_config()
+    api = k8s.client.ApiextensionsV1Api()
+
+    try:
+        api.read_custom_resource_definition(name)
+        return True
+    except k8s.client.rest.ApiException as exception:
+        if exception.status == 404:
+            return False
+        else:
+            click.echo(f'Exception when calling ApiextensionsV1Api->list_custom_resource_definition: {exception}')
