@@ -56,9 +56,7 @@ whitesource-dep-scan:
   extends:
     - .whitesource-scan
   rules:
-    - if: '$CI_COMMIT_BRANCH == "$CI_DEFAULT_BRANCH"'
-      when: always
-    - when: never
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
   variables:
     WS_PRODUCTNAME: "insights"
     WS_PRODUCTVERSION: "main"
