@@ -16,6 +16,7 @@ from kxicli.common import get_default_val as default_val
 from kxicli.common import get_help_text as help_text
 
 docker_config_file_path = os.environ.get('HOME') + '/.docker/config.json'
+operator_namespace = 'kxi-operator'
 
 @click.group()
 def install():
@@ -125,12 +126,11 @@ def setup(namespace, chart_repo_name, license_secret, client_cert_secret, image_
 @click.option('--release', default=lambda: default_val('release.name'), help=help_text('release.name'))
 @click.option('--repo', default=lambda: default_val('chart.repo.name'), help=help_text('chart.repo.name'))
 @click.option('--version', default=None, help='Version to install')
-@click.option('--operator-namespace', default='kxi-operator', help='Namespace to install the operator in')
 @click.option('--operator-version', default=None, help='Version of the operator to install')
 @click.option('--image-pull-secret', default=lambda: default_val('image.pullSecret'), help=help_text('image.pullSecret'))
 @click.option('--license-secret', default=lambda: default_val('license.secret'), help=help_text('license.secret'))
 @click.pass_context
-def run(ctx, filepath, release, repo, version, operator_namespace, operator_version, image_pull_secret, license_secret):
+def run(ctx, filepath, release, repo, version, operator_version, image_pull_secret, license_secret):
     """Install KX Insights with a values file"""
 
     # Run setup prompts if necessary
