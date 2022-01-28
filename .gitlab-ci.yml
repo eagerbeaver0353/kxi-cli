@@ -1,13 +1,20 @@
+---
+default:
+  tags:
+    - k8s
+  interruptible: true
+
+include:
+  - project: 'kxdev/shared-tools/ci-templates'
+    ref: main
+    file:
+      - 'insights/whitesource.yaml'
+
 stages:
   - build
   - test
   - publish
   - docs
-
-# Run stages on internal gitlab-runner
-default:
-  tags:
-    - kxi-gitlab-runner
 
 variables:
   PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
@@ -44,25 +51,40 @@ build dist:
     reports:
       cobertura: coverage.xml
 
+whitesource-dep-scan:
+  stage: test
+  extends:
+    - .whitesource-scan
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "$CI_DEFAULT_BRANCH"'
+      when: always
+    - when: never
+  variables:
+    WS_PRODUCTNAME: "insights"
+    WS_PRODUCTVERSION: "main"
+    WS_PROJECTNAME: "$CI_PROJECT_NAME"
+    WS_PROJECTVERSION: "$CI_DEFAULT_BRANCH"
+
+
 run tests 3.6:
-    extends: .run-tests
-    image: python:3.6
+  extends: .run-tests
+  image: python:3.6
 
 run tests 3.7:
-    extends: .run-tests
-    image: python:3.7
+  extends: .run-tests
+  image: python:3.7
 
 run tests 3.8:
-    extends: .run-tests
-    image: python:3.8
+  extends: .run-tests
+  image: python:3.8
 
 run tests 3.9:
-    extends: .run-tests
-    image: python:3.9
+  extends: .run-tests
+  image: python:3.9
 
 run tests 3.10:
-    extends: .run-tests
-    image: python:3.10
+  extends: .run-tests
+  image: python:3.10
 
 publish package:
   stage: publish
@@ -104,7 +126,7 @@ pages:
     paths:
       - public
   rules:
-    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
-      when: on_success
-    - when: manual
-      allow_failure: true
+    - if: '$CI_COMMIT_BRANCH == "$CI_DEFAULT_BRANCH"'
+      when: always
+    - when: never
+
