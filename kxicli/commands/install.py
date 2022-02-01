@@ -16,6 +16,7 @@ from kxicli.common import get_default_val as default_val
 from kxicli.common import get_help_text as help_text
 
 docker_config_file_path = os.environ.get('HOME') + '/.docker/config.json'
+install_namespace_default = 'kxi'
 operator_namespace = 'kxi-operator'
 
 @click.group()
@@ -40,10 +41,15 @@ def setup(namespace, chart_repo_name, license_secret, client_cert_secret, image_
 
     click.secho('KX Insights Install Setup', bold=True)
 
+    _, active_context = k8s.config.list_kube_config_contexts()
     if '--namespace' not in sys.argv:
-        _, active_context = k8s.config.list_kube_config_contexts()
-        namespace = active_context['context']['namespace']
-        click.echo(f'\nRunning in namespace {namespace} on the cluster {active_context["context"]["cluster"]}')
+        if 'namespace' in active_context['context']:
+            namespace = active_context['context']['namespace']
+        else:
+            namespace = click.prompt('\nPlease enter a namespace to install in', default=install_namespace_default)
+
+    create_namespace(namespace)
+    click.echo(f'\nRunning in namespace {namespace} on the cluster {active_context["context"]["cluster"]}')
 
     if '--ingress-host' not in sys.argv:
         ingress_host = sanitize_ingress_host(click.prompt('\nPlease enter the hostname for the installation'))
@@ -440,6 +446,7 @@ def helm_install(release, chart, values_file, version=None, namespace=None):
         click.echo(e)
 
 def create_namespace(name):
+    common.load_kube_config()
     api = k8s.client.CoreV1Api()
     ns = k8s.client.V1Namespace()
     ns.metadata = k8s.client.V1ObjectMeta(name=name)

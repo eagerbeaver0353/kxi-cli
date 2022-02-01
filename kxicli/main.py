@@ -36,7 +36,6 @@ def configure(profile):
 
 cli.add_command(client.client)
 cli.add_command(assembly.assembly)
-cli.add_command(query.query)
 cli.add_command(auth.auth)
 cli.add_command(install.install)
 cli.add_command(configure)

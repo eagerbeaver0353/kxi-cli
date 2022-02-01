@@ -37,10 +37,14 @@ def mocked_helm_add_repo(repo, url, username, password):
 def mocked_helm_install(release, chart, values_file, version=None):
     pass
 
+def mocked_create_namespace(namespace):
+    pass
+
 def test_install_when_creating_secrets(mocker):
     mocker.patch('kxicli.commands.install.create_secret', mocked_create_secret)
     mocker.patch('kxicli.commands.install.helm_install', mocked_helm_install)
     mocker.patch('kxicli.commands.install.helm_add_repo', mocked_helm_add_repo)
+    mocker.patch('kxicli.commands.install.create_namespace', mocked_create_namespace)
 
     runner = CliRunner()
     with runner.isolated_filesystem():
@@ -126,6 +130,7 @@ def test_install_when_providing_secrets(mocker):
     mocker.patch('kxicli.commands.install.create_secret', mocked_create_secret)
     mocker.patch('kxicli.commands.install.helm_install', mocked_helm_install)
     mocker.patch('kxicli.commands.install.helm_add_repo', mocked_helm_add_repo)
+    mocker.patch('kxicli.commands.install.create_namespace', mocked_create_namespace)
 
     runner = CliRunner()
     with runner.isolated_filesystem():
