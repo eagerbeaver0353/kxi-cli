@@ -48,9 +48,11 @@ def create(namespace, filepath, wait):
 
     click.echo(f'Submitting assembly from {filepath}')
 
+    api_version = body['apiVersion'].split('/')
+
     api.create_namespaced_custom_object(
-        group='insights.kx.com',
-        version='v1alpha1',
+        group=api_version[0],
+        version=api_version[1],
         namespace=namespace,
         plural='assemblies',
         body=body,
@@ -93,10 +95,11 @@ def delete(namespace, name, wait, force):
 
     common.load_kube_config()
     api = k8s.client.CustomObjectsApi()
+
     try:
         api.delete_namespaced_custom_object(
             group='insights.kx.com',
-            version='v1alpha1',
+            version=get_preferred_api_version('insights.kx.com'),
             namespace=namespace,
             plural='assemblies',
             name=name,
@@ -119,3 +122,18 @@ def delete(namespace, name, wait, force):
 
         log.error('Assembly was not deleted in time, exiting')
         sys.exit(1)
+
+def get_preferred_api_version(group_name):
+    k8s.config.load_config()
+    api_instance = k8s.client.ApisApi()
+
+    version = None
+    for api in api_instance.get_api_versions().groups:
+        if  api.name == group_name:
+            version = api.preferred_version.version
+
+    if version == None:
+        log.error(f'Could not find preferred API version for group {group_name}')
+        sys.exit(1)
+
+    return version
