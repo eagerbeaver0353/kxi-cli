@@ -1,5 +1,7 @@
 import sys
 import os
+import string
+import random
 import subprocess
 import datetime
 import base64
@@ -30,12 +32,14 @@ def install():
 @click.option('--client-cert-secret', default=lambda: default_val('client.cert.secret'), help=help_text('client.cert.secret'))
 @click.option('--image-repo', default=lambda: default_val('image.repository'), help=help_text('image.repository'))
 @click.option('--image-pull-secret', default=lambda: default_val('image.pullSecret'), help=help_text('image.pullSecret'))
+@click.option('--gui-client-secret', default=lambda: default_val('guiClientSecret'), help=help_text('guiClientSecret'))
+@click.option('--operator-client-secret', default=lambda: default_val('operatorClientSecret'), help=help_text('operatorClientSecret'))
 @click.option('--keycloak-secret', default=lambda: default_val('keycloak.secret'), help=help_text('keycloak.secret'))
 @click.option('--keycloak-postgresql-secret', default=lambda: default_val('keycloak.postgresqlSecret'), help=help_text('keycloak.postgresqlSecret'))
 @click.option('--ingress-host', help=help_text('ingress.host'))
 @click.option('--ingress-cert-secret', default=lambda: default_val('ingress.cert.secret'), help=help_text('ingress.cert.secret'))
 @click.option('--output-file', default=lambda: default_val('install.outputFile'), help=help_text('install.outputFile'))
-def setup(namespace, chart_repo_name, license_secret, client_cert_secret, image_repo, image_pull_secret,
+def setup(namespace, chart_repo_name, license_secret, client_cert_secret, image_repo, image_pull_secret, gui_client_secret, operator_client_secret,
                 keycloak_secret, keycloak_postgresql_secret, ingress_host, ingress_cert_secret, output_file):
     """Perform necessary setup steps to install Insights"""
 
@@ -78,6 +82,12 @@ def setup(namespace, chart_repo_name, license_secret, client_cert_secret, image_
         click.secho('\nKeycloak', bold=True)
         keycloak_secret, keycloak_postgresql_secret = prompt_for_keycloak(namespace, keycloak_secret, keycloak_postgresql_secret)
 
+    if '--gui-client-secret' not in sys.argv:
+        gui_client_secret = prompt_for_client_secret('gui')
+
+    if '--operator-client-secret' not in sys.argv:
+        operator_client_secret = prompt_for_client_secret('operator')
+
     if 'ingress-cert-secret' not in sys.argv:
         click.secho('\nIngress', bold=True)
         ingress_self_managed, ingress_cert_secret = prompt_for_ingress_cert(namespace, ingress_cert_secret)
@@ -103,7 +113,11 @@ def setup(namespace, chart_repo_name, license_secret, client_cert_secret, image_
                 {
                     'name': image_pull_secret
                 }
-            ]
+            ],
+            'keycloak': {
+                'guiClientSecret': gui_client_secret,
+                'operatorClientSecret': operator_client_secret
+            }
         },
         'keycloak': {
             'auth': {
@@ -478,4 +492,13 @@ def copy_secret(name, from_ns, to_ns):
         else:
             log.error(f'Exception when trying to create secret {exception}')
             sys.exit(1)
+
+def prompt_for_client_secret(client_name):
+    if click.confirm(f'Do you want to set a secret for the {client_name} service account explicity'):
+        client_secret = click.prompt('Please enter the secret (input hidden)', hide_input=True)
+    else:
+        click.echo(f'Randomly generating client secret for {client_name} and setting in values file, record this value for reuse during upgrade')
+        client_secret = ''.join(random.SystemRandom().choice(string.ascii_letters + string.digits) for _ in range(10))
+
+    return client_secret
 

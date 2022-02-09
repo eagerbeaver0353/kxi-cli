@@ -23,7 +23,9 @@ HELP_TEXT = {
     'ingress.host': 'Hostname for the installation',
     'ingress.cert.secret': 'Secret containing self-managed TLS cert and key for the ingress',
     'install.outputFile': 'Name for the generated values file',
-    'release.name': 'Release name for the install'
+    'release.name': 'Release name for the install',
+    'guiClientSecret': 'Keycloak client secret for gui service account',
+    'operatorClientSecret': 'Keycloak client secret for operator service account'
 }
 
 # Default values for commands if needed
