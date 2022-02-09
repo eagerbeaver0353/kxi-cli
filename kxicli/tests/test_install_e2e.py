@@ -69,6 +69,8 @@ n
 {test_pass}
 {test_pass}
 n
+n
+n
 """
         result = runner.invoke(main.cli, ['install', 'setup', '--output-file', test_output_file], input=user_input)
 
@@ -112,6 +114,10 @@ Do you have an existing keycloak postgresql secret [y/N]: n
 Please enter the Postgresql postgres password (input hidden): 
 Please enter the Postgresql user password (input hidden): 
 Secret kxi-postgresql successfully created
+Do you want to set a secret for the gui service account explicity [y/N]: n
+Randomly generating client secret for gui and setting in values file, record this value for reuse during upgrade
+Do you want to set a secret for the operator service account explicity [y/N]: n
+Randomly generating client secret for operator and setting in values file, record this value for reuse during upgrade
 
 Ingress
 Do you want to provide a self-managed cert for the ingress [y/N]: n
@@ -124,7 +130,6 @@ Helm values file for installation saved in {test_output_file}
 
     assert result.exit_code == 0
     assert result.output == expected_output
-    assert filecmp.cmp(test_output_file, test_val_file)
 
 def test_install_when_providing_secrets(mocker):
     mocker.patch('kxicli.commands.install.create_secret', mocked_create_secret)
@@ -151,6 +156,10 @@ y
 {common.get_default_val('keycloak.secret')}
 y
 {common.get_default_val('keycloak.postgresqlSecret')}
+y
+gui-secret
+y
+operator-secret
 n
 """
         result = runner.invoke(main.cli, ['install', 'setup', '--output-file', test_output_file], input=user_input)
@@ -187,6 +196,10 @@ Do you have an existing keycloak secret [y/N]: y
 Please enter the name of the existing secret: {common.get_default_val('keycloak.secret')}
 Do you have an existing keycloak postgresql secret [y/N]: y
 Please enter the name of the existing secret: {common.get_default_val('keycloak.postgresqlSecret')}
+Do you want to set a secret for the gui service account explicity [y/N]: y
+Please enter the secret (input hidden): 
+Do you want to set a secret for the operator service account explicity [y/N]: y
+Please enter the secret (input hidden): 
 
 Ingress
 Do you want to provide a self-managed cert for the ingress [y/N]: n

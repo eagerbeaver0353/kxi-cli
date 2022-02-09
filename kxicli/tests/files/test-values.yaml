@@ -8,6 +8,9 @@ global:
   - name: kxi-nexus-pull-secret
   ingress:
     host: test.internal-insights.kx.com
+  keycloak:
+    guiClientSecret: gui-secret
+    operatorClientSecret: operator-secret
   license:
     secretName: kxi-license
 keycloak:
