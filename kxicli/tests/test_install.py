@@ -1,4 +1,5 @@
 """This install test is meant to unit test the inidividal functions in the install command"""
+import io
 import os
 import base64
 import kubernetes as k8s
@@ -83,3 +84,19 @@ def test_create_tls_secret(mocker):
     assert 'tls.crt' in res.data
     assert 'tls.key' in res.data
 
+def test_get_operator_version_returns_operator_version_if_passed_regardless_of_rc():
+    non_rc = install.get_operator_version('1.2.3', '4.5.6')
+    rc = install.get_operator_version('1.2.3-rc.1', '4.5.6')
+
+    assert non_rc == '4.5.6'
+    assert rc == '4.5.6'
+
+def test_get_operator_version_returns_insights_version_if_not_rc():
+    assert install.get_operator_version('1.2.3', None) == '1.2.3'
+
+def test_get_operator_version_returns_prompts_for_operater_version_if_rc(monkeypatch):
+    test_version = '0.1.2-rc.2'
+    # patch stdin to end the prompt
+    monkeypatch.setattr('sys.stdin', io.StringIO(test_version))
+
+    assert install.get_operator_version('1.2.3-rc.1', None) == test_version

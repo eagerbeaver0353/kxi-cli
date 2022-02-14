@@ -145,7 +145,7 @@ def setup(namespace, chart_repo_name, license_secret, client_cert_secret, image_
 @click.option('--filepath', help='Values file to install with')
 @click.option('--release', default=lambda: default_val('release.name'), help=help_text('release.name'))
 @click.option('--repo', default=lambda: default_val('chart.repo.name'), help=help_text('chart.repo.name'))
-@click.option('--version', default=None, help='Version to install')
+@click.option('--version', required=True, help='Version to install')
 @click.option('--operator-version', default=None, help='Version of the operator to install')
 @click.option('--image-pull-secret', default=lambda: default_val('image.pullSecret'), help=help_text('image.pullSecret'))
 @click.option('--license-secret', default=lambda: default_val('license.secret'), help=help_text('license.secret'))
@@ -176,10 +176,20 @@ def run(ctx, filepath, release, repo, version, operator_version, image_pull_secr
         copy_secret(license_secret, from_ns, operator_namespace)
 
         chart=repo+'/kxi-operator'
-        helm_install(release, chart=chart, values_file=filepath, version=operator_version, namespace=operator_namespace)
+        helm_install(release, chart=chart, values_file=filepath, version=get_operator_version(version, operator_version), namespace=operator_namespace)
 
     chart=repo+'/insights'
     helm_install(release, chart=chart, values_file=filepath, version=version)
+
+def get_operator_version(insights_version, operator_version):
+    """Determine operator version to use"""
+    if operator_version is None:
+        if 'rc' in insights_version:
+            operator_version = click.prompt('Please enter the version of the operator you want to install')
+        else:
+            operator_version = insights_version
+
+    return operator_version
 
 def sanitize_ingress_host(raw_string):
     """Santize a host name to allow it to be used"""
@@ -454,7 +464,7 @@ def helm_install(release, chart, values_file, version=None, namespace=None):
         create_namespace(namespace)
 
     try:
-        log.debug('Install command {base_command}')
+        log.debug(f'Install command {base_command}')
         subprocess.run(base_command, check=True)
     except subprocess.CalledProcessError as e:
         click.echo(e)
