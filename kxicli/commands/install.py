@@ -468,6 +468,7 @@ def helm_install(release, chart, values_file, version=None, namespace=None):
         subprocess.run(base_command, check=True)
     except subprocess.CalledProcessError as e:
         click.echo(e)
+        sys.exit(e.returncode)
 
 def create_namespace(name):
     common.load_kube_config()
