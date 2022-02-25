@@ -133,6 +133,10 @@ def setup(namespace, chart_repo_name, license_secret, client_cert_secret, image_
         install_file['global']['ingress']['certmanager']: False
         install_file['global']['ingress']['tlsSecret']: ingress_cert_secret
 
+    if os.path.exists(output_file):
+        if not click.confirm(f'\n{output_file} file exists. Do you want to overwrite it with a new values file?'):
+            output_file = click.prompt('Please enter the path to write the values file for the install')
+
     with open(output_file, 'w') as f:
         yaml.dump(install_file, f)
 
