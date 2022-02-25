@@ -161,25 +161,41 @@ def run(ctx, filepath, release, repo, version, operator_version, image_pull_secr
         else:
             filepath = click.prompt('Please enter the path to the values file for the install')
 
-    install_operator = True
-    if common.crd_exists('assemblies.insights.kx.com'):
-        install_operator = False
-        if click.confirm('\nThe assemblies.insights.kx.com CRD exists, do you want to install the operator'):
-            install_operator = True
 
-    if install_operator:
-        create_namespace(operator_namespace)
+    if operator_installed(release):
+        click.echo('\nkxi-operator already installed')
+    else:
+        if click.confirm('\nkxi-operator not found. Do you want to install it?'):
+            create_namespace(operator_namespace)
 
-        _, active_context = k8s.config.list_kube_config_contexts()
-        from_ns = active_context['context']['namespace']
-        copy_secret(image_pull_secret, from_ns, operator_namespace)
-        copy_secret(license_secret, from_ns, operator_namespace)
+            _, active_context = k8s.config.list_kube_config_contexts()
+            from_ns = active_context['context']['namespace']
+            copy_secret(image_pull_secret, from_ns, operator_namespace)
+            copy_secret(license_secret, from_ns, operator_namespace)
 
-        chart=repo+'/kxi-operator'
-        helm_install(release, chart=chart, values_file=filepath, version=get_operator_version(version, operator_version), namespace=operator_namespace)
+            chart=repo+'/kxi-operator'
+            helm_install(release, chart=chart, values_file=filepath, version=get_operator_version(version, operator_version), namespace=operator_namespace)
 
     chart=repo+'/insights'
     helm_install(release, chart=chart, values_file=filepath, version=version)
+
+@install.command()
+@click.option('--release', default=lambda: default_val('release.name'), help=help_text('release.name'))
+def delete(release):
+    """Uninstall KX Insights"""
+    if insights_installed(release):
+        if click.confirm('\nKX Insights is deployed. Do you want to uninstall?'):
+            helm_uninstall(release)  
+
+    if operator_installed(release):
+        if click.confirm('\nThe kxi-operator is deployed. Do you want to uninstall?'):
+            helm_uninstall(release, namespace=operator_namespace)        
+
+    crds = common.get_existing_crds(['assemblies.insights.kx.com','assemblyresources.insights.kx.com'])
+    if len(crds) > 0:
+        if click.confirm(f'\nThe assemblies CRDs {crds} exist. Do you want to delete them?'):
+            for i in crds:
+                common.delete_crd(i)
 
 def get_operator_version(insights_version, operator_version):
     """Determine operator version to use"""
@@ -470,6 +486,26 @@ def helm_install(release, chart, values_file, version=None, namespace=None):
         click.echo(e)
         sys.exit(e.returncode)
 
+def helm_uninstall(release, namespace=None):
+    """Call 'helm uninstall' using subprocess.run"""
+
+    msg = f'Uninstalling release {release}'
+
+    base_command = ['helm', 'uninstall', release]
+
+    if namespace:
+        base_command = base_command + ['--namespace', namespace]
+        msg = f'{msg} in namespace {namespace}'
+
+    click.echo(msg)
+
+    try:
+        log.debug(f'Uninstall command {base_command}')
+        subprocess.run(base_command, check=True)
+    except subprocess.CalledProcessError as e:
+        click.echo(e)
+        sys.exit(e.returncode)
+
 def create_namespace(name):
     common.load_kube_config()
     api = k8s.client.CoreV1Api()
@@ -513,3 +549,22 @@ def prompt_for_client_secret(client_name):
 
     return client_secret
 
+def insights_installed(release):
+    """Check if a helm release of insights exists"""
+    base_command = ['helm', 'list', '--filter', release, '--deployed', '-o', 'json']
+    try:
+        log.debug(f'List command {base_command}')
+        l = subprocess.check_output(base_command)
+        return len(l) > 3
+    except subprocess.CalledProcessError as e:
+        click.echo(e)
+
+def operator_installed(release):
+    """Check if a helm release of the operator exists"""
+    base_command = ['helm', 'list', '--filter', release, '--deployed', '-o', 'json','--namespace', operator_namespace]
+    try:
+        log.debug(f'List command {base_command}')
+        l = subprocess.check_output(base_command)
+        return len(l) > 3
+    except subprocess.CalledProcessError as e:
+        click.echo(e)

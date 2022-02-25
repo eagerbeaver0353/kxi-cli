@@ -22,6 +22,20 @@ def mocked_create_secret(namespace, name, secret_type, data=None, string_data=No
     print('Running mocked create_secret function')
     return install.get_secret_body(name, secret_type, data, string_data)
 
+# These are used to mock helm calls to list deployed releases
+# helm list --filter insights --deployed -o json
+def mocked_helm_list_returns_valid_json(base_command):
+    return '[{"name":"insights","namespace":"testnamespace","revision":"1","updated":"2022-02-23 10:39:53.7668809 +0000 UTC","status":"deployed","chart":"insights-0.11.0-rc.39","app_version":"0.11.0-rc.8"}]'
+
+def mocked_helm_list_returns_empty_json(base_command):
+    return '[]'
+
+def mocked_all_crds_exist(name):
+    return True
+
+def mocked_one_crd_exists(name):
+    return name == 'testcrd'
+
 def test_get_secret_body_string_data_parameter():
     sdata = {'a':'b'}
 
@@ -100,3 +114,31 @@ def test_get_operator_version_returns_prompts_for_operater_version_if_rc(monkeyp
     monkeypatch.setattr('sys.stdin', io.StringIO(test_version))
 
     assert install.get_operator_version('1.2.3-rc.1', None) == test_version
+
+def test_insights_installed_returns_true_when_already_exists(mocker):
+    mocker.patch('subprocess.check_output', mocked_helm_list_returns_valid_json)
+    assert install.insights_installed('insights') == True
+
+def test_insights_installed_returns_false_when_already_exists(mocker):
+    mocker.patch('subprocess.check_output', mocked_helm_list_returns_empty_json)
+    assert install.insights_installed('insights') == False
+
+def test_operator_installed_returns_true_when_already_exists(mocker):
+    mocker.patch('subprocess.check_output', mocked_helm_list_returns_valid_json)
+    assert install.operator_installed('insights') == True
+
+def test_operator_installed_returns_false_when_already_exists(mocker):
+    mocker.patch('subprocess.check_output', mocked_helm_list_returns_empty_json)
+    assert install.operator_installed('insights') == False
+
+def test_get_existing_crds_return_all_crds(mocker):
+    mocker.patch('kxicli.common.crd_exists', mocked_all_crds_exist)
+    assert install.common.get_existing_crds(['testcrd']) == ['testcrd']
+    assert install.common.get_existing_crds(['testcrd', 'testcrd2']) == (['testcrd', 'testcrd2'])
+    assert install.common.get_existing_crds(['testcrd', 'testcrd2', 'testcrd3']) == (['testcrd', 'testcrd2', 'testcrd3'])
+
+def test_get_existing_crds_return_existing_crds_only(mocker):
+    mocker.patch('kxicli.common.crd_exists', mocked_one_crd_exists)
+    assert install.common.get_existing_crds(['testcrd']) == ['testcrd']
+    assert install.common.get_existing_crds(['testcrd', 'testcrd2']) == (['testcrd'])
+    assert install.common.get_existing_crds(['testcrd', 'testcrd2', 'testcrd3']) == (['testcrd'])

@@ -54,5 +54,6 @@ as below.
 
 ```bash
 pip install -r kxicli/tests/requirements.txt
+export KUBECONFIG=$(pwd)/kxicli/tests/files/test-kube-config
 pytest
 ```

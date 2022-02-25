@@ -24,6 +24,8 @@ _, active_context = k8s.config.list_kube_config_contexts()
 test_namespace = active_context['context']['namespace']
 test_cluster = active_context['context']['cluster']
 
+delete_crd_params = ()
+
 # override where the command looks for the docker config json
 # by default this is $HOME/.docker/config.json
 main.install.docker_config_file_path = test_docker_config_json
@@ -34,15 +36,31 @@ def mocked_create_secret(namespace, name, secret_type, data=None, string_data=No
 def mocked_helm_add_repo(repo, url, username, password):
     pass
 
-def mocked_helm_install(release, chart, values_file, version=None):
+def mocked_subprocess_run(base_command, check=True):
+    global subprocess_run_command
+    subprocess_run_command = base_command
+    pass
+
+def mocked_delete_crd(name):
+    print(f'Deleting CRD {name}')
+    global delete_crd_params
+    delete_crd_params = (name)
     pass
 
 def mocked_create_namespace(namespace):
     pass
 
+def mocked_copy_secret(name, from_ns, to_ns):
+    pass
+
+def mocked_return_true(name):
+    return True
+
+def mocked_return_false(name):
+    return False
+
 def test_install_when_creating_secrets(mocker):
     mocker.patch('kxicli.commands.install.create_secret', mocked_create_secret)
-    mocker.patch('kxicli.commands.install.helm_install', mocked_helm_install)
     mocker.patch('kxicli.commands.install.helm_add_repo', mocked_helm_add_repo)
     mocker.patch('kxicli.commands.install.create_namespace', mocked_create_namespace)
 
@@ -133,7 +151,6 @@ Helm values file for installation saved in {test_output_file}
 
 def test_install_when_providing_secrets(mocker):
     mocker.patch('kxicli.commands.install.create_secret', mocked_create_secret)
-    mocker.patch('kxicli.commands.install.helm_install', mocked_helm_install)
     mocker.patch('kxicli.commands.install.helm_add_repo', mocked_helm_add_repo)
     mocker.patch('kxicli.commands.install.create_namespace', mocked_create_namespace)
 
@@ -212,3 +229,217 @@ Helm values file for installation saved in {test_output_file}
     assert result.exit_code == 0
     assert result.output == expected_output
     assert filecmp.cmp(test_output_file, test_val_file)
+
+def test_install_run_when_provided_file(mocker):
+    mocker.patch('subprocess.run', mocked_subprocess_run)
+    mocker.patch('kxicli.commands.install.insights_installed', mocked_return_true)
+    mocker.patch('kxicli.commands.install.operator_installed', mocked_return_true)
+    mocker.patch('kxicli.common.crd_exists', mocked_return_true)
+
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        # these are responses to the various prompts
+        user_input = f"""n
+{test_val_file}
+"""
+        result = runner.invoke(main.cli, ['install', 'run', '--version', '1.2.3'], input=user_input)
+        expected_output = f"""
+No values file provided, do you want to generate one now [y/N]: n
+Please enter the path to the values file for the install: {test_val_file}
+
+kxi-operator already installed
+Installing chart kx-insights/insights with values file from {test_val_file}
+"""    
+    assert result.exit_code == 0
+    assert result.output == expected_output
+    assert subprocess_run_command == ['helm', 'install', '-f', test_val_file, 'insights', 'kx-insights/insights', '--version', '1.2.3']
+
+def test_install_run_installs_operator(mocker):
+    mocker.patch('subprocess.run', mocked_subprocess_run)
+    mocker.patch('kxicli.commands.install.create_namespace', mocked_create_namespace)
+    mocker.patch('kxicli.commands.install.copy_secret', mocked_copy_secret)    
+    mocker.patch('kxicli.commands.install.insights_installed', mocked_return_true)
+    mocker.patch('kxicli.commands.install.operator_installed', mocked_return_false)
+    mocker.patch('kxicli.common.crd_exists', mocked_return_false)
+
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        # these are responses to the various prompts
+        user_input = f"""n
+{test_val_file}
+y
+"""
+        result = runner.invoke(main.cli, ['install', 'run', '--version', '1.2.3'], input=user_input)
+        expected_output = f"""
+No values file provided, do you want to generate one now [y/N]: n
+Please enter the path to the values file for the install: {test_val_file}
+
+kxi-operator not found. Do you want to install it? [y/N]: y
+Installing chart kx-insights/kxi-operator with values file from {test_val_file}
+Installing chart kx-insights/insights with values file from {test_val_file}
+"""    
+    assert result.exit_code == 0
+    assert result.output == expected_output
+    assert subprocess_run_command == ['helm', 'install', '-f', test_val_file, 'insights', 'kx-insights/insights', '--version', '1.2.3']
+
+def test_delete(mocker):
+    mocker.patch('subprocess.run', mocked_subprocess_run)
+    mocker.patch('kxicli.commands.install.insights_installed', mocked_return_true)
+    mocker.patch('kxicli.commands.install.operator_installed', mocked_return_false)
+    mocker.patch('kxicli.common.crd_exists', mocked_return_false)
+
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        # these are responses to the various prompts
+        user_input = f"""y
+"""
+        result = runner.invoke(main.cli, ['install', 'delete'], input=user_input)
+        expected_output = f"""
+KX Insights is deployed. Do you want to uninstall? [y/N]: y
+Uninstalling release insights
+"""
+    assert result.exit_code == 0
+    assert result.output == expected_output
+    assert subprocess_run_command == ['helm','uninstall','insights']
+    assert delete_crd_params == ()
+
+def test_delete_specify_release(mocker):
+    mocker.patch('subprocess.run', mocked_subprocess_run)
+    mocker.patch('kxicli.commands.install.insights_installed', mocked_return_true)
+    mocker.patch('kxicli.commands.install.operator_installed', mocked_return_false)
+    mocker.patch('kxicli.common.crd_exists', mocked_return_false)
+
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        # these are responses to the various prompts
+        user_input = f"""y
+"""
+        result = runner.invoke(main.cli, ['install', 'delete', '--release','atestrelease'], input=user_input)
+        expected_output = f"""
+KX Insights is deployed. Do you want to uninstall? [y/N]: y
+Uninstalling release atestrelease
+"""
+    assert result.exit_code == 0
+    assert result.output == expected_output
+    assert subprocess_run_command == ['helm','uninstall','atestrelease']
+    assert delete_crd_params == ()
+
+
+def test_delete_prompts_to_remove_insights_operator_and_crd(mocker):
+    mocker.patch('subprocess.run', mocked_subprocess_run)
+    mocker.patch('kxicli.common.delete_crd', mocked_delete_crd)
+    mocker.patch('kxicli.commands.install.insights_installed', mocked_return_true)
+    mocker.patch('kxicli.commands.install.operator_installed', mocked_return_true)
+    mocker.patch('kxicli.common.crd_exists', mocked_return_true)
+    global subprocess_run_command
+    subprocess_run_command = ['']
+
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        # these are responses to the various prompts
+        user_input = f"""n
+n
+n
+"""
+        result = runner.invoke(main.cli, ['install', 'delete'], input=user_input)
+        expected_output = f"""
+KX Insights is deployed. Do you want to uninstall? [y/N]: n
+
+The kxi-operator is deployed. Do you want to uninstall? [y/N]: n
+
+The assemblies CRDs ['assemblies.insights.kx.com', 'assemblyresources.insights.kx.com'] exist. Do you want to delete them? [y/N]: n
+"""
+    assert result.exit_code == 0
+    assert result.output == expected_output
+    assert subprocess_run_command == ['']
+    assert delete_crd_params == ()
+
+def test_delete_removes_insights_and_operator(mocker):
+    mocker.patch('subprocess.run', mocked_subprocess_run)
+    mocker.patch('kxicli.commands.install.insights_installed', mocked_return_true)
+    mocker.patch('kxicli.commands.install.operator_installed', mocked_return_true)
+    mocker.patch('kxicli.common.crd_exists', mocked_return_true)
+
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        # these are responses to the various prompts
+        user_input = f"""y
+y
+n
+"""
+        result = runner.invoke(main.cli, ['install', 'delete'], input=user_input)
+        expected_output = f"""
+KX Insights is deployed. Do you want to uninstall? [y/N]: y
+Uninstalling release insights
+
+The kxi-operator is deployed. Do you want to uninstall? [y/N]: y
+Uninstalling release insights in namespace kxi-operator
+
+The assemblies CRDs ['assemblies.insights.kx.com', 'assemblyresources.insights.kx.com'] exist. Do you want to delete them? [y/N]: n
+"""
+    assert result.exit_code == 0
+    assert result.output == expected_output
+    assert subprocess_run_command == ['helm', 'uninstall', 'insights', '--namespace', 'kxi-operator']
+    assert delete_crd_params == ()
+
+
+def test_delete_removes_insights_and_crd(mocker):
+    mocker.patch('subprocess.run', mocked_subprocess_run)
+    mocker.patch('kxicli.common.delete_crd', mocked_delete_crd)
+    mocker.patch('kxicli.commands.install.insights_installed', mocked_return_true)
+    mocker.patch('kxicli.commands.install.operator_installed', mocked_return_true)
+    mocker.patch('kxicli.common.crd_exists', mocked_return_true)
+
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        # these are responses to the various prompts
+        user_input = f"""y
+n
+y
+"""
+        result = runner.invoke(main.cli, ['install', 'delete'], input=user_input)
+        expected_output = f"""
+KX Insights is deployed. Do you want to uninstall? [y/N]: y
+Uninstalling release insights
+
+The kxi-operator is deployed. Do you want to uninstall? [y/N]: n
+
+The assemblies CRDs ['assemblies.insights.kx.com', 'assemblyresources.insights.kx.com'] exist. Do you want to delete them? [y/N]: y
+Deleting CRD assemblies.insights.kx.com
+Deleting CRD assemblyresources.insights.kx.com
+"""
+    assert result.exit_code == 0
+    assert result.output == expected_output
+    assert subprocess_run_command == ['helm', 'uninstall', 'insights']
+    assert delete_crd_params == ('assemblyresources.insights.kx.com')
+
+def test_delete_removes_insights_operator_and_crd(mocker):
+    mocker.patch('subprocess.run', mocked_subprocess_run)
+    mocker.patch('kxicli.common.delete_crd', mocked_delete_crd)
+    mocker.patch('kxicli.commands.install.insights_installed', mocked_return_true)
+    mocker.patch('kxicli.commands.install.operator_installed', mocked_return_true)
+    mocker.patch('kxicli.common.crd_exists', mocked_return_true)
+
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        # these are responses to the various prompts
+        user_input = f"""y
+y
+y
+"""
+        result = runner.invoke(main.cli, ['install', 'delete'], input=user_input)
+        expected_output = f"""
+KX Insights is deployed. Do you want to uninstall? [y/N]: y
+Uninstalling release insights
+
+The kxi-operator is deployed. Do you want to uninstall? [y/N]: y
+Uninstalling release insights in namespace kxi-operator
+
+The assemblies CRDs ['assemblies.insights.kx.com', 'assemblyresources.insights.kx.com'] exist. Do you want to delete them? [y/N]: y
+Deleting CRD assemblies.insights.kx.com
+Deleting CRD assemblyresources.insights.kx.com
+"""
+    assert result.exit_code == 0
+    assert result.output == expected_output
+    assert subprocess_run_command == ['helm', 'uninstall', 'insights', '--namespace', 'kxi-operator']
+    assert delete_crd_params == ('assemblyresources.insights.kx.com')

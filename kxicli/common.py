@@ -126,3 +126,20 @@ def crd_exists(name):
             return False
         else:
             click.echo(f'Exception when calling ApiextensionsV1Api->list_custom_resource_definition: {exception}')
+
+def get_existing_crds(names):
+    crds = []
+    for n in names:
+        if crd_exists(n):
+            crds.append(n)
+    return crds
+
+def delete_crd(name):
+    load_kube_config()
+    api = k8s.client.ApiextensionsV1Api()
+
+    click.echo(f'Deleting CRD {name}')
+    try:
+        api.delete_custom_resource_definition(name)
+    except k8s.client.rest.ApiException as exception:
+        click.echo(f'Exception when calling ApiextensionsV1Api->delete_custom_resource_definition: {exception}')
