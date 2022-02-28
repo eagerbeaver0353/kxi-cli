@@ -12,9 +12,10 @@ def client():
 @client.command()
 @click.option('--hostname', default=lambda: common.get_default_val('hostname'), help=common.get_help_text('hostname'))
 @click.option('--name', required=True, help='Name of client to enrol')
+@click.option('--insert-topic', required=True, help='Topic to insert data on')
 @click.option('--client-id', default=lambda: common.get_default_val('client.id'), help='Client ID to request an access token with')
 @click.option('--client-secret', default=lambda: common.get_default_val('client.secret'), help='Client secret to request access token')
-def enrol(hostname, name, client_id, client_secret):
+def enrol(hostname, name, insert_topic, client_id, client_secret):
     """Enrol a client in the system"""
     token = common.get_access_token(hostname, client_id, client_secret)
     url = hostname + '/clientcontroller/enrol'
@@ -24,7 +25,7 @@ def enrol(hostname, name, client_id, client_secret):
     payload = {
         'name': name,
         'topics': {
-            'insert': 'data',
+            'insert': insert_topic,
             'query': 'requests'
         }
     }
