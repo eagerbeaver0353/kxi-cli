@@ -1,0 +1,20 @@
+global:
+  caIssuer:
+    name: kxi-certificate
+    secretName: kxi-certificate
+  image:
+    repository: test-repo.internal-insights.kx.com
+  imagePullSecrets:
+  - name: kxi-nexus-pull-secret
+  ingress:
+    host: test.internal-insights.kx.com
+  keycloak:
+    authURL: http://keycloak.keycloak.svc.cluster.local/auth/
+    guiClientSecret: gui-secret
+    operatorClientSecret: operator-secret
+  license:
+    secretName: kxi-license
+keycloak:
+  enabled: false
+keycloak-config-cli:
+  enabled: true

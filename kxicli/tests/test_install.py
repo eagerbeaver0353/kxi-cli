@@ -142,3 +142,13 @@ def test_get_existing_crds_return_existing_crds_only(mocker):
     assert install.common.get_existing_crds(['testcrd']) == ['testcrd']
     assert install.common.get_existing_crds(['testcrd', 'testcrd2']) == (['testcrd'])
     assert install.common.get_existing_crds(['testcrd', 'testcrd2', 'testcrd3']) == (['testcrd'])
+
+def test_sanitize_auth_url():
+    https_replaced = install.sanitize_auth_url('https://keycloak.keycloak.svc.cluster.local/auth/')
+    trailing_slash = install.sanitize_auth_url('https://keycloak.keycloak.svc.cluster.local/auth')
+    prepend_http = install.sanitize_auth_url('keycloak.keycloak.svc.cluster.local/auth')
+
+    expected = 'http://keycloak.keycloak.svc.cluster.local/auth/'
+    assert https_replaced == expected
+    assert trailing_slash == expected
+    assert prepend_http == expected

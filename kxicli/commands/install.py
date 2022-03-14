@@ -36,11 +36,12 @@ def install():
 @click.option('--operator-client-secret', default=lambda: default_val('operatorClientSecret'), help=help_text('operatorClientSecret'))
 @click.option('--keycloak-secret', default=lambda: default_val('keycloak.secret'), help=help_text('keycloak.secret'))
 @click.option('--keycloak-postgresql-secret', default=lambda: default_val('keycloak.postgresqlSecret'), help=help_text('keycloak.postgresqlSecret'))
+@click.option('--keycloak-auth-url', help=help_text('keycloak.authURL'))
 @click.option('--ingress-host', help=help_text('ingress.host'))
 @click.option('--ingress-cert-secret', default=lambda: default_val('ingress.cert.secret'), help=help_text('ingress.cert.secret'))
 @click.option('--output-file', default=lambda: default_val('install.outputFile'), help=help_text('install.outputFile'))
 def setup(namespace, chart_repo_name, license_secret, client_cert_secret, image_repo, image_pull_secret, gui_client_secret, operator_client_secret,
-                keycloak_secret, keycloak_postgresql_secret, ingress_host, ingress_cert_secret, output_file):
+                keycloak_secret, keycloak_postgresql_secret, keycloak_auth_url, ingress_host, ingress_cert_secret, output_file):
     """Perform necessary setup steps to install Insights"""
 
     click.secho('KX Insights Install Setup', bold=True)
@@ -78,8 +79,8 @@ def setup(namespace, chart_repo_name, license_secret, client_cert_secret, image_
         click.secho('\nClient certificate issuer', bold=True)
         client_cert_secret = prompt_for_client_cert(namespace, client_cert_secret)
 
-    if not('--keycloak-secret' in sys.argv and '--keycloak-postgresql-secret' in sys.argv):
-        click.secho('\nKeycloak', bold=True)
+    click.secho('\nKeycloak', bold=True)
+    if deploy_keycloak() and not('--keycloak-secret' in sys.argv and '--keycloak-postgresql-secret' in sys.argv):
         keycloak_secret, keycloak_postgresql_secret = prompt_for_keycloak(namespace, keycloak_secret, keycloak_postgresql_secret)
 
     if '--gui-client-secret' not in sys.argv:
@@ -118,8 +119,11 @@ def setup(namespace, chart_repo_name, license_secret, client_cert_secret, image_
                 'guiClientSecret': gui_client_secret,
                 'operatorClientSecret': operator_client_secret
             }
-        },
-        'keycloak': {
+        }
+    }
+
+    if deploy_keycloak():
+        install_file['keycloak'] = {
             'auth': {
                 'existingSecret': keycloak_secret
             },
@@ -127,11 +131,14 @@ def setup(namespace, chart_repo_name, license_secret, client_cert_secret, image_
                 'existingSecret': keycloak_postgresql_secret
             }
         }
-    }
+    else:
+        install_file['global']['keycloak']['authURL'] = sanitize_auth_url(keycloak_auth_url)
+        install_file['keycloak'] = {'enabled': False}
+        install_file['keycloak-config-cli'] = {'enabled': True}
 
     if ingress_self_managed:
-        install_file['global']['ingress']['certmanager']: False
-        install_file['global']['ingress']['tlsSecret']: ingress_cert_secret
+        install_file['global']['ingress']['certmanager'] = False
+        install_file['global']['ingress']['tlsSecret'] = ingress_cert_secret
 
     if os.path.exists(output_file):
         if not click.confirm(f'\n{output_file} file exists. Do you want to overwrite it with a new values file?'):
@@ -177,10 +184,10 @@ def run(ctx, filepath, release, repo, version, operator_version, image_pull_secr
             copy_secret(image_pull_secret, from_ns, operator_namespace)
             copy_secret(license_secret, from_ns, operator_namespace)
 
-            chart=repo+'/kxi-operator'
+            chart=f'{repo}/kxi-operator'
             helm_install(release, chart=chart, values_file=filepath, version=get_operator_version(version, operator_version), namespace=operator_namespace)
 
-    chart=repo+'/insights'
+    chart=f'{repo}/insights'
     helm_install(release, chart=chart, values_file=filepath, version=version)
 
 @install.command()
@@ -214,6 +221,22 @@ def get_operator_version(insights_version, operator_version):
 def sanitize_ingress_host(raw_string):
     """Santize a host name to allow it to be used"""
     return raw_string.replace('http://', '').replace('https://', '')
+
+def sanitize_auth_url(raw_string):
+    """Santize a Keycloak auth url to allow it to be used"""
+    trimmed = raw_string.strip()
+
+    if trimmed.startswith('https://'):
+        click.echo('Replacing https:// with http:// in --keycloak-auth-url')
+        trimmed = f"http://{trimmed.replace('https://', '')}"
+
+    if not trimmed.startswith('http://'):
+        trimmed = f'http://{trimmed}'
+
+    if not trimmed.endswith('/'):
+        trimmed = f'{trimmed}/'
+
+    return trimmed
 
 def prompt_for_license(namespace, license_secret):
     """Prompt for an existing license or create on if it doesn't exist"""
@@ -572,3 +595,7 @@ def operator_installed(release):
         return len(l) > 3
     except subprocess.CalledProcessError as e:
         click.echo(e)
+
+# Check if Keycloak is being deployed with Insights
+def deploy_keycloak():
+    return '--keycloak-auth-url' not in sys.argv

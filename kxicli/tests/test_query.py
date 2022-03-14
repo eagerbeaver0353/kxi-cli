@@ -13,7 +13,7 @@ def test_query_returns_empty_payload():
 
     # Mock the necessary endpoint
     responses.add(responses.POST,
-                test_host+'/auth/realms/insights/protocol/openid-connect/token',
+                f'{test_host}/auth/realms/insights/protocol/openid-connect/token',
                 json={'access_token': 'token'},
                 status=200)
     responses.add(responses.POST,

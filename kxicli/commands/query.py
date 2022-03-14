@@ -13,21 +13,22 @@ from kxicli import log
 @click.option('--client-secret', default=lambda: common.get_default_val('client.secret'), help='Client secret to request access token')
 @click.option('--table', required=True, help='Name of the table to query')
 @click.option('--counts', is_flag=True, help='Only return the column count and row count of the returned data')
-def query(hostname, client_id, client_secret, table, counts):
+@click.option('--realm', default=lambda: common.get_default_val('realm'), help=common.get_help_text('realm'))
+def query(hostname, client_id, client_secret, table, counts, realm):
     """Query a table for today's data"""
-    token = common.get_access_token(hostname, client_id, client_secret)
-    url = hostname + '/servicegateway/kxi/getData'
+    token = common.get_access_token(hostname, client_id, client_secret, realm)
+    url = f'{hostname}/servicegateway/kxi/getData'
     headers = {
         'Content-Type': 'application/json',
-        'Authorization': 'Bearer ' + token,
+        'Authorization': f'Bearer {token}',
         'Accepted': 'application/json'
     }
 
     today = datetime.datetime.today().strftime('%Y.%m.%d')
     payload = {
         'table': table,
-        'startTS': today + 'D00:00:00.000000000',
-        'endTS': today + 'D23:59:59.999999999',
+        'startTS': f'{today}D00:00:00.000000000',
+        'endTS': f'{today}D23:59:59.999999999',
         'region': 'Canada'
     }
 
