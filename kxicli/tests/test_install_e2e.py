@@ -5,7 +5,6 @@ import filecmp
 from click.testing import CliRunner
 from kxicli import main
 from kxicli import common
-from kxicli import config
 
 test_host = 'test.internal-insights.kx.com'
 test_chart_repo_name = 'internal-nexus-dev'
@@ -13,8 +12,10 @@ test_chart_repo_url = 'https://nexus.internal-insights.kx.com/repository/kx-helm
 test_image_repo = 'test-repo.internal-insights.kx.com'
 test_user = 'user'
 test_pass = 'password'
+test_auth_url = 'http://keycloak.keycloak.svc.cluster.local/auth/'
 
 test_val_file = os.path.dirname(__file__) + '/files/test-values.yaml'
+test_val_file_shared_keycloak = os.path.dirname(__file__) + '/files/test-values-shared-keycloak.yaml'
 test_k8s_config = os.path.dirname(__file__) + '/files/test-kube-config'
 test_lic_file = os.path.dirname(__file__) + '/files/test-license'
 test_output_file = os.path.dirname(__file__) + '/files/output-values.yaml'
@@ -623,3 +624,91 @@ Deleting CRD assemblyresources.insights.kx.com
     assert result.output == expected_output
     assert subprocess_run_command == ['helm', 'uninstall', 'insights', '--namespace', 'kxi-operator']
     assert delete_crd_params == ('assemblyresources.insights.kx.com')
+
+def test_install_when_not_deploying_keycloak(mocker):
+    mocker.patch('kxicli.commands.install.create_secret', mocked_create_secret)
+    mocker.patch('kxicli.commands.install.helm_add_repo', mocked_helm_add_repo)
+    mocker.patch('kxicli.commands.install.create_namespace', mocked_create_namespace)
+
+    # Ideally would patch sys.argv with args but can't find a way to get this to stick
+    #   'mocker.patch('sys.argv', args)'
+    # doesn't seem to be persist into the runner.invoke
+    args = ['install', 'setup', '--keycloak-auth-url', test_auth_url, '--output-file', test_output_file]
+    mocker.patch('kxicli.commands.install.deploy_keycloak', lambda:False)
+
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        # these are responses to the various prompts
+        user_input = f"""{test_host}
+{test_chart_repo_name}
+{test_chart_repo_url}
+{test_user}
+{test_pass}
+n
+{test_lic_file}
+{test_image_repo}
+n
+n
+{test_user}
+{test_pass}
+n
+y
+gui-secret
+y
+operator-secret
+n
+y
+"""
+        result = runner.invoke(main.cli, args, input=user_input)
+
+        # Transcript here is not intended because multi line strings are
+        # interpreted directly including indentation
+        expected_output = f"""KX Insights Install Setup
+
+Running in namespace {test_namespace} on the cluster {test_cluster}
+
+Please enter the hostname for the installation: {test_host}
+
+Chart details
+Please enter a name for the chart repository to set locally [{common.get_default_val('chart.repo.name')}]: {test_chart_repo_name}
+Please enter the chart repository URL to pull charts from [{common.get_default_val('chart.repo.url')}]: {test_chart_repo_url}
+Please enter the username for the chart repository: {test_user}
+Please enter the password for the chart repository (input hidden): 
+
+License details
+Do you have an existing license secret [y/N]: n
+Please enter the path to your kdb license: {test_lic_file}
+Secret kxi-license successfully created
+
+Image repository
+Please enter the image repository to pull images from [registry.dl.kx.com]: {test_image_repo}
+Do you have an existing image pull secret for {test_image_repo} [y/N]: n
+Credentials {test_user}@{test_image_repo} exist in {test_docker_config_json}, do you want to use these [y/N]: n
+Please enter the username for {test_image_repo}: {test_user}
+Please enter the password for {test_user} (input hidden): 
+Secret kxi-nexus-pull-secret successfully created
+
+Client certificate issuer
+Do you have an existing client certificate issuer [y/N]: n
+Secret kxi-certificate successfully created
+
+Keycloak
+Do you want to set a secret for the gui service account explicity [y/N]: y
+Please enter the secret (input hidden): 
+Do you want to set a secret for the operator service account explicity [y/N]: y
+Please enter the secret (input hidden): 
+
+Ingress
+Do you want to provide a self-managed cert for the ingress [y/N]: n
+
+{test_output_file} file exists. Do you want to overwrite it with a new values file? [y/N]: y
+
+KX Insights installation setup complete
+
+Helm values file for installation saved in {test_output_file}
+
+"""
+
+    assert result.exit_code == 0
+    assert result.output == expected_output
+    assert filecmp.cmp(test_output_file, test_val_file_shared_keycloak)

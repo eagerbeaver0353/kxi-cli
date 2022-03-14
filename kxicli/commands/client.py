@@ -15,12 +15,13 @@ def client():
 @click.option('--insert-topic', required=True, help='Topic to insert data on')
 @click.option('--client-id', default=lambda: common.get_default_val('client.id'), help='Client ID to request an access token with')
 @click.option('--client-secret', default=lambda: common.get_default_val('client.secret'), help='Client secret to request access token')
-def enrol(hostname, name, insert_topic, client_id, client_secret):
+@click.option('--realm', default=lambda: common.get_default_val('realm'), help=common.get_help_text('realm'))
+def enrol(hostname, name, insert_topic, client_id, client_secret, realm):
     """Enrol a client in the system"""
-    token = common.get_access_token(hostname, client_id, client_secret)
-    url = hostname + '/clientcontroller/enrol'
+    token = common.get_access_token(hostname, client_id, client_secret, realm)
+    url = f'{hostname}/clientcontroller/enrol'
     headers = {
-        'Authorization': 'Bearer ' + token
+        'Authorization': f'Bearer {token}'
     }
     payload = {
         'name': name,
@@ -42,12 +43,13 @@ def enrol(hostname, name, insert_topic, client_id, client_secret):
 @click.option('--name', required=True, help='Name of the client to remove')
 @click.option('--client-id', default=lambda: common.get_default_val('client.id'), help='Client ID to request an access token with')
 @click.option('--client-secret', default=lambda: common.get_default_val('client.secret'), help='Client secret to request access token with')
-def remove(hostname, name, client_id, client_secret):
+@click.option('--realm', default=lambda: common.get_default_val('realm'), help=common.get_help_text('realm'))
+def remove(hostname, name, client_id, client_secret, realm):
     """Remove a client from the system"""
-    token = common.get_access_token(hostname, client_id, client_secret)
-    url = hostname + '/clientcontroller/leave'
+    token = common.get_access_token(hostname, client_id, client_secret, realm)
+    url = f'{hostname}/clientcontroller/leave'
     headers = {
-        'Authorization': 'Bearer ' + token
+        'Authorization': f'Bearer {token}'
     }
     payload = {
         'name': name
@@ -65,7 +67,7 @@ def remove(hostname, name, client_id, client_secret):
 @click.option('--uid', required=True, help='Client UID to request info for')
 def info(hostname, uid):
     """Get certs and endpoints for a client"""
-    url = hostname + '/informationservice/details/' + uid
+    url = f'{hostname}/informationservice/details/{uid}'
     r = requests.get(url)
     if r:
         click.echo(json.dumps(r.json(), indent=2))
@@ -75,12 +77,15 @@ def info(hostname, uid):
 
 @client.command('list')
 @click.option('--hostname', default=lambda: common.get_default_val('hostname'), help=common.get_help_text('hostname'))
-def list_clients(hostname):
+@click.option('--realm', default=lambda: common.get_default_val('realm'), help=common.get_help_text('realm'))
+@click.option('--username', required=True, help='Keycloak admin username')
+@click.option('--password', required=True, help='Keycloak admin password')
+def list_clients(hostname, realm, username, password):
     """List Keycloak clients in the system"""
-    token = common.get_admin_token(hostname)
-    url = hostname + '/auth/admin/realms/insights/clients'
+    token = common.get_admin_token(hostname, username, password)
+    url = f'{hostname}/auth/admin/realms/{realm}/clients'
     headers = {
-        'Authorization': 'Bearer ' + token,
+        'Authorization': f'Bearer {token}',
         'Accept': 'application/json'
     }
 

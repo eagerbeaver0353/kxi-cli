@@ -20,12 +20,14 @@ HELP_TEXT = {
     'image.pullSecret': 'Secret containing credentials for the image repository ',
     'keycloak.secret': 'Secret containing Keycloak admin password',
     'keycloak.postgresqlSecret': 'Secret containing Keycloak postgresql passwords',
+    'keycloak.authURL': 'Auth URL for Keycloak',
     'ingress.host': 'Hostname for the installation',
     'ingress.cert.secret': 'Secret containing self-managed TLS cert and key for the ingress',
     'install.outputFile': 'Name for the generated values file',
     'release.name': 'Release name for the install',
     'guiClientSecret': 'Keycloak client secret for gui service account',
-    'operatorClientSecret': 'Keycloak client secret for operator service account'
+    'operatorClientSecret': 'Keycloak client secret for operator service account',
+    'realm': 'Name of Keycloak realm'
 }
 
 # Default values for commands if needed
@@ -40,7 +42,8 @@ DEFAULT_VALUES = {
     'keycloak.postgresqlSecret': 'kxi-postgresql',
     'ingress.cert.secret': 'kxi-ingress-cert',
     'install.outputFile': 'values.yaml',
-    'release.name': 'insights'
+    'release.name': 'insights',
+    'realm': 'insights'
 }
 
 # Flag to indicate if k8s.config.load_config has already been called
@@ -63,10 +66,10 @@ def get_default_val(option):
 
     return ''
 
-def get_access_token(hostname, client_id, client_secret):
+def get_access_token(hostname, client_id, client_secret, realm):
     """Get Keycloak client access token"""
     log.debug('Requesting access token')
-    url = hostname + '/auth/realms/insights/protocol/openid-connect/token'
+    url = f'{hostname}/auth/realms/{realm}/protocol/openid-connect/token'
     headers = {
         'Content-Type' : 'application/x-www-form-urlencoded'
     }
@@ -84,19 +87,18 @@ def get_access_token(hostname, client_id, client_secret):
     click.echo(r.text)
     sys.exit(1)
 
-def get_admin_token(hostname):
+def get_admin_token(hostname, username, password):
     """Get Keycloak Admin API token from hostname"""
     log.debug('Requesting admin access token')
-    url = hostname + '/auth/realms/master/protocol/openid-connect/token'
+    url = f'{hostname}/auth/realms/master/protocol/openid-connect/token'
     headers = {
         'Content-Type' : 'application/x-www-form-urlencoded'
     }
 
-    #TODO: Make these configurable
     payload = {
         'grant_type': 'password',
-        'username': 'user',
-        'password': 'admin',
+        'username': username,
+        'password': password,
         'client_id': 'admin-cli'
     }
     r = requests.post(url, headers=headers, data=payload)
