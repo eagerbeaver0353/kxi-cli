@@ -39,3 +39,6 @@ cli.add_command(assembly.assembly)
 cli.add_command(auth.auth)
 cli.add_command(install.install)
 cli.add_command(configure)
+
+if __name__ == '__main__':
+    cli()  # pylint: disable=no-value-for-parameter
