@@ -165,14 +165,10 @@ def run(ctx, filepath, release, repo, version, operator_version, image_pull_secr
     """Install KX Insights with a values file"""
 
     # Run setup prompts if necessary
-    if '--filepath' not in sys.argv:
-        if click.confirm('\nNo values file provided, do you want to generate one now'):
-            click.echo('Invoking "kxi install setup"\n')
-            filepath, repo = ctx.invoke(setup)
-        else:
-            filepath = click.prompt('Please enter the path to the values file for the install')
-
-
+    if filepath is None:
+        click.echo('No values file provided, invoking "kxi install setup"\n')
+        filepath, repo = ctx.invoke(setup)
+        
     if operator_installed(release):
         click.echo('\nkxi-operator already installed')
     else:
@@ -208,6 +204,14 @@ def delete(release):
             for i in crds:
                 common.delete_crd(i)
 
+@install.command()
+@click.option('--repo', default=lambda: default_val('chart.repo.name'), help=help_text('chart.repo.name'))
+def list_versions(repo):
+    """
+    List available versions of KX Insights
+    """
+    helm_list_versions(repo)
+    
 def get_operator_version(insights_version, operator_version):
     """Determine operator version to use"""
     if operator_version is None:
@@ -491,6 +495,18 @@ def helm_add_repo(repo, url, username, password):
     except subprocess.CalledProcessError:
         # Pass here so that the password isn't printed in the log
         pass
+
+def helm_list_versions(repo):
+    """Call 'helm search repo' using subprocess.run"""
+    log.debug('Attempting to call: helm search repo')
+    try:
+        chart=f'{repo}/insights'
+        click.echo(f'Listing available KX Insights versions in repo {repo}')
+        
+        subprocess.run(['helm', 'search', 'repo', chart], check=True)
+    except subprocess.CalledProcessError as e:
+        click.echo(e)
+
 
 def helm_install(release, chart, values_file, version=None, namespace=None):
     """Call 'helm install' using subprocess.run"""

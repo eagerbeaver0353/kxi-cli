@@ -6,6 +6,8 @@ from click.testing import CliRunner
 from kxicli import main
 from kxicli import common
 
+common.config.load_config("default")
+
 test_host = 'test.internal-insights.kx.com'
 test_chart_repo_name = 'internal-nexus-dev'
 test_chart_repo_url = 'https://nexus.internal-insights.kx.com/repository/kx-helm-charts-dev'
@@ -42,6 +44,9 @@ def mocked_subprocess_run(base_command, check=True):
     subprocess_run_command = base_command
     pass
 
+def mocked_helm_list_returns_empty_json(base_command):
+    return '[]'
+    
 def mocked_delete_crd(name):
     print(f'Deleting CRD {name}')
     global delete_crd_params
@@ -420,20 +425,106 @@ def test_install_run_when_provided_file(mocker):
     runner = CliRunner()
     with runner.isolated_filesystem():
         # these are responses to the various prompts
-        user_input = f"""n
-{test_val_file}
-"""
-        result = runner.invoke(main.cli, ['install', 'run', '--version', '1.2.3'], input=user_input)
+        result = runner.invoke(main.cli, ['install', 'run', '--version', '1.2.3', '--filepath', test_val_file])
         expected_output = f"""
-No values file provided, do you want to generate one now [y/N]: n
-Please enter the path to the values file for the install: {test_val_file}
-
 kxi-operator already installed
 Installing chart kx-insights/insights with values file from {test_val_file}
 """    
     assert result.exit_code == 0
     assert result.output == expected_output
     assert subprocess_run_command == ['helm', 'install', '-f', test_val_file, 'insights', 'kx-insights/insights', '--version', '1.2.3']
+
+def test_install_run_when_no_file_provided(mocker):
+    mocker.patch('kxicli.commands.install.create_secret', mocked_create_secret)
+    mocker.patch('subprocess.run', mocked_subprocess_run)
+    mocker.patch('subprocess.check_output', mocked_helm_list_returns_empty_json)
+    mocker.patch('kxicli.commands.install.insights_installed', mocked_return_true)
+    mocker.patch('kxicli.commands.install.create_namespace', mocked_create_namespace)
+    
+    f = open(test_output_file, 'w')
+    f.write("a test values file")
+    f.close()
+    
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        # these are responses to the various prompts
+                # these are responses to the various prompts
+        user_input = f"""{test_host}
+{test_chart_repo_name}
+{test_chart_repo_url}
+{test_user}
+{test_pass}
+y
+{common.get_default_val('license.secret')}
+{test_image_repo}
+y
+{common.get_default_val('image.pullSecret')}
+y
+{common.get_default_val('client.cert.secret')}
+y
+{common.get_default_val('keycloak.secret')}
+y
+{common.get_default_val('keycloak.postgresqlSecret')}
+y
+gui-secret
+y
+operator-secret
+n
+n
+"""
+        result = runner.invoke(main.cli, ['install', 'run', '--version', '1.2.3'], input=user_input)
+        
+        expected_output = f"""No values file provided, invoking "kxi install setup"
+
+KX Insights Install Setup
+
+Running in namespace {test_namespace} on the cluster {test_cluster}
+
+Please enter the hostname for the installation: {test_host}
+
+Chart details
+Please enter a name for the chart repository to set locally [kx-insights]: {test_chart_repo_name}
+Please enter the chart repository URL to pull charts from [https://nexus.dl.kx.com/repository/kx-insights-charts]: {test_chart_repo_url}
+Please enter the username for the chart repository: {test_user}
+Please enter the password for the chart repository (input hidden): 
+
+License details
+Do you have an existing license secret [y/N]: y
+Please enter the name of the existing secret: {common.get_default_val('license.secret')}
+
+Image repository
+Please enter the image repository to pull images from [registry.dl.kx.com]: {test_image_repo}
+Do you have an existing image pull secret for {test_image_repo} [y/N]: y
+Please enter the name of the existing secret: {common.get_default_val('image.pullSecret')}
+
+Client certificate issuer
+Do you have an existing client certificate issuer [y/N]: y
+Please enter the name of the existing secret: {common.get_default_val('client.cert.secret')}
+
+Keycloak
+Do you have an existing keycloak secret [y/N]: y
+Please enter the name of the existing secret: {common.get_default_val('keycloak.secret')}
+Do you have an existing keycloak postgresql secret [y/N]: y
+Please enter the name of the existing secret: {common.get_default_val('keycloak.postgresqlSecret')}
+Do you want to set a secret for the gui service account explicity [y/N]: y
+Please enter the secret (input hidden): 
+Do you want to set a secret for the operator service account explicity [y/N]: y
+Please enter the secret (input hidden): 
+
+Ingress
+Do you want to provide a self-managed cert for the ingress [y/N]: n
+
+KX Insights installation setup complete
+
+Helm values file for installation saved in values.yaml
+
+
+kxi-operator not found. Do you want to install it? [y/N]: n
+Installing chart internal-nexus-dev/insights with values file from values.yaml
+"""    
+    assert result.exit_code == 0
+    assert result.output == expected_output
+    assert subprocess_run_command == ['helm', 'install', '-f', 'values.yaml', 'insights', test_chart_repo_name+'/insights', '--version', '1.2.3']
 
 def test_install_run_installs_operator(mocker):
     mocker.patch('subprocess.run', mocked_subprocess_run)
@@ -446,15 +537,10 @@ def test_install_run_installs_operator(mocker):
     runner = CliRunner()
     with runner.isolated_filesystem():
         # these are responses to the various prompts
-        user_input = f"""n
-{test_val_file}
-y
+        user_input = f"""y
 """
-        result = runner.invoke(main.cli, ['install', 'run', '--version', '1.2.3'], input=user_input)
+        result = runner.invoke(main.cli, ['install', 'run', '--version', '1.2.3', '--filepath', test_val_file], input=user_input)
         expected_output = f"""
-No values file provided, do you want to generate one now [y/N]: n
-Please enter the path to the values file for the install: {test_val_file}
-
 kxi-operator not found. Do you want to install it? [y/N]: y
 Installing chart kx-insights/kxi-operator with values file from {test_val_file}
 Installing chart kx-insights/insights with values file from {test_val_file}
@@ -484,6 +570,37 @@ Uninstalling release insights
     assert subprocess_run_command == ['helm','uninstall','insights']
     assert delete_crd_params == ()
 
+
+def test_list_versions_default_repo(mocker):
+    mocker.patch('subprocess.run', mocked_subprocess_run)
+    mocker.patch('kxicli.commands.install.insights_installed', mocked_return_true)
+    mocker.patch('kxicli.commands.install.operator_installed', mocked_return_false)
+    mocker.patch('kxicli.common.crd_exists', mocked_return_false)
+    
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        result = runner.invoke(main.cli, ['install', 'list-versions'])
+        expected_output = f"""Listing available KX Insights versions in repo kx-insights
+"""
+    assert result.exit_code == 0
+    assert result.output == expected_output
+    assert subprocess_run_command == ['helm', 'search', 'repo', 'kx-insights/insights']
+
+def test_list_versions_custom_repo(mocker):
+    mocker.patch('subprocess.run', mocked_subprocess_run)
+    mocker.patch('kxicli.commands.install.insights_installed', mocked_return_true)
+    mocker.patch('kxicli.commands.install.operator_installed', mocked_return_false)
+    mocker.patch('kxicli.common.crd_exists', mocked_return_false)
+    
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        result = runner.invoke(main.cli, ['install', 'list-versions', '--repo', test_chart_repo_name])
+        expected_output = f"""Listing available KX Insights versions in repo {test_chart_repo_name}
+"""
+    assert result.exit_code == 0
+    assert result.output == expected_output
+    assert subprocess_run_command == ['helm', 'search', 'repo', test_chart_repo_name+'/insights']
+    
 def test_delete_specify_release(mocker):
     mocker.patch('subprocess.run', mocked_subprocess_run)
     mocker.patch('kxicli.commands.install.insights_installed', mocked_return_true)
