@@ -19,16 +19,47 @@ def _assembly_status(namespace, name, print_status=False):
 
     is_running = [ pod.status.phase == 'Running' for pod in res.items ]
 
+    stat_list = []
     if print_status:
-        click.echo('POD\tSTATUS')
         for pod in res.items:
-            click.echo(f'{pod.metadata.name}: {pod.status.phase}')
+            stat_list.append((pod.metadata.name, pod.status.phase))
+            
+        _print_2d_list(stat_list, ['POD', 'STATUS'])
 
     if all(is_running):
         return True
     else:
         return False
 
+def _list_assemblies(namespace):
+    """List assemblies"""
+    common.load_kube_config()
+    v1 = k8s.client.CustomObjectsApi()
+    res = v1.list_namespaced_custom_object(group="insights.kx.com", version="v1", namespace=namespace, plural="assemblies")
+    
+    asm_list = []
+    if 'items' in res:
+        for asm in res['items']:
+            if 'metadata' in asm and 'name' in asm['metadata']:
+                asm_list.append((asm['metadata']['name'], asm['metadata']['namespace']))
+                
+    _print_2d_list(asm_list, ['ASSEMBLY NAME', 'NAMESPACE'])
+    
+    return True
+
+def _print_2d_list(data, headers):
+    """
+    Prints a col-formatted 2d list
+    """
+    first_col = [row[0] for row in data]
+    padding = len(max(headers, key=len)) + 2
+    if len(data) != 0:
+        padding =len(max(first_col, key=len)) + 2
+
+    click.echo(f'{headers[0]:{padding}}{headers[1]}')
+    for row in data:
+        click.echo(f'{row[0]:{padding}}{row[1]}')
+    
 @assembly.command()
 @click.option('--namespace', default=lambda: common.get_default_val('namespace'), help='Namespace to create assembly in')
 @click.option('--filepath', required=True, help='Path to assembly file')
@@ -73,6 +104,15 @@ def create(namespace, filepath, wait):
 def status(namespace, name):
     """Print status of the assembly"""
     if _assembly_status(namespace, name, print_status=True):
+        sys.exit(0)
+    else:
+        sys.exit(1)
+        
+@assembly.command()
+@click.option('--namespace', default=lambda: common.get_default_val('namespace'), help='Namespace that the assemblies are in')
+def list(namespace):
+    """List assemblies"""
+    if _list_assemblies(namespace):
         sys.exit(0)
     else:
         sys.exit(1)
