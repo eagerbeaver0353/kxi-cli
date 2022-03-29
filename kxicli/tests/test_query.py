@@ -8,7 +8,7 @@ test_host='https://test.kx.com'
 @pytest.mark.skip(reason="'kxi query' is disabled until KXI-6201 is implemented")
 @responses.activate
 def test_query_returns_empty_payload():
-    """Test that empty responses returned 'Emtpy payload'"""
+    """Test that empty responses returned 'Empty payload'"""
     runner = CliRunner()
 
     # Mock the necessary endpoint

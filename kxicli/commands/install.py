@@ -223,11 +223,11 @@ def get_operator_version(insights_version, operator_version):
     return operator_version
 
 def sanitize_ingress_host(raw_string):
-    """Santize a host name to allow it to be used"""
+    """Sanitize a host name to allow it to be used"""
     return raw_string.replace('http://', '').replace('https://', '')
 
 def sanitize_auth_url(raw_string):
-    """Santize a Keycloak auth url to allow it to be used"""
+    """Sanitize a Keycloak auth url to allow it to be used"""
     trimmed = raw_string.strip()
 
     if trimmed.startswith('https://'):
@@ -584,7 +584,7 @@ def copy_secret(name, from_ns, to_ns):
             sys.exit(1)
 
 def prompt_for_client_secret(client_name):
-    if click.confirm(f'Do you want to set a secret for the {client_name} service account explicity'):
+    if click.confirm(f'Do you want to set a secret for the {client_name} service account explicitly'):
         client_secret = click.prompt('Please enter the secret (input hidden)', hide_input=True)
     else:
         click.echo(f'Randomly generating client secret for {client_name} and setting in values file, record this value for reuse during upgrade')
