@@ -70,6 +70,8 @@ whitesource-dep-scan:
   rules:
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
   variables:
+    KUBERNETES_MEMORY_REQUEST: "600Mi"
+    KUBERNETES_MEMORY_LIMIT: "1Gi"
     WS_PRODUCTNAME: "insights"
     WS_PRODUCTVERSION: "main"
     WS_PROJECTNAME: "$CI_PROJECT_NAME"
