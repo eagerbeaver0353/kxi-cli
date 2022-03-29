@@ -159,3 +159,13 @@ sonarqube-check:
   allow_failure: true
   rules:
     - !reference [ .default-rules, rules ]
+
+spell-check:
+  image: node:17-alpine
+  stage: test
+  rules:
+    - !reference [ .default-rules, rules ]
+  before_script:
+    - npm install -g cspell@5.19.3
+  script:
+    - cspell "kxicli/**/*.py"

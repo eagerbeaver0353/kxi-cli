@@ -139,9 +139,9 @@ Do you have an existing keycloak postgresql secret [y/N]: n
 Please enter the Postgresql postgres password (input hidden): 
 Please enter the Postgresql user password (input hidden): 
 Secret kxi-postgresql successfully created
-Do you want to set a secret for the gui service account explicity [y/N]: n
+Do you want to set a secret for the gui service account explicitly [y/N]: n
 Randomly generating client secret for gui and setting in values file, record this value for reuse during upgrade
-Do you want to set a secret for the operator service account explicity [y/N]: n
+Do you want to set a secret for the operator service account explicitly [y/N]: n
 Randomly generating client secret for operator and setting in values file, record this value for reuse during upgrade
 
 Ingress
@@ -221,9 +221,9 @@ Do you have an existing keycloak secret [y/N]: y
 Please enter the name of the existing secret: {common.get_default_val('keycloak.secret')}
 Do you have an existing keycloak postgresql secret [y/N]: y
 Please enter the name of the existing secret: {common.get_default_val('keycloak.postgresqlSecret')}
-Do you want to set a secret for the gui service account explicity [y/N]: y
+Do you want to set a secret for the gui service account explicitly [y/N]: y
 Please enter the secret (input hidden): 
-Do you want to set a secret for the operator service account explicity [y/N]: y
+Do you want to set a secret for the operator service account explicitly [y/N]: y
 Please enter the secret (input hidden): 
 
 Ingress
@@ -305,9 +305,9 @@ Do you have an existing keycloak secret [y/N]: y
 Please enter the name of the existing secret: {common.get_default_val('keycloak.secret')}
 Do you have an existing keycloak postgresql secret [y/N]: y
 Please enter the name of the existing secret: {common.get_default_val('keycloak.postgresqlSecret')}
-Do you want to set a secret for the gui service account explicity [y/N]: y
+Do you want to set a secret for the gui service account explicitly [y/N]: y
 Please enter the secret (input hidden): 
-Do you want to set a secret for the operator service account explicity [y/N]: y
+Do you want to set a secret for the operator service account explicitly [y/N]: y
 Please enter the secret (input hidden): 
 
 Ingress
@@ -393,9 +393,9 @@ Do you have an existing keycloak secret [y/N]: y
 Please enter the name of the existing secret: {common.get_default_val('keycloak.secret')}
 Do you have an existing keycloak postgresql secret [y/N]: y
 Please enter the name of the existing secret: {common.get_default_val('keycloak.postgresqlSecret')}
-Do you want to set a secret for the gui service account explicity [y/N]: y
+Do you want to set a secret for the gui service account explicitly [y/N]: y
 Please enter the secret (input hidden): 
-Do you want to set a secret for the operator service account explicity [y/N]: y
+Do you want to set a secret for the operator service account explicitly [y/N]: y
 Please enter the secret (input hidden): 
 
 Ingress
@@ -506,9 +506,9 @@ Do you have an existing keycloak secret [y/N]: y
 Please enter the name of the existing secret: {common.get_default_val('keycloak.secret')}
 Do you have an existing keycloak postgresql secret [y/N]: y
 Please enter the name of the existing secret: {common.get_default_val('keycloak.postgresqlSecret')}
-Do you want to set a secret for the gui service account explicity [y/N]: y
+Do you want to set a secret for the gui service account explicitly [y/N]: y
 Please enter the secret (input hidden): 
-Do you want to set a secret for the operator service account explicity [y/N]: y
+Do you want to set a secret for the operator service account explicitly [y/N]: y
 Please enter the secret (input hidden): 
 
 Ingress
@@ -810,9 +810,9 @@ Do you have an existing client certificate issuer [y/N]: n
 Secret kxi-certificate successfully created
 
 Keycloak
-Do you want to set a secret for the gui service account explicity [y/N]: y
+Do you want to set a secret for the gui service account explicitly [y/N]: y
 Please enter the secret (input hidden): 
-Do you want to set a secret for the operator service account explicity [y/N]: y
+Do you want to set a secret for the operator service account explicitly [y/N]: y
 Please enter the secret (input hidden): 
 
 Ingress

@@ -1,4 +1,4 @@
-"""This install test is meant to unit test the inidividal functions in the install command"""
+"""This install test is meant to unit test the individual functions in the install command"""
 import io
 import os
 import base64
