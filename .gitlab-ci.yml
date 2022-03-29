@@ -1,7 +1,7 @@
 ---
 default:
   tags:
-    - k8s
+    - k8s-gcp-tools
   interruptible: true
 
 include:
@@ -13,6 +13,7 @@ include:
 stages:
   - build
   - test
+  - sonarqube
   - publish
   - docs
 
@@ -24,9 +25,17 @@ cache:
     - .cache/pip
   key: "$CI_JOB_NAME"
 
+.default-rules:
+  rules:
+    - if: $CI_COMMIT_TAG
+    - if: $CI_COMMIT_BRANCH && $CI_COMMIT_REF_PROTECTED == "true"
+    - if: $CI_MERGE_REQUEST_IID
+
 build dist:
   stage: build
   image: python:3
+  rules:
+    - !reference [ .default-rules, rules ]
   script:
     - python3 -m pip install --upgrade build
     - python3 -m build
@@ -37,6 +46,8 @@ build dist:
 .run-tests:
   stage: test
   image: python:3
+  rules:
+    - !reference [ .default-rules, rules ]
   script:
     - pip install -r kxicli/tests/requirements.txt
     - pip install dist/*.whl
@@ -48,6 +59,7 @@ build dist:
   artifacts:
     paths:
       - htmlcov
+      - coverage.xml
     reports:
       cobertura: coverage.xml
 
@@ -62,7 +74,6 @@ whitesource-dep-scan:
     WS_PRODUCTVERSION: "main"
     WS_PROJECTNAME: "$CI_PROJECT_NAME"
     WS_PROJECTVERSION: "$CI_DEFAULT_BRANCH"
-
 
 run tests 3.6:
   extends: .run-tests
@@ -97,7 +108,6 @@ publish package:
   rules:
     - if: $CI_COMMIT_TAG
 
-
 publish package external:
   stage: publish
   image: python:3
@@ -128,3 +138,22 @@ pages:
       when: always
     - when: never
 
+sonarqube-check:
+  stage: sonarqube
+  image:
+    name: sonarsource/sonar-scanner-cli:latest
+    entrypoint: [""]
+  variables:
+    SONAR_USER_HOME: "${CI_PROJECT_DIR}/.sonar"  # Defines the location of the analysis task cache
+    GIT_DEPTH: "0"  # Tells git to fetch all the branches of the project, required by the analysis task
+  cache:
+    key: "${CI_JOB_NAME}"
+    paths:
+      - .sonar/cache
+  script:
+    - sonar-scanner
+  needs:
+    - run tests 3.8
+  allow_failure: true
+  rules:
+    - !reference [ .default-rules, rules ]
