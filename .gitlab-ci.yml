@@ -9,6 +9,7 @@ include:
     ref: main
     file:
       - 'insights/whitesource.yaml'
+      - 'insights/test.yaml'
 
 stages:
   - build
@@ -161,11 +162,10 @@ sonarqube-check:
     - !reference [ .default-rules, rules ]
 
 spell-check:
-  image: node:17-alpine
   stage: test
+  extends:
+    - .cspell
   rules:
     - !reference [ .default-rules, rules ]
-  before_script:
-    - npm install -g cspell@5.19.3
   script:
     - cspell "kxicli/**/*.py"
