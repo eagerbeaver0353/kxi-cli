@@ -190,17 +190,14 @@ def run(ctx, filepath, release, repo, version, operator_version, image_pull_secr
 @click.option('--release', default=lambda: default_val('release.name'), help=help_text('release.name'))
 def delete(release):
     """Uninstall KX Insights"""
-    if insights_installed(release):
-        if click.confirm('\nKX Insights is deployed. Do you want to uninstall?'):
+    if insights_installed(release) and click.confirm('\nKX Insights is deployed. Do you want to uninstall?'):
             helm_uninstall(release)  
 
-    if operator_installed(release):
-        if click.confirm('\nThe kxi-operator is deployed. Do you want to uninstall?'):
+    if operator_installed(release) and click.confirm('\nThe kxi-operator is deployed. Do you want to uninstall?'):
             helm_uninstall(release, namespace=operator_namespace)        
 
     crds = common.get_existing_crds(['assemblies.insights.kx.com','assemblyresources.insights.kx.com'])
-    if len(crds) > 0:
-        if click.confirm(f'\nThe assemblies CRDs {crds} exist. Do you want to delete them?'):
+    if len(crds) > 0 and click.confirm(f'\nThe assemblies CRDs {crds} exist. Do you want to delete them?'):
             for i in crds:
                 common.delete_crd(i)
 
@@ -555,11 +552,10 @@ def create_namespace(name):
     ns = k8s.client.V1Namespace()
     ns.metadata = k8s.client.V1ObjectMeta(name=name)
     try:
-        api_response = api.create_namespace(ns)
+        api.create_namespace(ns)
     except k8s.client.rest.ApiException as exception:
-        if exception.status == 409:
-            pass
-        else:
+        # 409 is a conflict, this occurs if the namespace already exists
+        if not exception.status == 409:
             log.error(f'Exception when trying to create namespace {exception}')
             sys.exit(1)
 
@@ -577,9 +573,7 @@ def copy_secret(name, from_ns, to_ns):
     try:
         secret = api.create_namespaced_secret(namespace=to_ns, body=secret)
     except k8s.client.rest.ApiException as exception:
-        if exception.status == 409:
-            pass
-        else:
+        if not exception.status == 409:
             log.error(f'Exception when trying to create secret {exception}')
             sys.exit(1)
 

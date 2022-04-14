@@ -9,12 +9,12 @@ global:
   ingress:
     host: test.internal-insights.kx.com
   keycloak:
+    authURL: http://keycloak.keycloak.svc.cluster.local/auth/
     guiClientSecret: gui-secret
     operatorClientSecret: operator-secret
   license:
     secretName: kxi-license
 keycloak:
-  auth:
-    existingSecret: kxi-keycloak
-  postgresql:
-    existingSecret: kxi-postgresql
+  enabled: false
+keycloak-config-cli:
+  enabled: true

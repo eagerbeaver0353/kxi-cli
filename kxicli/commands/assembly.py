@@ -1,50 +1,91 @@
 import time
 import random
 import sys
+import json
 import yaml
 import click
 import kubernetes as k8s
 from kxicli import common
 from kxicli import log
 
+API_GROUP = 'insights.kx.com'
+API_VERSION = 'v1'
+API_PLURAL = 'assemblies'
+
 @click.group()
 def assembly():
     """Assembly interaction commands"""
 
+def _format_assembly_status(assembly):
+    """Format Kubernetes assembly status into CLI assembly status"""
+    status = {}
+    if 'status' in assembly and 'conditions' in assembly['status']:
+        for d in assembly['status']['conditions']:
+            cdata = { 'status': d['status'] }
+            if 'message' in d:
+                cdata['message'] = d['message']
+            if 'reason' in d:
+                cdata['reason'] = d['reason']
+
+            status[d['type']] = cdata
+
+    return status
+
 def _assembly_status(namespace, name, print_status=False):
     """Get status of assembly"""
     common.load_kube_config()
-    v1 = k8s.client.CoreV1Api()
-    res = v1.list_namespaced_pod(namespace, label_selector=f'insights.kx.com/app={name}')
+    api = k8s.client.CustomObjectsApi()
 
-    is_running = [ pod.status.phase == 'Running' for pod in res.items ]
+    try:
+        res = api.get_namespaced_custom_object(
+            group=API_GROUP,
+            version=API_VERSION,
+            namespace=namespace,
+            plural=API_PLURAL,
+            name=name,
+            )
+    except k8s.client.rest.ApiException as exception:
+        if exception.status == 404:
+            click.echo(f'Assembly {name} not found')
+            sys.exit(1)
+        else:
+            click.echo(f'Exception when calling CustomObjectsApi->get_namespaced_custom_object: {exception}\n')
 
-    stat_list = []
+    assembly_status = _format_assembly_status(res)
+
     if print_status:
-        for pod in res.items:
-            stat_list.append((pod.metadata.name, pod.status.phase))
-            
-        _print_2d_list(stat_list, ['POD', 'STATUS'])
+        if len(assembly_status) == 0:
+            click.echo('Assembly not yet deployed')
+            sys.exit(1)
+        else:
+            click.echo(json.dumps(assembly_status, indent=2))
 
-    if all(is_running):
-        return True
-    else:
+    if 'AssemblyReady' not in assembly_status:
+        click.echo('Could not find the "AssemblyReady" condition in the Assembly Status')
         return False
+
+    return assembly_status['AssemblyReady']['status'] == 'True'
+
 
 def _list_assemblies(namespace):
     """List assemblies"""
     common.load_kube_config()
-    v1 = k8s.client.CustomObjectsApi()
-    res = v1.list_namespaced_custom_object(group="insights.kx.com", version="v1", namespace=namespace, plural="assemblies")
-    
+    api = k8s.client.CustomObjectsApi()
+    res = api.list_namespaced_custom_object(
+        group=API_GROUP,
+        version=API_VERSION,
+        namespace=namespace,
+        plural=API_PLURAL,
+        )
+
     asm_list = []
     if 'items' in res:
         for asm in res['items']:
             if 'metadata' in asm and 'name' in asm['metadata']:
                 asm_list.append((asm['metadata']['name'], asm['metadata']['namespace']))
-                
+
     _print_2d_list(asm_list, ['ASSEMBLY NAME', 'NAMESPACE'])
-    
+
     return True
 
 def _print_2d_list(data, headers):
@@ -59,7 +100,7 @@ def _print_2d_list(data, headers):
     click.echo(f'{headers[0]:{padding}}{headers[1]}')
     for row in data:
         click.echo(f'{row[0]:{padding}}{row[1]}')
-    
+
 @assembly.command()
 @click.option('--namespace', default=lambda: common.get_default_val('namespace'), help='Namespace to create assembly in')
 @click.option('--filepath', required=True, help='Path to assembly file')
@@ -89,25 +130,30 @@ def create(namespace, filepath, wait):
         body=body,
     )
 
-    click.echo(f'Custom assembly resource {body["metadata"]["name"]} created!')
-
     if wait:
-        with click.progressbar(range(10), label='Waiting for all pods to be running') as bar:
+        with click.progressbar(range(10), label='Waiting for assembly to enter "Ready" state') as bar:
             for n in bar:
                 time.sleep((2 ** n) + (random.randint(0, 1000) / 1000))
                 if _assembly_status(namespace, body['metadata']['name']):
                     sys.exit(0)
 
+    click.echo(f'Custom assembly resource {body["metadata"]["name"]} created!')
+
 @assembly.command()
 @click.option('--namespace', default=lambda: common.get_default_val('namespace'), help='Namespace that the assembly is in')
 @click.option('--name', required=True, help='Name of the assembly get the status of')
-def status(namespace, name):
+@click.option('--wait-for-ready', is_flag=True, help='Wait for assembly to reach "Ready" state')
+def status(namespace, name, wait_for_ready):
     """Print status of the assembly"""
-    if _assembly_status(namespace, name, print_status=True):
-        sys.exit(0)
+    if wait_for_ready:
+        with click.progressbar(range(10), label='Waiting for assembly to enter "Ready" state') as bar:
+            for n in bar:
+                time.sleep((2 ** n) + (random.randint(0, 1000) / 1000))
+                if _assembly_status(namespace, name, print_status=True):
+                    sys.exit(0)
     else:
-        sys.exit(1)
-        
+        _assembly_status(namespace, name, print_status=True)
+
 @assembly.command()
 @click.option('--namespace', default=lambda: common.get_default_val('namespace'), help='Namespace that the assemblies are in')
 def list(namespace):
@@ -126,22 +172,19 @@ def delete(namespace, name, wait, force):
     """Deletes an assembly given its name"""
     click.echo(f'Deleting assembly {name}')
 
-    if not force:
-        if click.confirm(f'Are you sure you want to delete {name}'):
-            pass
-        else:
-            click.echo(f'Not deleting assembly {name}')
-            sys.exit(0)
+    if not force and not click.confirm(f'Are you sure you want to delete {name}'):
+        click.echo(f'Not deleting assembly {name}')
+        sys.exit(0)
 
     common.load_kube_config()
     api = k8s.client.CustomObjectsApi()
 
     try:
         api.delete_namespaced_custom_object(
-            group='insights.kx.com',
-            version=get_preferred_api_version('insights.kx.com'),
+            group=API_GROUP,
+            version=get_preferred_api_version(API_GROUP),
             namespace=namespace,
-            plural='assemblies',
+            plural=API_VERSION,
             name=name,
             )
     except k8s.client.rest.ApiException as exception:
@@ -152,13 +195,20 @@ def delete(namespace, name, wait, force):
             click.echo(f'Exception when calling CustomObjectsApi->delete_namespaced_custom_object: {exception}\n')
 
     if wait:
-        v1 = k8s.client.CoreV1Api()
-        with click.progressbar(range(10), label='Waiting for all pods to be deleted') as bar:
+        with click.progressbar(range(10), label='Waiting for assembly to be deleted') as bar:
             for n in bar:
                 time.sleep((2 ** n) + (random.randint(0, 1000) / 1000))
-                res = v1.list_namespaced_pod(namespace, label_selector=f'insights.kx.com/app={name}')
-                if [] == res.items:
-                    sys.exit(0)
+                try:
+                    api.get_namespaced_custom_object(
+                        group=API_GROUP,
+                        version=API_VERSION,
+                        namespace=namespace,
+                        plural=API_PLURAL,
+                        name=name,
+                        )
+                except k8s.client.rest.ApiException as exception:
+                    if exception.status == 404:
+                        sys.exit(0)
 
         log.error('Assembly was not deleted in time, exiting')
         sys.exit(1)
