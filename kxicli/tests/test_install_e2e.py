@@ -42,7 +42,7 @@ def mocked_helm_add_repo(repo, url, username, password):
 def mocked_subprocess_run(base_command, check=True):
     global subprocess_run_command
     subprocess_run_command = base_command
-    pass
+
 
 def mocked_helm_list_returns_empty_json(base_command):
     return '[]'
@@ -51,7 +51,6 @@ def mocked_delete_crd(name):
     print(f'Deleting CRD {name}')
     global delete_crd_params
     delete_crd_params = (name)
-    pass
 
 def mocked_create_namespace(namespace):
     pass
