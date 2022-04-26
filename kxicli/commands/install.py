@@ -153,6 +153,7 @@ def setup(namespace, chart_repo_name, license_secret, client_cert_secret, image_
     return output_file, chart_repo_name
 
 @install.command()
+@click.option('--namespace', default=lambda: default_val('namespace'), help=help_text('namespace'))
 @click.option('--filepath', help='Values file to install with')
 @click.option('--release', default=lambda: default_val('release.name'), help=help_text('release.name'))
 @click.option('--repo', default=lambda: default_val('chart.repo.name'), help=help_text('chart.repo.name'))
@@ -161,30 +162,35 @@ def setup(namespace, chart_repo_name, license_secret, client_cert_secret, image_
 @click.option('--image-pull-secret', default=lambda: default_val('image.pullSecret'), help=help_text('image.pullSecret'))
 @click.option('--license-secret', default=lambda: default_val('license.secret'), help=help_text('license.secret'))
 @click.pass_context
-def run(ctx, filepath, release, repo, version, operator_version, image_pull_secret, license_secret):
+def run(ctx, namespace, filepath, release, repo, version, operator_version, image_pull_secret, license_secret):
     """Install KX Insights with a values file"""
 
     # Run setup prompts if necessary
     if filepath is None:
         click.echo('No values file provided, invoking "kxi install setup"\n')
         filepath, repo = ctx.invoke(setup)
-        
+
+    _, active_context = k8s.config.list_kube_config_contexts()
+    if '--namespace' not in sys.argv:
+        if 'namespace' in active_context['context']:
+            namespace = active_context['context']['namespace']
+        else:
+            namespace = click.prompt('\nPlease enter a namespace to install in', default=install_namespace_default)
+
     if operator_installed(release):
         click.echo('\nkxi-operator already installed')
     else:
         if click.confirm('\nkxi-operator not found. Do you want to install it?'):
             create_namespace(operator_namespace)
 
-            _, active_context = k8s.config.list_kube_config_contexts()
-            from_ns = active_context['context']['namespace']
-            copy_secret(image_pull_secret, from_ns, operator_namespace)
-            copy_secret(license_secret, from_ns, operator_namespace)
+            copy_secret(image_pull_secret, namespace, operator_namespace)
+            copy_secret(license_secret, namespace, operator_namespace)
 
             chart=f'{repo}/kxi-operator'
             helm_install(release, chart=chart, values_file=filepath, version=get_operator_version(version, operator_version), namespace=operator_namespace)
 
     chart=f'{repo}/insights'
-    helm_install(release, chart=chart, values_file=filepath, version=version)
+    helm_install(release, chart=chart, values_file=filepath, version=version, namespace=namespace)
 
 @install.command()
 @click.option('--release', default=lambda: default_val('release.name'), help=help_text('release.name'))
