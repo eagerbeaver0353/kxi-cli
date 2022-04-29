@@ -81,13 +81,25 @@ def test_create_docker_secret(mocker):
     assert res.metadata.name == test_secret
     assert '.dockerconfigjson' in res.data
 
-def test_create_license_secret(mocker):
+def test_create_license_secret_encoded(mocker):
     mocker.patch('kxicli.commands.install.create_secret', mocked_create_secret)
-    res = install.create_license_secret(test_ns, test_secret, test_lic_file)
+    res = install.create_license_secret(test_ns, test_secret, test_lic_file, True)
 
     assert res.type == 'Opaque'
     assert res.metadata.name == test_secret
     assert 'license' in res.string_data
+    with open(test_lic_file, 'rb') as license_file:
+        assert base64.b64decode(res.string_data['license']) == license_file.read()
+
+def test_create_license_secret_decoded(mocker):
+    mocker.patch('kxicli.commands.install.create_secret', mocked_create_secret)
+    res = install.create_license_secret(test_ns, test_secret, test_lic_file, False)
+
+    assert res.type == 'Opaque'
+    assert res.metadata.name == test_secret
+    assert 'license' in res.data
+    with open(test_lic_file, 'rb') as license_file:
+        assert base64.b64decode(res.data['license']) == license_file.read()
 
 def test_create_tls_secret(mocker):
     mocker.patch('kxicli.commands.install.create_secret', mocked_create_secret)

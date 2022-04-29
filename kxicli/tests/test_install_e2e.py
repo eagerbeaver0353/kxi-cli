@@ -22,6 +22,7 @@ test_val_file_shared_keycloak = os.path.dirname(__file__) + '/files/test-values-
 test_k8s_config = os.path.dirname(__file__) + '/files/test-kube-config'
 test_lic_file = os.path.dirname(__file__) + '/files/test-license'
 test_output_file = os.path.dirname(__file__) + '/files/output-values.yaml'
+test_output_file_lic_env_var = os.path.dirname(__file__) + '/files/output-values-license-as-env-var.yaml'
 test_docker_config_json = os.path.dirname(__file__) + '/files/test-docker-config-json'
 
 _, active_context = k8s.config.list_kube_config_contexts()
@@ -252,6 +253,88 @@ Helm values file for installation saved in {test_output_file}
     assert result.exit_code == 0
     assert result.output == expected_output
     assert filecmp.cmp(test_output_file, test_val_file)
+
+def test_install_setup_when_passed_license_env_var_in_command_line(mocker):
+    mock_secret_helm_add(mocker)
+    mock_create_namespace(mocker)
+    os.rename(test_output_file, f'{test_output_file}_bk')
+
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        # these are responses to the various prompts
+        user_input = f"""{test_host}
+{test_chart_repo_name}
+{test_chart_repo_url}
+{test_user}
+{test_pass}
+y
+{common.get_default_val('license.secret')}
+{test_image_repo}
+y
+{common.get_default_val('image.pullSecret')}
+y
+{common.get_default_val('client.cert.secret')}
+y
+{common.get_default_val('keycloak.secret')}
+y
+{common.get_default_val('keycloak.postgresqlSecret')}
+y
+gui-secret
+y
+operator-secret
+n
+"""
+        result = runner.invoke(main.cli, ['install', 'setup', '--output-file', test_output_file, '--license-as-env-var', 'True'], input=user_input)
+
+        # Transcript here is not intended because multi line strings are
+        # interpreted directly including indentation
+        expected_output = f"""KX Insights Install Setup
+
+Running in namespace {test_namespace} on the cluster {test_cluster}
+
+Please enter the hostname for the installation: {test_host}
+
+Chart details
+Please enter a name for the chart repository to set locally [{common.get_default_val('chart.repo.name')}]: {test_chart_repo_name}
+Please enter the chart repository URL to pull charts from [{common.get_default_val('chart.repo.url')}]: {test_chart_repo_url}
+Please enter the username for the chart repository: {test_user}
+Please enter the password for the chart repository (input hidden): 
+
+License details
+Do you have an existing license secret [y/N]: y
+Please enter the name of the existing secret: {common.get_default_val('license.secret')}
+
+Image repository
+Please enter the image repository to pull images from [registry.dl.kx.com]: {test_image_repo}
+Do you have an existing image pull secret for {test_image_repo} [y/N]: y
+Please enter the name of the existing secret: {common.get_default_val('image.pullSecret')}
+
+Client certificate issuer
+Do you have an existing client certificate issuer [y/N]: y
+Please enter the name of the existing secret: {common.get_default_val('client.cert.secret')}
+
+Keycloak
+Do you have an existing keycloak secret [y/N]: y
+Please enter the name of the existing secret: {common.get_default_val('keycloak.secret')}
+Do you have an existing keycloak postgresql secret [y/N]: y
+Please enter the name of the existing secret: {common.get_default_val('keycloak.postgresqlSecret')}
+Do you want to set a secret for the gui service account explicitly [y/N]: y
+Please enter the secret (input hidden): 
+Do you want to set a secret for the operator service account explicitly [y/N]: y
+Please enter the secret (input hidden): 
+
+Ingress
+Do you want to provide a self-managed cert for the ingress [y/N]: n
+
+KX Insights installation setup complete
+
+Helm values file for installation saved in {test_output_file}
+
+"""
+    assert result.exit_code == 0
+    assert result.output == expected_output
+    assert filecmp.cmp(test_output_file, test_output_file_lic_env_var)
+    os.rename(f'{test_output_file}_bk', test_output_file)
 
 def test_install_setup_overwrites_when_values_file_exists(mocker):
     mock_secret_helm_add(mocker)

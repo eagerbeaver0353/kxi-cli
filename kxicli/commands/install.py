@@ -29,6 +29,7 @@ def install():
 @click.option('--namespace', default=lambda: default_val('namespace'), help=help_text('namespace'))
 @click.option('--chart-repo-name', default=lambda: default_val('chart.repo.name'), help=help_text('chart.repo.name'))
 @click.option('--license-secret', default=lambda: default_val('license.secret'), help=help_text('license.secret'))
+@click.option('--license-as-env-var', default=False, help=help_text('license.envVar'))
 @click.option('--client-cert-secret', default=lambda: default_val('client.cert.secret'), help=help_text('client.cert.secret'))
 @click.option('--image-repo', default=lambda: default_val('image.repository'), help=help_text('image.repository'))
 @click.option('--image-pull-secret', default=lambda: default_val('image.pullSecret'), help=help_text('image.pullSecret'))
@@ -40,7 +41,7 @@ def install():
 @click.option('--ingress-host', help=help_text('ingress.host'))
 @click.option('--ingress-cert-secret', default=lambda: default_val('ingress.cert.secret'), help=help_text('ingress.cert.secret'))
 @click.option('--output-file', default=lambda: default_val('install.outputFile'), help=help_text('install.outputFile'))
-def setup(namespace, chart_repo_name, license_secret, client_cert_secret, image_repo, image_pull_secret, gui_client_secret, operator_client_secret,
+def setup(namespace, chart_repo_name, license_secret, license_as_env_var, client_cert_secret, image_repo, image_pull_secret, gui_client_secret, operator_client_secret,
                 keycloak_secret, keycloak_postgresql_secret, keycloak_auth_url, ingress_host, ingress_cert_secret, output_file):
     """Perform necessary setup steps to install Insights"""
 
@@ -69,7 +70,7 @@ def setup(namespace, chart_repo_name, license_secret, client_cert_secret, image_
 
     if '--license-secret' not in sys.argv:
         click.secho('\nLicense details', bold=True)
-        license_secret = prompt_for_license(namespace, license_secret)
+        license_secret = prompt_for_license(namespace, license_secret, license_as_env_var)
 
     if not('--image-repo' in sys.argv and '--image-pull-secret' in sys.argv):
         click.secho('\nImage repository', bold=True)
@@ -139,6 +140,9 @@ def setup(namespace, chart_repo_name, license_secret, client_cert_secret, image_
     if ingress_self_managed:
         install_file['global']['ingress']['certmanager'] = False
         install_file['global']['ingress']['tlsSecret'] = ingress_cert_secret
+
+    if license_as_env_var:
+        install_file['global']['license']['asFile'] = False
 
     if os.path.exists(output_file):
         if not click.confirm(f'\n{output_file} file exists. Do you want to overwrite it with a new values file?'):
@@ -245,13 +249,13 @@ def sanitize_auth_url(raw_string):
 
     return trimmed
 
-def prompt_for_license(namespace, license_secret):
+def prompt_for_license(namespace, license_secret, license_as_env_var):
     """Prompt for an existing license or create on if it doesn't exist"""
     if click.confirm('Do you have an existing license secret'):
         license_secret = prompt_for_existing_secret()
     else:
         path_to_lic = click.prompt('Please enter the path to your kdb license')
-        create_license_secret(namespace, license_secret, path_to_lic)
+        create_license_secret(namespace, license_secret, path_to_lic, license_as_env_var)
 
     return license_secret
 
@@ -375,21 +379,29 @@ def check_existing_docker_config(image_repo, file_path):
 
     return None
 
-def create_license_secret(namespace, name, filepath):
+def create_license_secret(namespace, name, filepath, asEnv=False):
     """Create a KX license secret in a given namespace"""
 
     with open(filepath, 'rb') as license_file:
         encoded_license = base64.b64encode(license_file.read())
 
-    string_data = {
+    license_data = {
         'license': encoded_license.decode('ascii')
     }
+
+    if asEnv:
+        string_data=license_data
+        data=None
+    else:
+        string_data=None
+        data=license_data
 
     return create_secret(
         namespace=namespace,
         name=name,
         secret_type='Opaque',
-        string_data=string_data
+        string_data=string_data,
+        data=data
     )
 
 def create_docker_config_secret(namespace, name, docker_config):
