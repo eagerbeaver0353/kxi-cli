@@ -15,6 +15,7 @@ HELP_TEXT = {
     'chart.repo.username': 'Username for the chart repository',
     'chart.repo.password': 'Password for the chart repository',
     'license.secret': 'Secret containing kdb+ license',
+    'license.envVar': 'Mount kdb+ license secret as an environment variable',
     'client.cert.secret': 'Secret containing TLS cert and key for client issuer',
     'image.repository': 'Repository to pull images from',
     'image.pullSecret': 'Secret containing credentials for the image repository ',
