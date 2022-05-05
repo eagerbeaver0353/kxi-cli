@@ -186,7 +186,7 @@ def test_cli_assembly_delete_with_confirm(mocker):
 Are you sure you want to delete {ASM_NAME} [y/N]: y
 """
 
-def test_cli_assembly_delete_with_not_found_expection(mocker):
+def test_cli_assembly_delete_with_not_found_exception(mocker):
     # mock Kubernetes delete API to raise a not found exception
     mock = mocker.patch(CUSTOM_OBJECT_API)
     instance = mock.return_value
