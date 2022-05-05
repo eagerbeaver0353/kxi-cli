@@ -15,6 +15,13 @@
         "kube",
         "secho",
         "unencrypted",
-        "sdata"
+        "sdata",
+        "keycloak",
+        "clientcontroller",
+        "informationservice",
+        "certmanager",
+        "assemblyresources",
+        "servicegateway",
+        "Apiextensions"
     ]
 }

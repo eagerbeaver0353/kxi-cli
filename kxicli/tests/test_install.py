@@ -25,7 +25,7 @@ def mocked_create_secret(namespace, name, secret_type, data=None, string_data=No
 # These are used to mock helm calls to list deployed releases
 # helm list --filter insights --deployed -o json
 def mocked_helm_list_returns_valid_json(base_command):
-    return '[{"name":"insights","namespace":"testnamespace","revision":"1","updated":"2022-02-23 10:39:53.7668809 +0000 UTC","status":"deployed","chart":"insights-0.11.0-rc.39","app_version":"0.11.0-rc.8"}]'
+    return '[{"name":"insights","namespace":"testNamespace","revision":"1","updated":"2022-02-23 10:39:53.7668809 +0000 UTC","status":"deployed","chart":"insights-0.11.0-rc.39","app_version":"0.11.0-rc.8"}]'
 
 def mocked_helm_list_returns_empty_json(base_command):
     return '[]'
@@ -120,7 +120,7 @@ def test_get_operator_version_returns_operator_version_if_passed_regardless_of_r
 def test_get_operator_version_returns_insights_version_if_not_rc():
     assert install.get_operator_version('1.2.3', None) == '1.2.3'
 
-def test_get_operator_version_returns_prompts_for_operater_version_if_rc(monkeypatch):
+def test_get_operator_version_returns_prompts_for_operator_version_if_rc(monkeypatch):
     test_version = '0.1.2-rc.2'
     # patch stdin to end the prompt
     monkeypatch.setattr('sys.stdin', io.StringIO(test_version))
