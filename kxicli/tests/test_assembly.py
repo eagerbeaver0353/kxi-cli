@@ -42,6 +42,10 @@ def raise_not_found(**kwargs):
     """Helper function to test try/except blocks"""
     raise k8s.client.rest.ApiException(status=404)
 
+def store_args(**args):
+    global stored_args
+    stored_args = args
+
 def test_format_assembly_status_if_no_status_key():
     assert assembly._format_assembly_status({}) == {}
 
@@ -176,11 +180,13 @@ def test_cli_assembly_delete_with_confirm(mocker):
     mock = mocker.patch(CUSTOM_OBJECT_API)
     instance = mock.return_value
     instance.delete_namespaced_custom_object.return_value = {}
+    instance.delete_namespaced_custom_object.side_effect = store_args
     mocker.patch(PREFERRED_VERSION_FUNC, return_value=PREFERRED_VERSION)
 
     # answer 'y' to the prompt asking to confirm you want to delete the assembly
     result = TEST_CLI.invoke(main.cli, ['assembly', 'delete', '--name', ASM_NAME], input='y')
 
+    assert stored_args == {'group': 'insights.kx.com', 'version': PREFERRED_VERSION, 'namespace': 'test', 'plural': 'assemblies', 'name': ASM_NAME}
     assert result.exit_code == 0
     assert result.output == f"""Deleting assembly {ASM_NAME}
 Are you sure you want to delete {ASM_NAME} [y/N]: y
