@@ -184,7 +184,7 @@ def delete(namespace, name, wait, force):
             group=API_GROUP,
             version=get_preferred_api_version(API_GROUP),
             namespace=namespace,
-            plural=API_VERSION,
+            plural=API_PLURAL,
             name=name,
             )
     except k8s.client.rest.ApiException as exception:
