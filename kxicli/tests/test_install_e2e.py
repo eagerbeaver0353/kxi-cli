@@ -1,5 +1,7 @@
 """This end 2 end test validates the inputs and outputs of the install command directly"""
 import os
+import base64
+import yaml
 import kubernetes as k8s
 import filecmp
 from click.testing import CliRunner
@@ -38,6 +40,30 @@ main.install.docker_config_file_path = test_docker_config_json
 def mocked_create_secret(namespace, name, secret_type, data=None, string_data=None):
     print(f'Secret {name} successfully created')
 
+def mocked_patch_secret(namespace, name, secret_type, data=None, string_data=None):
+    print(f'Secret {name} successfully updated')
+
+def raise_not_found(**kwargs):
+    """Helper function to test try/except blocks"""
+    raise k8s.client.rest.ApiException(status=404)
+
+def return_none(**kwargs):
+    return None
+
+def mock_read_create_patch_secret(mocker):
+    # mock Kubernetes get API to raise a not found exception
+    mock = mocker.patch('kubernetes.client.CoreV1Api')
+    mock.return_value.read_namespaced_secret.side_effect = raise_not_found
+    mocker.patch('kxicli.commands.install.create_secret', mocked_create_secret)
+    mocker.patch('kxicli.commands.install.patch_secret', mocked_patch_secret)
+
+def mock_read_secret(namespace, name):
+    with open(test_val_file, 'rb') as values_file:
+        data = yaml.full_load(values_file)
+    install_secret = main.install.build_install_secret(data)
+
+    return main.install.get_secret_body(name, 'Opaque', data=install_secret)
+
 def mocked_helm_add_repo(repo, url, username, password):
     pass
 
@@ -67,9 +93,11 @@ def mocked_create_namespace(namespace):
 def mock_create_namespace(mocker):
    mocker.patch('kxicli.commands.install.create_namespace', mocked_create_namespace)
 
-def mocked_subprocess_run(base_command, check=True):
+def mocked_subprocess_run(base_command, check=True, input=None, text=None):
     global subprocess_run_command
+    global subprocess_run_args
     subprocess_run_command = base_command
+    subprocess_run_args = (check, input, text)
 
 def mock_subprocess_run(mocker):
     mocker.patch('subprocess.run', mocked_subprocess_run)
@@ -80,7 +108,7 @@ def mock_insights_operator_and_crd_installed(mocker):
     mocker.patch('kxicli.common.crd_exists', mocked_return_true)
 
 def mock_secret_helm_add(mocker):
-    mocker.patch('kxicli.commands.install.create_secret', mocked_create_secret)
+    mock_read_create_patch_secret(mocker)
     mocker.patch('kxicli.commands.install.helm_add_repo', mocked_helm_add_repo)
 
 def test_install_setup_when_creating_secrets(mocker):
@@ -163,6 +191,7 @@ Randomly generating client secret for operator and setting in values file, recor
 
 Ingress
 Do you want to provide a self-managed cert for the ingress [y/N]: n
+Secret {common.get_default_val('install.configSecret')} successfully created
 
 KX Insights installation setup complete
 
@@ -244,6 +273,7 @@ Please enter the secret (input hidden):
 
 Ingress
 Do you want to provide a self-managed cert for the ingress [y/N]: n
+Secret {common.get_default_val('install.configSecret')} successfully created
 
 KX Insights installation setup complete
 
@@ -325,6 +355,7 @@ Please enter the secret (input hidden):
 
 Ingress
 Do you want to provide a self-managed cert for the ingress [y/N]: n
+Secret {common.get_default_val('install.configSecret')} successfully created
 
 KX Insights installation setup complete
 
@@ -411,6 +442,7 @@ Ingress
 Do you want to provide a self-managed cert for the ingress [y/N]: n
 
 {test_output_file} file exists. Do you want to overwrite it with a new values file? [y/N]: y
+Secret {common.get_default_val('install.configSecret')} successfully created
 
 KX Insights installation setup complete
 
@@ -499,6 +531,7 @@ Do you want to provide a self-managed cert for the ingress [y/N]: n
 
 {test_output_file} file exists. Do you want to overwrite it with a new values file? [y/N]: n
 Please enter the path to write the values file for the install: {test_output_file}_new
+Secret {common.get_default_val('install.configSecret')} successfully created
 
 KX Insights installation setup complete
 
@@ -530,7 +563,7 @@ Installing chart kx-insights/insights with values file from {test_val_file}
     assert subprocess_run_command == ['helm', 'install', '-f', test_val_file, 'insights', test_chart, '--version', '1.2.3', '--namespace', test_namespace]
 
 def test_install_run_when_no_file_provided(mocker):
-    mocker.patch('kxicli.commands.install.create_secret', mocked_create_secret)
+    mock_read_create_patch_secret(mocker)
     mock_subprocess_run(mocker)
     mocker.patch('subprocess.check_output', mocked_helm_list_returns_empty_json)
     mocker.patch('kxicli.commands.install.insights_installed', mocked_return_true)
@@ -608,6 +641,7 @@ Please enter the secret (input hidden):
 
 Ingress
 Do you want to provide a self-managed cert for the ingress [y/N]: n
+Secret {common.get_default_val('install.configSecret')} successfully created
 
 KX Insights installation setup complete
 
@@ -620,6 +654,48 @@ Installing chart internal-nexus-dev/insights with values file from values.yaml
     assert result.exit_code == 0
     assert result.output == expected_output
     assert subprocess_run_command == ['helm', 'install', '-f', 'values.yaml', 'insights', test_chart_repo_name+'/insights', '--version', '1.2.3', '--namespace', test_namespace]
+
+def test_install_run_when_provided_secret(mocker):
+    mock_subprocess_run(mocker)
+    mock_insights_operator_and_crd_installed(mocker)
+    mock_create_namespace(mocker)
+    mocker.patch('kxicli.commands.install.read_secret', mock_read_secret)
+
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        # these are responses to the various prompts
+        result = runner.invoke(main.cli, ['install', 'run', '--version', '1.2.3', '--install-config-secret', 'kxi-install-secret'])
+        expected_output = f"""
+kxi-operator already installed
+Installing chart kx-insights/insights with values from secret
+"""
+    with open(test_val_file, 'r') as values_file:
+        values = str(values_file.read())
+    assert result.exit_code == 0
+    assert result.output == expected_output
+    assert subprocess_run_command == ['helm', 'install', '-f', '-', 'insights', test_chart, '--version', '1.2.3', '--namespace', test_namespace]
+    assert subprocess_run_args == (True, values, True)
+
+def test_install_run_when_provided_file_and_secret(mocker):
+    mock_subprocess_run(mocker)
+    mock_insights_operator_and_crd_installed(mocker)
+    mock_create_namespace(mocker)
+    mocker.patch('kxicli.commands.install.read_secret', mock_read_secret)
+
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        # these are responses to the various prompts
+        result = runner.invoke(main.cli, ['install', 'run', '--version', '1.2.3', '--filepath', test_val_file, '--install-config-secret', 'kxi-install-secret'])
+        expected_output = f"""
+kxi-operator already installed
+Installing chart kx-insights/insights with values from secret and values file from {test_val_file}
+"""
+    with open(test_val_file, 'r') as values_file:
+        values = str(values_file.read())
+    assert result.exit_code == 0
+    assert result.output == expected_output
+    assert subprocess_run_command == ['helm', 'install', '-f', '-', '-f', test_val_file, 'insights', test_chart, '--version', '1.2.3', '--namespace', test_namespace]
+    assert subprocess_run_args == (True, values, True)
 
 def test_install_run_installs_operator(mocker):
     mock_subprocess_run(mocker)
@@ -926,6 +1002,7 @@ Ingress
 Do you want to provide a self-managed cert for the ingress [y/N]: n
 
 {test_output_file} file exists. Do you want to overwrite it with a new values file? [y/N]: y
+Secret {common.get_default_val('install.configSecret')} successfully created
 
 KX Insights installation setup complete
 
@@ -936,3 +1013,22 @@ Helm values file for installation saved in {test_output_file}
     assert result.exit_code == 0
     assert result.output == expected_output
     assert filecmp.cmp(test_output_file, test_val_file_shared_keycloak)
+
+def test_get_values_returns_error_when_does_not_exist(mocker):
+    mocker.patch('kxicli.commands.install.read_secret', return_none)
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        result = runner.invoke(main.cli, ['install', 'get-values'])
+
+    assert result.exit_code == 0
+    assert result.output == f"""error=Cannot find values secret {common.get_default_val('install.configSecret')}\n\n"""
+
+def test_get_values_returns_decoded_secret(mocker):
+    mocker.patch('kxicli.commands.install.read_secret', mock_read_secret)
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        result = runner.invoke(main.cli, ['install', 'get-values'])
+
+    assert result.exit_code == 0
+    with open(test_val_file, 'r') as f:
+        assert result.output == f.read() + '\n'
