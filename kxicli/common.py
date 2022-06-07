@@ -25,6 +25,7 @@ HELP_TEXT = {
     'ingress.host': 'Hostname for the installation',
     'ingress.cert.secret': 'Secret containing self-managed TLS cert and key for the ingress',
     'install.outputFile': 'Name for the generated values file',
+    'install.configSecret': 'Secret containing helm install values',
     'release.name': 'Release name for the install',
     'guiClientSecret': 'Keycloak client secret for gui service account',
     'operatorClientSecret': 'Keycloak client secret for operator service account',
@@ -43,6 +44,7 @@ DEFAULT_VALUES = {
     'keycloak.postgresqlSecret': 'kxi-postgresql',
     'ingress.cert.secret': 'kxi-ingress-cert',
     'install.outputFile': 'values.yaml',
+    'install.configSecret': 'kxi-install-config',
     'release.name': 'insights',
     'realm': 'insights'
 }

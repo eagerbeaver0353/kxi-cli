@@ -2,6 +2,7 @@
 import io
 import os
 import base64
+import yaml
 import kubernetes as k8s
 from kxicli.commands import install
 
@@ -16,11 +17,34 @@ test_secret_type = 'Opaque'
 test_key = install.gen_private_key()
 test_cert = install.gen_cert(test_key)
 test_lic_file = os.path.dirname(__file__) + '/files/test-license'
+test_val_file = os.path.dirname(__file__) + '/files/test-values.yaml'
+
+with open(test_val_file, 'rb') as values_file:
+    test_vals = yaml.full_load(values_file)
+
+def raise_not_found(**kwargs):
+    """Helper function to test try/except blocks"""
+    raise k8s.client.rest.ApiException(status=404)
+
+def return_none(**kwargs):
+    return None
 
 # This is used to mock the main function that makes calls to the control plane
 def mocked_create_secret(namespace, name, secret_type, data=None, string_data=None):
     print('Running mocked create_secret function')
     return install.get_secret_body(name, secret_type, data, string_data)
+
+# This is used to mock the k8s api function that makes calls to the control plane. Return a hard-coded secret. 
+def mocked_read_namespaced_secret(namespace, name):
+    return install.get_secret_body(name, 'Opaque', data={"secret_key": "secret_value"})
+
+def mocked_read_namespaced_secret_return_values(namespace, name):
+    return install.get_secret_body(name, 'Opaque', data=install.build_install_secret(test_vals))  
+
+def mocked_patch_namespaced_secret(name, namespace, body):
+    current_secret = install.get_secret_body(name, 'Opaque', data={"secret_key": "secret_value"})
+    current_secret.data.update(body.data)
+    return current_secret
 
 # These are used to mock helm calls to list deployed releases
 # helm list --filter insights --deployed -o json
@@ -109,6 +133,95 @@ def test_create_tls_secret(mocker):
     assert res.metadata.name == test_secret
     assert 'tls.crt' in res.data
     assert 'tls.key' in res.data
+
+def test_read_secret_returns_k8s_secret(mocker):
+    mock = mocker.patch('kubernetes.client.CoreV1Api')
+    mock.return_value.read_namespaced_secret = mocked_read_namespaced_secret
+    res = install.read_secret(namespace=test_ns, name=test_secret)
+
+    assert res.type == 'Opaque'
+    assert res.metadata.name == test_secret
+    assert res.data == {"secret_key": "secret_value"}
+
+def test_read_secret_returns_empty_when_does_not_exist(mocker):
+    mock = mocker.patch('kubernetes.client.CoreV1Api')
+    mock.return_value.read_namespaced_secret.side_effect = raise_not_found
+    res = install.read_secret(namespace=test_ns, name=test_secret)
+
+    assert res == None
+
+def test_get_install_config_secret_returns_decoded_secret(mocker):
+    mocker.patch('kxicli.commands.install.read_secret', mocked_read_namespaced_secret_return_values)
+    res = install.get_install_config_secret(test_ns, test_secret)
+
+    assert res == yaml.dump(test_vals)
+
+def test_get_install_config_secret_when_does_not_exist(mocker):
+    mocker.patch('kxicli.commands.install.read_secret', return_none)
+    res = install.get_install_config_secret(test_ns, test_secret)
+
+    assert res == None
+
+def test_patch_secret_returns_updated_k8s_secret(mocker):
+    mock = mocker.patch('kubernetes.client.CoreV1Api')
+    mock.return_value.patch_namespaced_secret = mocked_patch_namespaced_secret
+    res = install.patch_secret(namespace=test_ns, name=test_secret, secret_type='Opaque', data={"secret_key": "new_value"})
+
+    assert res.type == 'Opaque'
+    assert res.metadata.name == test_secret
+    assert res.data == {"secret_key": "new_value"}
+
+def test_create_install_config_secret_when_does_not_exists(mocker):
+    mocker.patch('kxicli.commands.install.create_secret', mocked_create_secret)
+    mocker.patch('kxicli.commands.install.read_secret', return_none)
+
+    res = install.create_install_config_secret(test_ns, test_secret, test_vals)
+
+    assert res.type == 'Opaque'
+    assert res.metadata.name == test_secret
+    assert 'values.yaml' in res.data
+    assert yaml.full_load(base64.b64decode(res.data['values.yaml'])) == test_vals
+
+def test_create_install_config_secret_when_secret_exists_and_user_overwrites(mocker,monkeypatch):
+    mocker.patch('kxicli.commands.install.patch_secret', mocked_create_secret)
+    mocker.patch('kxicli.commands.install.read_secret', mocked_read_namespaced_secret_return_values)
+
+    # Create new values to write to secret
+    new_values = {"secretName": "a_test_secret_name"}
+
+    # patch stdin to 'y' for the prompt confirming to overwrite the secret
+    monkeypatch.setattr('sys.stdin', io.StringIO('y'))
+    res = install.create_install_config_secret(test_ns, test_secret, new_values)
+
+    assert res.type == 'Opaque'
+    assert res.metadata.name == test_secret
+    assert 'values.yaml' in res.data
+    # assert that secret is updated with new_values
+    assert yaml.full_load(base64.b64decode(res.data['values.yaml'])) == new_values
+
+def test_create_install_config_secret_when_secret_exists_and_user_declines_overwrite(mocker,monkeypatch):
+    mocker.patch('kxicli.commands.install.patch_secret', mocked_create_secret)
+    mocker.patch('kxicli.commands.install.read_secret', mocked_read_namespaced_secret_return_values)
+
+    # update contents of values to write to secret
+    new_values = {"secretName": "a_test_secret_name"}
+
+    # patch stdin to 'n' for the prompt, declining to overwrite the secret
+    monkeypatch.setattr('sys.stdin', io.StringIO('n'))
+    res = install.create_install_config_secret(test_ns, test_secret, new_values)
+
+    assert res.type == 'Opaque'
+    assert res.metadata.name == test_secret
+    assert 'values.yaml' in res.data
+    # assert that secret is unchanged
+    assert yaml.full_load(base64.b64decode(res.data['values.yaml'])) == test_vals
+
+def test_build_install_secret():
+    data = {"secretName": "a_test_secret_name"}
+    res = install.build_install_secret(data)
+
+    assert 'values.yaml' in res
+    assert yaml.full_load(base64.b64decode(res['values.yaml'])) == data
 
 def test_get_operator_version_returns_operator_version_if_passed_regardless_of_rc():
     non_rc = install.get_operator_version('1.2.3', '4.5.6')

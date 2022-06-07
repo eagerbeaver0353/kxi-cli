@@ -41,8 +41,9 @@ def install():
 @click.option('--ingress-host', help=help_text('ingress.host'))
 @click.option('--ingress-cert-secret', default=lambda: default_val('ingress.cert.secret'), help=help_text('ingress.cert.secret'))
 @click.option('--output-file', default=lambda: default_val('install.outputFile'), help=help_text('install.outputFile'))
+@click.option('--install-config-secret', default=lambda: default_val('install.configSecret'), help=help_text('install.configSecret'))
 def setup(namespace, chart_repo_name, license_secret, license_as_env_var, client_cert_secret, image_repo, image_pull_secret, gui_client_secret, operator_client_secret,
-                keycloak_secret, keycloak_postgresql_secret, keycloak_auth_url, ingress_host, ingress_cert_secret, output_file):
+                keycloak_secret, keycloak_postgresql_secret, keycloak_auth_url, ingress_host, ingress_cert_secret, output_file, install_config_secret):
     """Perform necessary setup steps to install Insights"""
 
     click.secho('KX Insights Install Setup', bold=True)
@@ -151,6 +152,8 @@ def setup(namespace, chart_repo_name, license_secret, license_as_env_var, client
     with open(output_file, 'w') as f:
         yaml.dump(install_file, f)
 
+    create_install_config_secret(namespace, install_config_secret, install_file)
+
     click.secho('\nKX Insights installation setup complete', bold=True)
     click.echo(f'\nHelm values file for installation saved in {output_file}\n')
 
@@ -165,12 +168,14 @@ def setup(namespace, chart_repo_name, license_secret, license_as_env_var, client
 @click.option('--operator-version', default=None, help='Version of the operator to install')
 @click.option('--image-pull-secret', default=lambda: default_val('image.pullSecret'), help=help_text('image.pullSecret'))
 @click.option('--license-secret', default=lambda: default_val('license.secret'), help=help_text('license.secret'))
+@click.option('--install-config-secret', default=None, help=help_text('install.configSecret'))
+
 @click.pass_context
-def run(ctx, namespace, filepath, release, repo, version, operator_version, image_pull_secret, license_secret):
+def run(ctx, namespace, filepath, release, repo, version, operator_version, image_pull_secret, license_secret, install_config_secret):
     """Install KX Insights with a values file"""
 
     # Run setup prompts if necessary
-    if filepath is None:
+    if filepath is None and install_config_secret is None:
         click.echo('No values file provided, invoking "kxi install setup"\n')
         filepath, repo = ctx.invoke(setup)
 
@@ -180,6 +185,13 @@ def run(ctx, namespace, filepath, release, repo, version, operator_version, imag
             namespace = active_context['context']['namespace']
         else:
             namespace = click.prompt('\nPlease enter a namespace to install in', default=install_namespace_default)
+
+    values_secret = None
+    if install_config_secret:
+        values_secret = get_install_config_secret(namespace=namespace, install_config_secret=install_config_secret)
+        if not values_secret:
+            click.echo(f'Cannot find values secret {install_config_secret}. Exiting Install"\n')
+            sys.exit(1)
 
     if operator_installed(release):
         click.echo('\nkxi-operator already installed')
@@ -191,10 +203,10 @@ def run(ctx, namespace, filepath, release, repo, version, operator_version, imag
             copy_secret(license_secret, namespace, operator_namespace)
 
             chart=f'{repo}/kxi-operator'
-            helm_install(release, chart=chart, values_file=filepath, version=get_operator_version(version, operator_version), namespace=operator_namespace)
+            helm_install(release, chart=chart, values_file=filepath, values_secret=values_secret, version=get_operator_version(version, operator_version), namespace=operator_namespace)
 
     chart=f'{repo}/insights'
-    helm_install(release, chart=chart, values_file=filepath, version=version, namespace=namespace)
+    helm_install(release, chart=chart, values_file=filepath, values_secret=values_secret, version=version, namespace=namespace)
 
 @install.command()
 @click.option('--release', default=lambda: default_val('release.name'), help=help_text('release.name'))
@@ -219,6 +231,27 @@ def list_versions(repo):
     """
     helm_list_versions(repo)
     
+@install.command()
+@click.option('--namespace', default=lambda: default_val('namespace'), help=help_text('namespace'))
+@click.option('--install-config-secret', default=lambda: default_val('install.configSecret'), help=help_text('install.configSecret'))
+def get_values(namespace,install_config_secret):
+    """
+    Display the kxi-install-config secret used for storing installation values
+    """
+    click.echo(get_install_config_secret(namespace=namespace, install_config_secret=install_config_secret))
+
+def get_install_config_secret(namespace, install_config_secret):
+    """
+    Return the kxi-install-config secret used for storing installation values
+    """
+    values_secret = read_secret(namespace=namespace, name=install_config_secret)
+    if values_secret:
+        values_secret = base64.b64decode(values_secret.data['values.yaml']).decode('ascii')
+    else:
+        log.error(f'Cannot find values secret {install_config_secret}')
+
+    return values_secret
+
 def get_operator_version(insights_version, operator_version):
     """Determine operator version to use"""
     if operator_version is None:
@@ -441,6 +474,37 @@ def create_tls_secret(namespace, name, cert, key):
         data=data
     )
 
+def build_install_secret(data):
+    return {'values.yaml': base64.b64encode(yaml.dump(data).encode()).decode('ascii')}
+
+def create_install_config_secret(namespace, name, data):
+    """Create a secret to store install values in a given namespace"""
+
+    install_secret = build_install_secret(data)
+
+    values_secret = read_secret(namespace=namespace, name=name)
+
+    if values_secret:
+        if click.confirm(f'Values file secret {name} already exists. Do you want to overwrite it?'):
+            values_secret = patch_secret(namespace, name, 'Opaque', data=install_secret)
+    else:
+        log.debug(f'Secret {name} does not exist. Creating new secret.')
+        values_secret = create_secret(namespace, name, 'Opaque', data=install_secret)
+
+    return values_secret
+
+def read_secret(namespace, name):
+    common.load_kube_config()
+
+    try:
+        secret = k8s.client.CoreV1Api().read_namespaced_secret(namespace=namespace, name=name)
+    except k8s.client.rest.ApiException as exception:
+        # 404 is returned when this secret doesn't already exist.
+        if exception.status == 404:
+            return None
+    else:
+        return secret
+
 def create_secret(namespace, name, secret_type, data=None, string_data=None):
     """Helper function to create a Kubernetes secret"""
     log.debug(f'Creating secret called {name} with type {secret_type} in namespace {namespace}')
@@ -454,6 +518,21 @@ def create_secret(namespace, name, secret_type, data=None, string_data=None):
         sys.exit(1)
 
     click.echo(f'Secret {name} successfully created')
+
+def patch_secret(namespace, name, secret_type, data=None, string_data=None):
+    """Helper function to update a Kubernetes secret"""
+    log.debug(f'Updating secret {name} in namespace {namespace}')
+
+    secret = get_secret_body(name, secret_type, data, string_data)
+    common.load_kube_config()
+    try:
+        patched_secret = k8s.client.CoreV1Api().patch_namespaced_secret(name, namespace, body=secret)
+    except k8s.client.rest.ApiException as exception:
+        log.error(f'Exception when trying to update secret {exception}')
+        sys.exit(1)
+
+    click.echo(f'Secret {name} successfully updated')
+    return patched_secret
 
 def get_secret_body(name, secret_type, data=None, string_data=None):
     """Create the body for a request to create_namespaced_secret"""
@@ -523,12 +602,38 @@ def helm_list_versions(repo):
         click.echo(e)
 
 
-def helm_install(release, chart, values_file, version=None, namespace=None):
+def helm_install(release, chart, values_file, values_secret, version=None, namespace=None):
     """Call 'helm install' using subprocess.run"""
 
-    click.echo(f'Installing chart {chart} with values file from {values_file}')
+    if values_file: 
+        if values_secret:
+            click.echo(f'Installing chart {chart} with values from secret and values file from {values_file}')
+        else:
+            click.echo(f'Installing chart {chart} with values file from {values_file}')
+    else:
+        if values_secret:
+            click.echo(f'Installing chart {chart} with values from secret')
+        else:
+            click.echo(f'Must provide one of values file or secret. Exiting install')
+            sys.exit(1)
 
-    base_command = ['helm', 'install', '-f', values_file, release, chart]
+    base_command = ['helm', 'install']
+
+    if values_secret:
+        msg = ' values from secret'
+        base_command = base_command + ['-f', '-']
+        input_arg=values_secret
+        text_arg=True
+    else:
+        msg= ()
+        input_arg=None
+        text_arg=None
+
+    if values_file: 
+        msg = [msg , f' values file from {values_file}']
+        base_command = base_command + ['-f', values_file]
+
+    base_command = base_command + [release, chart]
 
     if version:
         base_command = base_command + ['--version', version]
@@ -539,7 +644,7 @@ def helm_install(release, chart, values_file, version=None, namespace=None):
 
     try:
         log.debug(f'Install command {base_command}')
-        subprocess.run(base_command, check=True)
+        subprocess.run(base_command, check=True, input=input_arg, text=text_arg)
     except subprocess.CalledProcessError as e:
         click.echo(e)
         sys.exit(e.returncode)
