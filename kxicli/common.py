@@ -26,6 +26,7 @@ HELP_TEXT = {
     'ingress.cert.secret': 'Secret containing self-managed TLS cert and key for the ingress',
     'install.outputFile': 'Name for the generated values file',
     'install.configSecret': 'Secret containing helm install values',
+    'assembly.backup.file': 'Filepath to store state of running assemblies',
     'release.name': 'Release name for the install',
     'guiClientSecret': 'Keycloak client secret for gui service account',
     'operatorClientSecret': 'Keycloak client secret for operator service account',
@@ -45,6 +46,7 @@ DEFAULT_VALUES = {
     'ingress.cert.secret': 'kxi-ingress-cert',
     'install.outputFile': 'values.yaml',
     'install.configSecret': 'kxi-install-config',
+    'assembly.backup.file': 'kxi-assembly-state.yaml',
     'release.name': 'insights',
     'realm': 'insights'
 }
