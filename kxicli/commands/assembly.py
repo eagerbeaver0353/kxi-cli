@@ -1,6 +1,7 @@
 import time
 import random
 import sys
+import os
 import json
 import yaml
 import click
@@ -67,7 +68,7 @@ def _assembly_status(namespace, name, print_status=False):
     return assembly_status['AssemblyReady']['status'] == 'True'
 
 
-def _list_assemblies(namespace):
+def _get_assemblies_list(namespace):
     """List assemblies"""
     common.load_kube_config()
     api = k8s.client.CustomObjectsApi()
@@ -77,6 +78,11 @@ def _list_assemblies(namespace):
         namespace=namespace,
         plural=API_PLURAL,
         )
+    return res
+
+def _list_assemblies(namespace):
+    """List assemblies"""
+    res = _get_assemblies_list(namespace)
 
     asm_list = []
     if 'items' in res:
@@ -95,20 +101,36 @@ def _print_2d_list(data, headers):
     first_col = [row[0] for row in data]
     padding = len(max(headers, key=len)) + 2
     if len(data) != 0:
-        padding =len(max(first_col, key=len)) + 2
+        padding = max(padding, len(max(first_col, key=len)) + 2)
 
     click.echo(f'{headers[0]:{padding}}{headers[1]}')
     for row in data:
         click.echo(f'{row[0]:{padding}}{row[1]}')
 
-@assembly.command()
-@click.option('--namespace', default=lambda: common.get_default_val('namespace'), help='Namespace to create assembly in')
-@click.option('--filepath', required=True, help='Path to assembly file')
-@click.option('--wait', is_flag=True, help='Wait for all pods to be running')
-def create(namespace, filepath, wait):
-    """Create an assembly given an assembly file"""
-    common.load_kube_config()
-    api = k8s.client.CustomObjectsApi()
+def _backup_assemblies(namespace, filepath):
+    """Get assemblies' definitions"""
+    res = _get_assemblies_list(namespace)
+
+    asm_list = []
+    if 'items' in res:
+        for asm in res['items']:
+            if 'metadata' in asm and 'name' in asm['metadata']:
+                asm_list.append(asm['metadata']['name'])
+
+    if os.path.exists(filepath):
+        if not click.confirm(f'\n{filepath} file exists. Do you want to overwrite it with a new assembly backup file?'):
+            filepath = click.prompt('Please enter the path to write the assembly backup file')
+    with open(filepath, 'w') as f:
+        yaml.dump(res, f)
+
+    click.echo(f'Persisted assembly definitions for {asm_list} to {filepath}')
+
+    return filepath
+
+def _read_assembly_file(filepath):
+    if not os.path.exists(filepath):
+        log.error(f'File not found: {filepath}')
+        sys.exit(1)
 
     with open(filepath) as f:
         try:
@@ -118,8 +140,31 @@ def create(namespace, filepath, wait):
             click.echo(e)
             sys.exit(1)
 
+    return body
+
+def _create_assemblies_from_file(namespace, filepath, wait=None):
+    """Apply assemblies from file"""
+    asm_list = _read_assembly_file(filepath)
+
     click.echo(f'Submitting assembly from {filepath}')
 
+    if 'items' in asm_list:
+        for asm in asm_list['items']:
+            click.echo(f"Submitting assembly {asm['metadata']['name']}")
+            try:
+                _create_assembly(namespace,asm,wait)
+            except BaseException as e:
+                click.echo(f"Error applying assembly {asm['metadata']['name']}: {e}")
+    else:
+        _create_assembly(namespace,asm_list,wait)
+
+def _create_assembly(namespace, body, wait=None):
+    """Create an assembly"""
+    common.load_kube_config()
+    api = k8s.client.CustomObjectsApi()
+
+    if 'resourceVersion' in body['metadata']:
+        del body['metadata']['resourceVersion']
     api_version = body['apiVersion'].split('/')
 
     api.create_namespaced_custom_object(
@@ -135,40 +180,11 @@ def create(namespace, filepath, wait):
             for n in bar:
                 time.sleep((2 ** n) + (random.randint(0, 1000) / 1000))
                 if _assembly_status(namespace, body['metadata']['name']):
-                    sys.exit(0)
+                    break
 
     click.echo(f'Custom assembly resource {body["metadata"]["name"]} created!')
 
-@assembly.command()
-@click.option('--namespace', default=lambda: common.get_default_val('namespace'), help='Namespace that the assembly is in')
-@click.option('--name', required=True, help='Name of the assembly get the status of')
-@click.option('--wait-for-ready', is_flag=True, help='Wait for assembly to reach "Ready" state')
-def status(namespace, name, wait_for_ready):
-    """Print status of the assembly"""
-    if wait_for_ready:
-        with click.progressbar(range(10), label='Waiting for assembly to enter "Ready" state') as bar:
-            for n in bar:
-                time.sleep((2 ** n) + (random.randint(0, 1000) / 1000))
-                if _assembly_status(namespace, name, print_status=True):
-                    sys.exit(0)
-    else:
-        _assembly_status(namespace, name, print_status=True)
-
-@assembly.command()
-@click.option('--namespace', default=lambda: common.get_default_val('namespace'), help='Namespace that the assemblies are in')
-def list(namespace):
-    """List assemblies"""
-    if _list_assemblies(namespace):
-        sys.exit(0)
-    else:
-        sys.exit(1)
-
-@assembly.command()
-@click.option('--namespace', default=lambda: common.get_default_val('namespace'), help='Namespace that the assembly is in')
-@click.option('--name', required=True, help='Name of the assembly to delete')
-@click.option('--wait', is_flag=True, help='Wait for all pods to be deleted')
-@click.option('--force', is_flag=True, help='Delete assembly without getting confirmation')
-def delete(namespace, name, wait, force):
+def _delete_assembly(namespace, name, wait, force):
     """Deletes an assembly given its name"""
     click.echo(f'Deleting assembly {name}')
 
@@ -212,6 +228,54 @@ def delete(namespace, name, wait, force):
 
         log.error('Assembly was not deleted in time, exiting')
         sys.exit(1)
+
+@assembly.command()
+@click.option('--namespace', default=lambda: common.get_default_val('namespace'), help='Namespace to retrieve assemblies from')
+@click.option('--filepath', default=lambda: common.get_default_val('assembly.backup.file'), help=common.get_help_text('assembly.backup.file'))
+def backup(namespace, filepath):
+    """Back up running assemblies to a file"""
+    _backup_assemblies(namespace, filepath)
+
+@assembly.command()
+@click.option('--namespace', default=lambda: common.get_default_val('namespace'), help='Namespace to create assembly in')
+@click.option('--filepath', required=True, help='Path to assembly file')
+@click.option('--wait', is_flag=True, help='Wait for all pods to be running')
+def create(namespace, filepath, wait):
+    """Create an assembly given an assembly file"""
+    _create_assemblies_from_file(namespace, filepath, wait)
+
+@assembly.command()
+@click.option('--namespace', default=lambda: common.get_default_val('namespace'), help='Namespace that the assembly is in')
+@click.option('--name', required=True, help='Name of the assembly get the status of')
+@click.option('--wait-for-ready', is_flag=True, help='Wait for assembly to reach "Ready" state')
+def status(namespace, name, wait_for_ready):
+    """Print status of the assembly"""
+    if wait_for_ready:
+        with click.progressbar(range(10), label='Waiting for assembly to enter "Ready" state') as bar:
+            for n in bar:
+                time.sleep((2 ** n) + (random.randint(0, 1000) / 1000))
+                if _assembly_status(namespace, name, print_status=True):
+                    sys.exit(0)
+    else:
+        _assembly_status(namespace, name, print_status=True)
+
+@assembly.command()
+@click.option('--namespace', default=lambda: common.get_default_val('namespace'), help='Namespace that the assemblies are in')
+def list(namespace):
+    """List assemblies"""
+    if _list_assemblies(namespace):
+        sys.exit(0)
+    else:
+        sys.exit(1)
+
+@assembly.command()
+@click.option('--namespace', default=lambda: common.get_default_val('namespace'), help='Namespace that the assembly is in')
+@click.option('--name', required=True, help='Name of the assembly to delete')
+@click.option('--wait', is_flag=True, help='Wait for all pods to be deleted')
+@click.option('--force', is_flag=True, help='Delete assembly without getting confirmation')
+def delete(namespace, name, wait, force):
+    """Deletes an assembly given its name"""
+    _delete_assembly(namespace, name, wait, force)
 
 def get_preferred_api_version(group_name):
     k8s.config.load_config()

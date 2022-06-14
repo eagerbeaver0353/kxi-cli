@@ -1,5 +1,8 @@
 import copy
 import json
+import yaml
+import os
+import pytest
 from xml.dom import NOT_FOUND_ERR
 from click.testing import CliRunner
 import kubernetes as k8s
@@ -7,14 +10,18 @@ from kxicli import main
 from kxicli.commands import assembly
 
 ASM_NAME = 'test_asm'
+ASM_NAME2 = 'test_asm2'
 TEST_CLI = CliRunner()
 CUSTOM_OBJECT_API = 'kubernetes.client.CustomObjectsApi'
 PREFERRED_VERSION_FUNC = 'kxicli.commands.assembly.get_preferred_api_version'
 PREFERRED_VERSION = 'v1'
+TEST_NS = 'test_ns'
 
 TEST_ASSEMBLY = {
+        'apiVersion': 'insights.kx.com/v1' ,
         'metadata': {
-            'name': ASM_NAME
+            'name': ASM_NAME,
+            'namespace': TEST_NS
         },
         'status': {
             'conditions': [
@@ -25,6 +32,24 @@ TEST_ASSEMBLY = {
             ]
         }
     }
+
+TEST_ASSEMBLY2 = {
+        'apiVersion': 'insights.kx.com/v1' ,
+        'metadata': {
+            'name': ASM_NAME2,
+            'namespace': TEST_NS
+        },
+        'status': {
+            'conditions': [
+                {
+                    'type': 'AssemblyReady',
+                    'status': 'True'
+                }
+            ]
+        }
+    }
+
+ASSEMBLY_LIST = {'items': [TEST_ASSEMBLY, TEST_ASSEMBLY2]}
 
 TRUE_STATUS = {
         'AssemblyReady': {
@@ -42,9 +67,33 @@ def raise_not_found(**kwargs):
     """Helper function to test try/except blocks"""
     raise k8s.client.rest.ApiException(status=404)
 
+def mocked_return_false(name):
+    return False
+
 def store_args(**args):
     global stored_args
     stored_args = args
+
+def append_args(**args):
+    global appended_args
+    appended_args.append(args)
+
+def mock_return_conflict_for_assembly(**kwargs):
+    global appended_args
+    if kwargs['body']['metadata']['name'] == ASM_NAME:
+        raise k8s.client.rest.ApiException(status=409) 
+    else:
+        appended_args.append(kwargs)
+
+# mock the response from the Kubernetes list function
+def mock_list_assemblies(mock_instance, response=ASSEMBLY_LIST):
+    mock_instance.list_namespaced_custom_object.return_value = response
+
+# mock the Kubernetes create function to capture arguments
+def mock_create_assemblies(mock_instance):
+    global appended_args
+    appended_args = []
+    mock_instance.create_namespaced_custom_object.side_effect = append_args
 
 def test_format_assembly_status_if_no_status_key():
     assert assembly._format_assembly_status({}) == {}
@@ -104,6 +153,116 @@ def test_create_with_false_status(mocker):
     instance.get_namespaced_custom_object.return_value = asm
 
     assert assembly._assembly_status(namespace='test_ns', name='test_asm', print_status=True) == False
+
+def test_get_assemblies_list(mocker):
+    mock_list_assemblies(mocker.patch(CUSTOM_OBJECT_API).return_value)
+    assert assembly._get_assemblies_list(namespace='test_ns') == ASSEMBLY_LIST
+
+def test_backup_assemblies(mocker):
+    mock_list_assemblies(mocker.patch(CUSTOM_OBJECT_API).return_value)
+    filename = 'test_assembly_list.yaml'
+
+    assert filename == assembly._backup_assemblies(namespace='test_ns', filepath=filename)
+    with open(filename, 'rb') as f:
+        assert yaml.full_load(f) == ASSEMBLY_LIST
+    os.remove(filename)
+
+def test_create_assembly_submits_to_k8s_api(mocker):
+    mock_create_assemblies(mocker.patch(CUSTOM_OBJECT_API).return_value)
+    test_asm_file = os.path.dirname(__file__) + '/files/assembly-v1.yaml'
+    with open(test_asm_file) as f:
+        test_asm = yaml.safe_load(f)
+
+    assembly._create_assembly(namespace='test_ns', body=test_asm)
+
+    assert appended_args == [{'group': 'insights.kx.com', 'version': PREFERRED_VERSION, 'namespace': 'test_ns', 'plural': 'assemblies', 'body': test_asm}]
+
+def test_create_assemblies_from_file_creates_one_assembly(mocker):
+    mock_create_assemblies(mocker.patch(CUSTOM_OBJECT_API).return_value)
+    test_asm_file = os.path.dirname(__file__) + '/files/assembly-v1.yaml'
+    with open(test_asm_file) as f:
+        test_asm = yaml.safe_load(f)
+    
+    assembly._create_assemblies_from_file(namespace='test_ns', filepath=test_asm_file)
+
+    assert appended_args == [{'group': 'insights.kx.com', 'version': PREFERRED_VERSION, 'namespace': 'test_ns', 'plural': 'assemblies', 'body': test_asm}]
+
+def test_create_assemblies_from_file_creates_two_assemblies(mocker):
+    mock_instance = mocker.patch(CUSTOM_OBJECT_API).return_value
+    mock_list_assemblies(mock_instance)
+    mock_create_assemblies(mock_instance)
+    filename = 'test_assembly_list.yaml'
+
+    #Call _backup_assemblies to create file
+    assembly._backup_assemblies(namespace='test_ns', filepath=filename)
+    assembly._create_assemblies_from_file(namespace='test_ns', filepath=filename)
+
+    with open(filename, 'rb') as f:
+        assert yaml.full_load(f) == ASSEMBLY_LIST
+    assert appended_args == [
+        {'group': 'insights.kx.com', 'version': PREFERRED_VERSION, 'namespace': 'test_ns', 'plural': 'assemblies', 'body': TEST_ASSEMBLY},
+        {'group': 'insights.kx.com', 'version': PREFERRED_VERSION, 'namespace': 'test_ns', 'plural': 'assemblies', 'body': TEST_ASSEMBLY2}
+    ]
+    os.remove(filename)
+
+def test_create_assemblies_from_file_removes_resourceVersion(mocker):
+    TEST_ASSEMBLY_WITH_resourceVersion = copy.deepcopy(TEST_ASSEMBLY)
+    TEST_ASSEMBLY_WITH_resourceVersion['metadata']['resourceVersion'] = '01234'
+
+    assembly_list = {'items': [TEST_ASSEMBLY_WITH_resourceVersion]}
+    filename = 'test_assembly_list.yaml'
+    mock_instance = mocker.patch(CUSTOM_OBJECT_API).return_value
+    mock_list_assemblies(mock_instance=mock_instance, response=assembly_list)
+    mock_create_assemblies(mock_instance)
+
+    #Call _backup_assemblies to create file
+    assembly._backup_assemblies(namespace='test_ns', filepath=filename)
+    assembly._create_assemblies_from_file(namespace='test_ns', filepath=filename)
+
+    assert appended_args == [{'group': 'insights.kx.com', 'version': PREFERRED_VERSION, 'namespace': 'test_ns', 'plural': 'assemblies', 'body': TEST_ASSEMBLY}]
+    os.remove(filename)
+
+def test_create_assemblies_from_file_creates_when_one_already_exists(mocker):
+    # when applying one assembly fails, applying others proceeds uninterrupted
+    mock_instance = mocker.patch(CUSTOM_OBJECT_API).return_value
+    mock_list_assemblies(mock_instance)
+    global appended_args
+    appended_args = []
+    # mock the Kubernetes create function to return error upon creation of test_asm, success for test_asm2
+    mock_instance.create_namespaced_custom_object.side_effect = mock_return_conflict_for_assembly    
+    filename = 'test_assembly_list.yaml'
+    
+    #Call _backup_assemblies to create file
+    assembly._backup_assemblies(namespace='test_ns', filepath=filename)
+    assembly._create_assemblies_from_file(namespace='test_ns', filepath=filename)
+
+    with open(filename, 'rb') as f:
+        assert yaml.full_load(f) == ASSEMBLY_LIST
+    assert appended_args == [
+        {'group': 'insights.kx.com', 'version': PREFERRED_VERSION, 'namespace': 'test_ns', 'plural': 'assemblies', 'body': TEST_ASSEMBLY2}
+    ]
+    os.remove(filename)
+
+def test_read_assembly_file_returns_contents():
+    test_asm_file = os.path.dirname(__file__) + '/files/assembly-v1.yaml'
+    with open(test_asm_file) as f:
+        test_asm = yaml.safe_load(f)
+    assert assembly._read_assembly_file(test_asm_file) == test_asm
+
+def test_read_assembly_file_errors_when_file_does_not_exist():
+    with pytest.raises(SystemExit) as pytest_wrapped_e:
+        assembly._read_assembly_file('a_bad_file_name.yaml')
+    assert pytest_wrapped_e.type == SystemExit
+    assert pytest_wrapped_e.value.code == 1
+
+def test_read_assembly_file_errors_when_file_is_invalid():
+    with open('new_file', 'w') as f:
+        f.write('test: {this is not a yaml')
+    with pytest.raises(SystemExit) as pytest_wrapped_e:
+        assembly._read_assembly_file('new_file')
+    assert pytest_wrapped_e.type == SystemExit
+    assert pytest_wrapped_e.value.code == 1
+    os.remove('new_file')
 
 # CLI invoked tests
 
@@ -224,3 +383,107 @@ def test_cli_assembly_delete_with_force_and_wait(mocker):
     assert result.output == f"""Deleting assembly {ASM_NAME}
 Waiting for assembly to be deleted
 """
+
+def test_cli_assembly_list_if_assembly_deployed(mocker):
+    # mock the Kubernetes function to return TEST_ASSEMBLY
+    mock = mocker.patch(CUSTOM_OBJECT_API)
+    instance = mock.return_value
+    instance.list_namespaced_custom_object.return_value = {'items': [TEST_ASSEMBLY]}
+
+    result = TEST_CLI.invoke(main.cli, ['assembly', 'list'])
+
+    assert result.exit_code == 0
+    assert result.output == f"""ASSEMBLY NAME  NAMESPACE
+{ASM_NAME}       {TEST_NS}
+"""
+
+def test_cli_assembly_list_error_response(mocker):
+    mock = mocker.patch('kxicli.commands.assembly._list_assemblies', mocked_return_false )
+    result = TEST_CLI.invoke(main.cli, ['assembly', 'list'])
+    assert result.exit_code == 1
+
+def test_cli_assembly_create_from_file(mocker):
+    test_asm_file = os.path.dirname(__file__) + '/files/assembly-v1.yaml'
+    with open(test_asm_file) as f:
+        test_asm = yaml.safe_load(f)
+    mock_create_assemblies(mocker.patch(CUSTOM_OBJECT_API).return_value)
+
+    result = TEST_CLI.invoke(main.cli, ['assembly', 'create', '--filepath', test_asm_file])
+    
+    assert result.exit_code == 0
+    assert result.output == f"""Submitting assembly from {test_asm_file}
+Custom assembly resource basic-assembly created!
+"""
+    assert appended_args == [{'group': 'insights.kx.com', 'version': PREFERRED_VERSION, 'namespace': 'test', 'plural': 'assemblies', 'body': test_asm}]
+
+def test_cli_assembly_create_and_wait(mocker):
+    test_asm_file = os.path.dirname(__file__) + '/files/assembly-v1.yaml'
+    with open(test_asm_file) as f:
+        test_asm = yaml.safe_load(f)
+    mock_instance = mocker.patch(CUSTOM_OBJECT_API).return_value
+    mock_create_assemblies(mock_instance)
+    mock_instance.get_namespaced_custom_object.return_value = TEST_ASSEMBLY
+    
+    result = TEST_CLI.invoke(main.cli, ['assembly', 'create', '--filepath', test_asm_file, '--wait'])
+    
+    assert result.exit_code == 0
+    assert result.output == f"""Submitting assembly from {test_asm_file}
+Waiting for assembly to enter "Ready" state
+Custom assembly resource basic-assembly created!
+"""
+    assert appended_args == [{'group': 'insights.kx.com', 'version': PREFERRED_VERSION, 'namespace': 'test', 'plural': 'assemblies', 'body': test_asm}]
+
+def test_cli_assembly_backup_assemblies(mocker):
+    mock_list_assemblies(mocker.patch(CUSTOM_OBJECT_API).return_value)
+    filename = 'test_assembly_list.yaml'
+
+    result = TEST_CLI.invoke(main.cli, ['assembly', 'backup', '--filepath', filename])
+
+    assert result.exit_code == 0
+    assert result.output == f"""Persisted assembly definitions for ['{ASM_NAME}', '{ASM_NAME2}'] to {filename}
+"""
+    with open(filename, 'rb') as f:
+        assert yaml.full_load(f) == ASSEMBLY_LIST
+    os.remove(filename)
+
+def test_cli_assembly_backup_assemblies_overwrites_when_file_already_exists(mocker):
+    mock_list_assemblies(mocker.patch(CUSTOM_OBJECT_API).return_value)
+    filename = 'test_assembly_list.yaml'
+    with open(filename, 'w') as f:
+        f.write('a test file')
+
+    #Respond 'y' to the prompt to overwrite
+    result = TEST_CLI.invoke(main.cli, ['assembly', 'backup', '--filepath', filename], input='y')
+
+    assert result.exit_code == 0
+    assert result.output == f"""
+{filename} file exists. Do you want to overwrite it with a new assembly backup file? [y/N]: y
+Persisted assembly definitions for ['{ASM_NAME}', '{ASM_NAME2}'] to {filename}
+"""
+    with open(filename, 'rb') as f:
+        assert yaml.full_load(f) == ASSEMBLY_LIST
+    os.remove(filename)
+
+def test_cli_assembly_backup_assemblies_creates_new_when_file_already_exists(mocker):
+    mock_list_assemblies(mocker.patch(CUSTOM_OBJECT_API).return_value)
+    filename = 'test_assembly_list.yaml'
+    new_file = 'new_backup.yaml'
+    with open(filename, 'w') as f:
+        f.write('a test file')
+
+    #Provide new file to prompt
+    user_input = f"""n
+{new_file}
+"""
+    result = TEST_CLI.invoke(main.cli, ['assembly', 'backup', '--filepath', filename], input=user_input)
+
+    assert result.exit_code == 0
+    assert result.output == f"""
+{filename} file exists. Do you want to overwrite it with a new assembly backup file? [y/N]: n
+Please enter the path to write the assembly backup file: {new_file}
+Persisted assembly definitions for ['{ASM_NAME}', '{ASM_NAME2}'] to {new_file}
+"""
+    with open(new_file, 'rb') as f:
+        assert yaml.full_load(f) == ASSEMBLY_LIST
+    os.remove(filename)
+    os.remove(new_file)
