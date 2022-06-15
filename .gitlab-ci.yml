@@ -113,11 +113,11 @@ publish package:
   rules:
     - if: $CI_COMMIT_TAG
 
-publish package external:
+publish package external kxi-pypi-public:
   stage: publish
   image: python:3
   variables:
-    PYPI_URL: "https://nexus.dl.kx.com/repository/kxi/"
+    PYPI_URL: "https://nexus.dl.kx.com/repository/kxi-pypi-public/"
     TWINE_USERNAME: "$EXT_NEXUS_USER_RW"
     TWINE_PASSWORD: "$EXT_NEXUS_PASS_RW"
   script:
