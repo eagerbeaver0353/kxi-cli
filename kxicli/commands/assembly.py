@@ -116,6 +116,10 @@ def _backup_assemblies(namespace, filepath):
         for asm in res['items']:
             if 'metadata' in asm and 'name' in asm['metadata']:
                 asm_list.append(asm['metadata']['name'])
+    
+    if len(asm_list) == 0:
+        click.echo('No assemblies to back up')
+        return None
 
     if os.path.exists(filepath):
         if not click.confirm(f'\n{filepath} file exists. Do you want to overwrite it with a new assembly backup file?'):
@@ -144,6 +148,10 @@ def _read_assembly_file(filepath):
 
 def _create_assemblies_from_file(namespace, filepath, wait=None):
     """Apply assemblies from file"""
+    if not filepath:
+        click.echo('No assemblies to restore')
+        return None
+
     asm_list = _read_assembly_file(filepath)
 
     click.echo(f'Submitting assembly from {filepath}')
@@ -210,6 +218,7 @@ def _delete_assembly(namespace, name, wait, force):
         else:
             click.echo(f'Exception when calling CustomObjectsApi->delete_namespaced_custom_object: {exception}\n')
 
+    asm_running = True
     if wait:
         with click.progressbar(range(10), label='Waiting for assembly to be deleted') as bar:
             for n in bar:
@@ -224,10 +233,20 @@ def _delete_assembly(namespace, name, wait, force):
                         )
                 except k8s.client.rest.ApiException as exception:
                     if exception.status == 404:
-                        sys.exit(0)
+                        asm_running = False
+                        break
+        
+        if asm_running: 
+            log.error('Assembly was not deleted in time, exiting')
+            sys.exit(1)
 
-        log.error('Assembly was not deleted in time, exiting')
-        sys.exit(1)
+def _delete_running_assemblies(namespace, wait, force):
+    """Deletes all assemblies running in a namespace"""
+    asm_list = _get_assemblies_list(namespace)
+    if 'items' in asm_list:
+        for asm in asm_list['items']:
+            if 'metadata' in asm and 'name' in asm['metadata']:
+                _delete_assembly(namespace=namespace, name=asm['metadata']['name'], wait=wait, force=force)
 
 @assembly.command()
 @click.option('--namespace', default=lambda: common.get_default_val('namespace'), help='Namespace to retrieve assemblies from')

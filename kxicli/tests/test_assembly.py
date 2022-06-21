@@ -95,6 +95,11 @@ def mock_create_assemblies(mock_instance):
     appended_args = []
     mock_instance.create_namespaced_custom_object.side_effect = append_args
 
+def mock_delete_assemblies(mock_instance):
+    global appended_args
+    appended_args = []
+    mock_instance.delete_namespaced_custom_object.side_effect = append_args
+
 def test_format_assembly_status_if_no_status_key():
     assert assembly._format_assembly_status({}) == {}
 
@@ -166,6 +171,14 @@ def test_backup_assemblies(mocker):
     with open(filename, 'rb') as f:
         assert yaml.full_load(f) == ASSEMBLY_LIST
     os.remove(filename)
+
+def test_backup_assemblies_when_no_assemblies_running(mocker):
+    mock_instance = mocker.patch(CUSTOM_OBJECT_API).return_value 
+    mock_instance.list_namespaced_custom_object.return_value = {'items' : []}
+    filename = 'test_assembly_list.yaml'
+
+    assert assembly._backup_assemblies(namespace='test_ns', filepath=filename) == None
+    assert not os.path.exists(filename)
 
 def test_create_assembly_submits_to_k8s_api(mocker):
     mock_create_assemblies(mocker.patch(CUSTOM_OBJECT_API).return_value)
@@ -242,6 +255,33 @@ def test_create_assemblies_from_file_creates_when_one_already_exists(mocker):
         {'group': 'insights.kx.com', 'version': PREFERRED_VERSION, 'namespace': 'test_ns', 'plural': 'assemblies', 'body': TEST_ASSEMBLY2}
     ]
     os.remove(filename)
+
+def test_create_assemblies_from_file_does_nothing_when_filepath_is_none():
+    assert assembly._create_assemblies_from_file(namespace='test_ns', filepath=None) == None
+
+def test_delete_assembly(mocker):
+    mock_instance = mocker.patch(CUSTOM_OBJECT_API).return_value
+    mocker.patch(PREFERRED_VERSION_FUNC, return_value=PREFERRED_VERSION)
+    mock_delete_assemblies(mock_instance)
+    
+    assembly._delete_assembly(namespace='test_ns', name=ASM_NAME, wait=False, force=True)
+    
+    assert appended_args == [
+        {'group': 'insights.kx.com', 'version': PREFERRED_VERSION, 'namespace': 'test_ns', 'plural': 'assemblies', 'name': ASM_NAME}
+    ]
+
+def test_delete_running_assemblies(mocker):
+    mock_instance = mocker.patch(CUSTOM_OBJECT_API).return_value
+    mock_list_assemblies(mock_instance)
+    mocker.patch(PREFERRED_VERSION_FUNC, return_value=PREFERRED_VERSION)
+    mock_delete_assemblies(mock_instance)
+    
+    assembly._delete_running_assemblies(namespace='test_ns', wait=False, force=True)
+    
+    assert appended_args == [
+        {'group': 'insights.kx.com', 'version': PREFERRED_VERSION, 'namespace': 'test_ns', 'plural': 'assemblies', 'name': ASM_NAME},
+        {'group': 'insights.kx.com', 'version': PREFERRED_VERSION, 'namespace': 'test_ns', 'plural': 'assemblies', 'name': ASM_NAME2}
+    ]
 
 def test_read_assembly_file_returns_contents():
     test_asm_file = os.path.dirname(__file__) + '/files/assembly-v1.yaml'
