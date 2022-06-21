@@ -16,6 +16,7 @@ from kxicli import log
 from kxicli import common
 from kxicli.common import get_default_val as default_val
 from kxicli.common import get_help_text as help_text
+from kxicli.commands import assembly
 
 docker_config_file_path = os.environ.get('HOME') + '/.docker/config.json'
 install_namespace_default = 'kxi'
@@ -48,13 +49,7 @@ def setup(namespace, chart_repo_name, license_secret, license_as_env_var, client
 
     click.secho('KX Insights Install Setup', bold=True)
 
-    _, active_context = k8s.config.list_kube_config_contexts()
-    if '--namespace' not in sys.argv:
-        if 'namespace' in active_context['context']:
-            namespace = active_context['context']['namespace']
-        else:
-            namespace = click.prompt('\nPlease enter a namespace to install in', default=install_namespace_default)
-
+    active_context, namespace = get_namespace(namespace)
     create_namespace(namespace)
     click.echo(f'\nRunning in namespace {namespace} on the cluster {active_context["context"]["cluster"]}')
 
@@ -169,7 +164,6 @@ def setup(namespace, chart_repo_name, license_secret, license_as_env_var, client
 @click.option('--image-pull-secret', default=lambda: default_val('image.pullSecret'), help=help_text('image.pullSecret'))
 @click.option('--license-secret', default=lambda: default_val('license.secret'), help=help_text('license.secret'))
 @click.option('--install-config-secret', default=None, help=help_text('install.configSecret'))
-
 @click.pass_context
 def run(ctx, namespace, filepath, release, repo, version, operator_version, image_pull_secret, license_secret, install_config_secret):
     """Install KX Insights with a values file"""
@@ -179,50 +173,65 @@ def run(ctx, namespace, filepath, release, repo, version, operator_version, imag
         click.echo('No values file provided, invoking "kxi install setup"\n')
         filepath, repo = ctx.invoke(setup)
 
-    _, active_context = k8s.config.list_kube_config_contexts()
-    if '--namespace' not in sys.argv:
-        if 'namespace' in active_context['context']:
-            namespace = active_context['context']['namespace']
-        else:
-            namespace = click.prompt('\nPlease enter a namespace to install in', default=install_namespace_default)
+    _, namespace = get_namespace(namespace)
 
-    values_secret = None
-    if install_config_secret:
-        values_secret = get_install_config_secret(namespace=namespace, install_config_secret=install_config_secret)
-        if not values_secret:
-            click.echo(f'Cannot find values secret {install_config_secret}. Exiting Install"\n')
-            sys.exit(1)
+    values_secret = get_install_values(namespace=namespace, install_config_secret=install_config_secret)
 
-    if operator_installed(release):
-        click.echo('\nkxi-operator already installed')
-    else:
-        if click.confirm('\nkxi-operator not found. Do you want to install it?'):
-            create_namespace(operator_namespace)
+    install_operator_and_release(release=release, namespace=namespace, version=version, operator_version=operator_version, values_file=filepath, values_secret=values_secret, image_pull_secret=image_pull_secret, license_secret=license_secret, chart_repo_name=repo)
 
-            copy_secret(image_pull_secret, namespace, operator_namespace)
-            copy_secret(license_secret, namespace, operator_namespace)
+@install.command()
+@click.option('--namespace', default=lambda: default_val('namespace'), help=help_text('namespace'))
+@click.option('--release', default=lambda: default_val('release.name'), help=help_text('release.name'))
+@click.option('--chart-repo-name', default=lambda: default_val('chart.repo.name'), help=help_text('chart.repo.name'))
+@click.option('--assembly-backup-filepath', default=lambda: common.get_default_val('assembly.backup.file'), help=common.get_help_text('assembly.backup.file'))
+@click.option('--version', required=True, help='Version to install')
+@click.option('--operator-version', default=None, help='Version of the operator to install')
+@click.option('--image-pull-secret', default=None, help=help_text('image.pullSecret'))
+@click.option('--license-secret', default=None, help=help_text('license.secret'))
+@click.option('--install-config-secret', default=lambda: default_val('install.configSecret'), help=help_text('install.configSecret'))
+@click.option('--filepath', help='Values file to install with')
+def upgrade(namespace, release, chart_repo_name, assembly_backup_filepath, version, operator_version, image_pull_secret, license_secret, install_config_secret, filepath):
+    """Upgrade KX Insights"""
+    _, namespace = get_namespace(namespace)
 
-            chart=f'{repo}/kxi-operator'
-            helm_install(release, chart=chart, values_file=filepath, values_secret=values_secret, version=get_operator_version(version, operator_version), namespace=operator_namespace)
+    click.secho('Upgrading KX Insights', bold=True)
 
-    chart=f'{repo}/insights'
-    helm_install(release, chart=chart, values_file=filepath, values_secret=values_secret, version=version, namespace=namespace)
+    # Read install values
+    if filepath is None and install_config_secret is None:
+        log.error('At least one of --install-config-secret and --filepath options must be provided')
+        sys.exit(1)
+    values_secret = get_install_values(namespace=namespace, install_config_secret=install_config_secret)
+    image_pull_secret,license_secret = get_image_and_license_secret_from_values(values_secret, filepath, image_pull_secret, license_secret)
+
+    if not insights_installed(release):
+        click.echo('KX Insights is not deployed. Skipping to install')
+        install_operator_and_release(release=release, namespace=namespace, version=version, operator_version=operator_version, values_file=filepath, values_secret=values_secret, image_pull_secret=image_pull_secret, license_secret=license_secret, chart_repo_name=chart_repo_name)
+        click.secho(f'\nUpgrade to version {version} complete', bold=True)
+        sys.exit(0)
+
+    click.secho('\nBacking up assemblies', bold=True)
+    assembly_backup_filepath = assembly._backup_assemblies(namespace, assembly_backup_filepath)
+
+    click.secho('\nTearing down assemblies', bold=True)
+    assembly._delete_running_assemblies(namespace=namespace, wait=True, force=False)
+
+    click.secho('\nUninstalling insights and operator', bold=True)
+    delete_release_operator_and_crds(release)
+
+    click.secho('\nReinstalling insights and operator', bold=True)
+    install_operator_and_release(release=release, namespace=namespace, version=version, operator_version=operator_version, values_file=filepath, values_secret=values_secret, image_pull_secret=image_pull_secret, license_secret=license_secret, chart_repo_name=chart_repo_name)
+    
+    click.secho('\nReapplying assemblies', bold=True)
+    assembly._create_assemblies_from_file(namespace=namespace, filepath=assembly_backup_filepath)
+
+    click.secho(f'\nUpgrade to version {version} complete', bold=True)
 
 @install.command()
 @click.option('--release', default=lambda: default_val('release.name'), help=help_text('release.name'))
 def delete(release):
     """Uninstall KX Insights"""
-    if insights_installed(release) and click.confirm('\nKX Insights is deployed. Do you want to uninstall?'):
-            helm_uninstall(release)  
-
-    if operator_installed(release) and click.confirm('\nThe kxi-operator is deployed. Do you want to uninstall?'):
-            helm_uninstall(release, namespace=operator_namespace)        
-
-    crds = common.get_existing_crds(['assemblies.insights.kx.com','assemblyresources.insights.kx.com'])
-    if len(crds) > 0 and click.confirm(f'\nThe assemblies CRDs {crds} exist. Do you want to delete them?'):
-            for i in crds:
-                common.delete_crd(i)
-
+    delete_release_operator_and_crds(release)
+    
 @install.command()
 @click.option('--repo', default=lambda: default_val('chart.repo.name'), help=help_text('chart.repo.name'))
 def list_versions(repo):
@@ -239,6 +248,15 @@ def get_values(namespace,install_config_secret):
     Display the kxi-install-config secret used for storing installation values
     """
     click.echo(get_install_config_secret(namespace=namespace, install_config_secret=install_config_secret))
+
+def get_namespace(namespace):
+    _, active_context = k8s.config.list_kube_config_contexts()
+    if '--namespace' not in sys.argv:
+        if 'namespace' in active_context['context']:
+            namespace = active_context['context']['namespace']
+        else:
+            namespace = click.prompt('\nPlease enter a namespace to install in', default=install_namespace_default)
+    return active_context, namespace
 
 def get_install_config_secret(namespace, install_config_secret):
     """
@@ -547,6 +565,69 @@ def get_secret_body(name, secret_type, data=None, string_data=None):
 
     return secret
 
+def get_install_values(namespace, install_config_secret):
+    values_secret = None
+    if install_config_secret:
+        values_secret = get_install_config_secret(namespace=namespace, install_config_secret=install_config_secret)
+        if not values_secret:
+            click.echo(f'Cannot find values secret {install_config_secret}. Exiting Install\n')
+            sys.exit(1)
+
+    return values_secret
+
+def get_image_and_license_secret_from_values(values_secret, values_file, image_pull_secret, license_secret):
+    """Read image_pull_secret and license_secret from argument, values file, values secret, default"""
+    values_secret_dict = {}
+    if values_secret:
+        values_secret_dict = yaml.safe_load(values_secret)
+
+    values_file_dict = {}
+    if values_file:
+        if not os.path.exists(values_file):
+            log.error(f'File not found: {values_file}. Exiting')
+            sys.exit(1)
+        else:
+            with open(values_file) as f:
+                try:
+                    values_file_dict = yaml.safe_load(f)
+                except yaml.YAMLError as e:
+                    log.error(f'Invalid values file {values_file}')
+                    click.echo(e)
+                    sys.exit(1)
+
+    if not image_pull_secret:
+        image_pull_secret = get_from_values_dict(['global','imagePullSecrets',0,'name'], values_secret_dict, values_file_dict, default_val('image.pullSecret'))
+
+    if not license_secret:
+        license_secret = get_from_values_dict(['global','license','secretName'], values_secret_dict, values_file_dict, default_val('license.secret'))
+
+    return image_pull_secret, license_secret
+
+
+def get_from_values_dict(key, values_secret_dict, values_file_dict, default):
+    try:
+        val = values_file_dict
+        for k in key:
+            val = val[k]
+    except KeyError:
+        try:
+            val = values_secret_dict
+            for k in key:
+                val = val[k]
+        except KeyError:
+            log.debug(f'Cannot find key {key} in values file or secret. Using default')
+            val = default
+        except BaseException as e:
+            log.error(f'Invalid values secret')
+            log.error(e)
+            sys.exit(1)
+    except BaseException as e:
+        log.error(f'Invalid values file')
+        log.error(e)
+        sys.exit(1)
+
+    return val
+
 def gen_private_key():
     """Creates a basic private key"""
     log.debug('Generating private key with size 2048 and exponent 65537')
@@ -580,6 +661,34 @@ def gen_cert(private_key):
     builder = builder.add_extension(x509.SubjectKeyIdentifier.from_public_key(private_key.public_key()), critical=False)
 
     return builder.sign(private_key, hashes.SHA256(), default_backend())
+
+def install_operator_and_release(release, namespace, version, operator_version, values_file, values_secret, image_pull_secret, license_secret, chart_repo_name):
+    """Install operator and insights"""
+    if operator_installed(release):
+        click.echo('\nkxi-operator already installed')
+    else:
+        if click.confirm('\nkxi-operator not found. Do you want to install it?'):
+            create_namespace(operator_namespace)
+
+            copy_secret(image_pull_secret, namespace, operator_namespace)
+            copy_secret(license_secret, namespace, operator_namespace)
+
+            helm_install(release, chart=f'{chart_repo_name}/kxi-operator', values_file=values_file, values_secret=values_secret, version=get_operator_version(version, operator_version), namespace=operator_namespace)
+
+    helm_install(release, chart=f'{chart_repo_name}/insights', values_file=values_file, values_secret=values_secret, version=version, namespace=namespace)
+
+def delete_release_operator_and_crds(release):
+    """Delete insights, operator and CRDs"""
+    if insights_installed(release) and click.confirm('\nKX Insights is deployed. Do you want to uninstall?'):
+            helm_uninstall(release)  
+
+    if operator_installed(release) and click.confirm('\nThe kxi-operator is deployed. Do you want to uninstall?'):
+            helm_uninstall(release, namespace=operator_namespace)        
+
+    crds = common.get_existing_crds(['assemblies.insights.kx.com','assemblyresources.insights.kx.com'])
+    if len(crds) > 0 and click.confirm(f'\nThe assemblies CRDs {crds} exist. Do you want to delete them?'):
+            for i in crds:
+                common.delete_crd(i)
 
 def helm_add_repo(repo, url, username, password):
     """Call 'helm repo add' using subprocess.run"""

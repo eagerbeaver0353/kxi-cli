@@ -1,4 +1,6 @@
 """This install test is meant to unit test the individual functions in the install command"""
+import pytest
+import copy
 import io
 import os
 import base64
@@ -18,9 +20,13 @@ test_key = install.gen_private_key()
 test_cert = install.gen_cert(test_key)
 test_lic_file = os.path.dirname(__file__) + '/files/test-license'
 test_val_file = os.path.dirname(__file__) + '/files/test-values.yaml'
+test_kube_config = os.path.dirname(__file__) + '/files/test-kube-config'
 
 with open(test_val_file, 'rb') as values_file:
     test_vals = yaml.full_load(values_file)
+
+with open(test_kube_config, 'r') as f:    
+    k8s_config = yaml.full_load(f)
 
 def raise_not_found(**kwargs):
     """Helper function to test try/except blocks"""
@@ -59,6 +65,9 @@ def mocked_all_crds_exist(name):
 
 def mocked_one_crd_exists(name):
     return name == 'testcrd'
+
+def mock_k8s_contexts():
+    return ['', k8s_config['contexts'][0]]
 
 def test_get_secret_body_string_data_parameter():
     sdata = {'a':'b'}
@@ -223,6 +232,19 @@ def test_build_install_secret():
     assert 'values.yaml' in res
     assert yaml.full_load(base64.b64decode(res['values.yaml'])) == data
 
+def test_get_install_values_returns_values_from_secret(mocker):
+    mocker.patch('kxicli.commands.install.read_secret', mocked_read_namespaced_secret_return_values)
+    assert install.get_install_values(namespace=test_ns, install_config_secret=test_secret) == yaml.dump(test_vals)
+    assert install.get_install_values(namespace=test_ns, install_config_secret=None) == None
+
+def test_get_install_values_exits_when_secret_not_found(mocker):
+    mock = mocker.patch('kubernetes.client.CoreV1Api')
+    mock.return_value.read_namespaced_secret.side_effect = raise_not_found
+    with pytest.raises(SystemExit) as pytest_wrapped_e:
+        install.get_install_values(namespace=test_ns, install_config_secret=test_secret)
+    assert pytest_wrapped_e.type == SystemExit
+    assert pytest_wrapped_e.value.code == 1
+
 def test_get_operator_version_returns_operator_version_if_passed_regardless_of_rc():
     non_rc = install.get_operator_version('1.2.3', '4.5.6')
     rc = install.get_operator_version('1.2.3-rc.1', '4.5.6')
@@ -277,3 +299,44 @@ def test_sanitize_auth_url():
     assert https_replaced == expected
     assert trailing_slash == expected
     assert prepend_http == expected
+
+def test_get_namespace(mocker):
+    mocker.patch('kubernetes.config.list_kube_config_contexts', mock_k8s_contexts)
+    
+    res = install.get_namespace(None)
+    assert res[1] == 'test-namespace'
+    assert res[0] == k8s_config['contexts'][0]
+    assert 'cluster' in res[0]['context'].keys()
+
+def test_get_image_and_license_secret_from_values_returns_defaults():
+    assert install.get_image_and_license_secret_from_values(None, None, None, None) == ('kxi-nexus-pull-secret','kxi-license')
+
+def test_get_image_and_license_secret_from_values_returns_from_secret():
+    test_vals_secret = copy.deepcopy(test_vals)
+    test_vals_secret['global']['imagePullSecrets'] = [{'name': 'image-pull-from-secret'}]
+    test_vals_secret['global']['license']['secretName'] = 'license-from-secret'
+    assert install.get_image_and_license_secret_from_values(str(test_vals_secret), None, None, None) == ('image-pull-from-secret', 'license-from-secret')
+
+def test_get_image_and_license_secret_from_values_file_overrides_secret():
+    test_vals_secret = copy.deepcopy(test_vals)
+    test_vals_secret['global']['imagePullSecrets'] = [{'name': 'image-pull-from-secret'}]
+    test_vals_secret['global']['license']['secretName'] = 'license-from-secret'
+    assert install.get_image_and_license_secret_from_values(str(test_vals_secret), test_val_file, None, None) == ('kxi-nexus-pull-secret','kxi-license')
+
+def test_get_image_and_license_secret_from_values_args_overrides_secret_and_file():
+    test_vals_secret = copy.deepcopy(test_vals)
+    test_vals_secret['global']['imagePullSecrets'] = [{'name': 'image-pull-from-secret'}]
+    test_vals_secret['global']['license']['secretName'] = 'license-from-secret'
+    assert install.get_image_and_license_secret_from_values(str(test_vals_secret), test_val_file, 'image-pull-from-arg', 'license-from-arg') == ('image-pull-from-arg', 'license-from-arg')
+
+def test_get_image_and_license_secret_returns_error_when_invalid_secret_passed():
+    with pytest.raises(SystemExit) as pytest_wrapped_e:
+        install.get_image_and_license_secret_from_values(test_lic_file, None, None, None)
+    assert pytest_wrapped_e.type == SystemExit
+    assert pytest_wrapped_e.value.code == 1
+
+def test_get_image_and_license_secret_returns_error_when_invalid_file_passed():
+    with pytest.raises(SystemExit) as pytest_wrapped_e:
+        install.get_image_and_license_secret_from_values(None, test_lic_file, None, None)
+    assert pytest_wrapped_e.type == SystemExit
+    assert pytest_wrapped_e.value.code == 1
