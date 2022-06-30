@@ -1,24 +1,27 @@
-import sys
-import os
-import string
-import random
-import subprocess
-import datetime
 import base64
+import datetime
 import json
+import os
+import random
+import string
+import subprocess
+import sys
+from pathlib import Path
+
 import click
 import kubernetes as k8s
 import yaml
 from cryptography import x509
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization, asymmetric, hashes
-from kxicli import log
+
 from kxicli import common
+from kxicli import log
+from kxicli.commands import assembly
 from kxicli.common import get_default_val as default_val
 from kxicli.common import get_help_text as help_text
-from kxicli.commands import assembly
 
-docker_config_file_path = os.environ.get('HOME') + '/.docker/config.json'
+docker_config_file_path = str(Path.home() / '.docker' / 'config.json')
 install_namespace_default = 'kxi'
 operator_namespace = 'kxi-operator'
 

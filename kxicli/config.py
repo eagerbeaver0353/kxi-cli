@@ -1,9 +1,12 @@
-import os
 import configparser
+import os
+from pathlib import Path
+
 import click
 
-config_dir = f"{os.environ['HOME']}/.insights"
-config_file = f'{config_dir}/cli-config'
+config_dir_path = Path.home() / '.insights'
+config_dir = str(config_dir_path)
+config_file = str(config_dir_path / 'cli-config')
 
 config = None
 
