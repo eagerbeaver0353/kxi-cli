@@ -220,7 +220,7 @@ def upgrade(namespace, release, chart_repo_name, assembly_backup_filepath, versi
     assembly._delete_running_assemblies(namespace=namespace, wait=True, force=False)
 
     click.secho('\nUninstalling insights and operator', bold=True)
-    delete_release_operator_and_crds(release)
+    delete_release_operator_and_crds(release=release, namespace=namespace)
 
     click.secho('\nReinstalling insights and operator', bold=True)
     install_operator_and_release(release=release, namespace=namespace, version=version, operator_version=operator_version, values_file=filepath, values_secret=values_secret, image_pull_secret=image_pull_secret, license_secret=license_secret, chart_repo_name=chart_repo_name)
@@ -232,9 +232,10 @@ def upgrade(namespace, release, chart_repo_name, assembly_backup_filepath, versi
 
 @install.command()
 @click.option('--release', default=lambda: default_val('release.name'), help=help_text('release.name'))
-def delete(release):
+@click.option('--namespace', default=lambda: default_val('namespace'), help=help_text('namespace'))
+def delete(release, namespace):
     """Uninstall KX Insights"""
-    delete_release_operator_and_crds(release)
+    delete_release_operator_and_crds(release=release, namespace=namespace)
     
 @install.command()
 @click.option('--repo', default=lambda: default_val('chart.repo.name'), help=help_text('chart.repo.name'))
@@ -683,13 +684,13 @@ def install_operator_and_release(release, namespace, version, operator_version, 
 
     helm_install(release, chart=f'{chart_repo_name}/insights', values_file=values_file, values_secret=values_secret, version=version, namespace=namespace)
 
-def delete_release_operator_and_crds(release):
+def delete_release_operator_and_crds(release, namespace):
     """Delete insights, operator and CRDs"""
     if insights_installed(release) and click.confirm('\nKX Insights is deployed. Do you want to uninstall?'):
-            helm_uninstall(release)  
+            helm_uninstall(release=release, namespace=namespace)  
 
     if operator_installed(release) and click.confirm('\nThe kxi-operator is deployed. Do you want to uninstall?'):
-            helm_uninstall(release, namespace=operator_namespace)        
+            helm_uninstall(release=release, namespace=operator_namespace)        
 
     crds = common.get_existing_crds(['assemblies.insights.kx.com','assemblyresources.insights.kx.com'])
     if len(crds) > 0 and click.confirm(f'\nThe assemblies CRDs {crds} exist. Do you want to delete them?'):
