@@ -867,11 +867,11 @@ def test_delete(mocker):
         result = runner.invoke(main.cli, ['install', 'delete'], input=user_input)
         expected_output = f"""
 KX Insights is deployed. Do you want to uninstall? [y/N]: y
-Uninstalling release insights
+Uninstalling release insights in namespace {test_namespace}
 """
     assert result.exit_code == 0
     assert result.output == expected_output
-    assert subprocess_run_command == [['helm','uninstall','insights']]
+    assert subprocess_run_command == [['helm','uninstall','insights','--namespace',test_namespace]]
     assert delete_crd_params == []
 
 
@@ -913,11 +913,11 @@ def test_delete_specify_release(mocker):
         result = runner.invoke(main.cli, ['install', 'delete', '--release','atestrelease'], input=user_input)
         expected_output = f"""
 KX Insights is deployed. Do you want to uninstall? [y/N]: y
-Uninstalling release atestrelease
+Uninstalling release atestrelease in namespace {test_namespace}
 """
     assert result.exit_code == 0
     assert result.output == expected_output
-    assert subprocess_run_command == [['helm','uninstall','atestrelease']]
+    assert subprocess_run_command == [['helm','uninstall','atestrelease','--namespace', test_namespace]]
     assert delete_crd_params == []
 
 
@@ -960,7 +960,7 @@ n
         result = runner.invoke(main.cli, ['install', 'delete'], input=user_input)
         expected_output = f"""
 KX Insights is deployed. Do you want to uninstall? [y/N]: y
-Uninstalling release insights
+Uninstalling release insights in namespace {test_namespace}
 
 The kxi-operator is deployed. Do you want to uninstall? [y/N]: y
 Uninstalling release insights in namespace kxi-operator
@@ -970,7 +970,7 @@ The assemblies CRDs ['assemblies.insights.kx.com', 'assemblyresources.insights.k
     assert result.exit_code == 0
     assert result.output == expected_output
     assert subprocess_run_command == [
-        ['helm', 'uninstall', 'insights'],
+        ['helm', 'uninstall', 'insights','--namespace', test_namespace],
         ['helm', 'uninstall', 'insights', '--namespace', 'kxi-operator']
         ]
     assert delete_crd_params == []
@@ -991,7 +991,7 @@ y
         result = runner.invoke(main.cli, ['install', 'delete'], input=user_input)
         expected_output = f"""
 KX Insights is deployed. Do you want to uninstall? [y/N]: y
-Uninstalling release insights
+Uninstalling release insights in namespace {test_namespace}
 
 The kxi-operator is deployed. Do you want to uninstall? [y/N]: n
 
@@ -1001,7 +1001,7 @@ Deleting CRD assemblyresources.insights.kx.com
 """
     assert result.exit_code == 0
     assert result.output == expected_output
-    assert subprocess_run_command == [['helm', 'uninstall', 'insights']]
+    assert subprocess_run_command == [['helm', 'uninstall', 'insights','--namespace', test_namespace]]
     assert delete_crd_params == ['assemblies.insights.kx.com','assemblyresources.insights.kx.com']
 
 def test_delete_removes_insights_operator_and_crd(mocker):
@@ -1019,7 +1019,7 @@ y
         result = runner.invoke(main.cli, ['install', 'delete'], input=user_input)
         expected_output = f"""
 KX Insights is deployed. Do you want to uninstall? [y/N]: y
-Uninstalling release insights
+Uninstalling release insights in namespace {test_namespace}
 
 The kxi-operator is deployed. Do you want to uninstall? [y/N]: y
 Uninstalling release insights in namespace kxi-operator
@@ -1031,10 +1031,34 @@ Deleting CRD assemblyresources.insights.kx.com
     assert result.exit_code == 0
     assert result.output == expected_output
     assert subprocess_run_command == [
-        ['helm', 'uninstall', 'insights'],
+        ['helm', 'uninstall', 'insights','--namespace', test_namespace],
         ['helm', 'uninstall', 'insights', '--namespace', 'kxi-operator']
     ]
     assert delete_crd_params == ['assemblies.insights.kx.com','assemblyresources.insights.kx.com']
+
+def test_delete_from_given_namespace(mocker):
+    mock_subprocess_run(mocker)
+    mocker.patch('kxicli.commands.install.insights_installed', mocked_return_true)
+    mocker.patch('kxicli.commands.install.operator_installed', mocked_return_false)
+    mocker.patch('kxicli.common.crd_exists', mocked_return_false)
+    global delete_crd_params
+    delete_crd_params = []
+
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        # these are responses to the various prompts
+        user_input = f"""y
+"""
+        result = runner.invoke(main.cli, ['install', 'delete','--namespace','a_test_namespace'], input=user_input)
+        expected_output = f"""
+KX Insights is deployed. Do you want to uninstall? [y/N]: y
+Uninstalling release insights in namespace a_test_namespace
+"""
+    assert result.exit_code == 0
+    assert result.output == expected_output
+    assert subprocess_run_command == [['helm','uninstall','insights','--namespace','a_test_namespace']]
+    assert delete_crd_params == []
+
 
 def test_install_when_not_deploying_keycloak(mocker):
     mock_secret_helm_add(mocker)
@@ -1183,7 +1207,7 @@ Are you sure you want to delete {test_asm_name} [y/N]: y
 Uninstalling insights and operator
 
 KX Insights is deployed. Do you want to uninstall? [y/N]: y
-Uninstalling release insights
+Uninstalling release insights in namespace {test_namespace}
 
 The kxi-operator is deployed. Do you want to uninstall? [y/N]: y
 Uninstalling release insights in namespace kxi-operator
@@ -1210,7 +1234,7 @@ Upgrade to version 1.2.3 complete
     with open(test_asm_backup) as f:
         assert yaml.safe_load(f) == {'items': [test_asm_file_contents]}
     assert subprocess_run_command == [
-        ['helm', 'uninstall', 'insights'],
+        ['helm', 'uninstall', 'insights','--namespace', test_namespace],
         ['helm', 'uninstall', 'insights', '--namespace', 'kxi-operator'],
         ['helm', 'install', '-f', '-', 'insights', test_operator_chart, '--version', '1.2.3', '--namespace', 'kxi-operator'],
         ['helm', 'install', '-f', '-', 'insights', test_chart, '--version', '1.2.3', '--namespace', test_namespace]

@@ -304,7 +304,7 @@ def test_get_namespace(mocker):
     mocker.patch('kubernetes.config.list_kube_config_contexts', mock_k8s_contexts)
     
     res = install.get_namespace(None)
-    assert res[1] == 'test-namespace'
+    assert res[1] == 'test'
     assert res[0] == k8s_config['contexts'][0]
     assert 'cluster' in res[0]['context'].keys()
 
