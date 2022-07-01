@@ -670,7 +670,7 @@ def install_operator_and_release(release, namespace, version, operator_version, 
     if operator_installed(release):
         click.echo('\nkxi-operator already installed')
     else:
-        if click.confirm('\nkxi-operator not found. Do you want to install it?'):
+        if click.confirm('\nkxi-operator not found. Do you want to install it?', default=True):
             create_namespace(operator_namespace)
 
             copy_secret(image_pull_secret, namespace, operator_namespace)
