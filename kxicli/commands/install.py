@@ -164,8 +164,8 @@ def setup(namespace, chart_repo_name, license_secret, license_as_env_var, client
 @click.option('--repo', default=lambda: default_val('chart.repo.name'), help=help_text('chart.repo.name'))
 @click.option('--version', required=True, help='Version to install')
 @click.option('--operator-version', default=None, help='Version of the operator to install')
-@click.option('--image-pull-secret', default=lambda: default_val('image.pullSecret'), help=help_text('image.pullSecret'))
-@click.option('--license-secret', default=lambda: default_val('license.secret'), help=help_text('license.secret'))
+@click.option('--image-pull-secret', default=None, help=help_text('image.pullSecret'))
+@click.option('--license-secret', default=None, help=help_text('license.secret'))
 @click.option('--install-config-secret', default=None, help=help_text('install.configSecret'))
 @click.pass_context
 def run(ctx, namespace, filepath, release, repo, version, operator_version, image_pull_secret, license_secret, install_config_secret):
@@ -179,6 +179,7 @@ def run(ctx, namespace, filepath, release, repo, version, operator_version, imag
     _, namespace = get_namespace(namespace)
 
     values_secret = get_install_values(namespace=namespace, install_config_secret=install_config_secret)
+    image_pull_secret,license_secret = get_image_and_license_secret_from_values(values_secret, filepath, image_pull_secret, license_secret)
 
     install_operator_and_release(release=release, namespace=namespace, version=version, operator_version=operator_version, values_file=filepath, values_secret=values_secret, image_pull_secret=image_pull_secret, license_secret=license_secret, chart_repo_name=repo)
 
@@ -612,14 +613,16 @@ def get_from_values_dict(key, values_secret_dict, values_file_dict, default):
         val = values_file_dict
         for k in key:
             val = val[k]
+        log.debug(f'Using key {key} in values file')
     except KeyError:
         try:
             val = values_secret_dict
             for k in key:
                 val = val[k]
+            log.debug(f'Using key {key} in values secret')
         except KeyError:
-            log.debug(f'Cannot find key {key} in values file or secret. Using default')
             val = default
+            log.debug(f'Cannot find key {key} in values file or secret. Using default.')
         except BaseException as e:
             log.error(f'Invalid values secret')
             log.error(e)
