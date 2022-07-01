@@ -820,7 +820,7 @@ def test_install_run_installs_operator_with_modified_secrets(mocker):
 """
         result = runner.invoke(main.cli, ['install', 'run', '--version', '1.2.3', '--install-config-secret', 'kxi-install-secret'], input=user_input)
         expected_output = f"""
-kxi-operator not found. Do you want to install it? [y/N]: y
+kxi-operator not found. Do you want to install it? [Y/n]: y
 Installing chart kx-insights/kxi-operator with values from secret
 Installing chart kx-insights/insights with values from secret
 """    
