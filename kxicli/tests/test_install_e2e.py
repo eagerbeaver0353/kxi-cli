@@ -721,7 +721,7 @@ KX Insights installation setup complete
 Helm values file for installation saved in values.yaml
 
 
-kxi-operator not found. Do you want to install it? [y/N]: n
+kxi-operator not found. Do you want to install it? [Y/n]: n
 Installing chart internal-nexus-dev/insights with values file from values.yaml
 """    
     assert result.exit_code == 0
@@ -788,7 +788,7 @@ def test_install_run_installs_operator(mocker):
 """
         result = runner.invoke(main.cli, ['install', 'run', '--version', '1.2.3', '--filepath', test_val_file], input=user_input)
         expected_output = f"""
-kxi-operator not found. Do you want to install it? [y/N]: y
+kxi-operator not found. Do you want to install it? [Y/n]: y
 Installing chart kx-insights/kxi-operator with values file from {test_val_file}
 Installing chart kx-insights/insights with values file from {test_val_file}
 """    
@@ -1194,7 +1194,7 @@ Deleting CRD assemblyresources.insights.kx.com
 
 Reinstalling insights and operator
 
-kxi-operator not found. Do you want to install it? [y/N]: y
+kxi-operator not found. Do you want to install it? [Y/n]: y
 Installing chart kx-insights/kxi-operator with values from secret
 Installing chart kx-insights/insights with values from secret
 
@@ -1238,7 +1238,7 @@ def test_upgrade_skips_to_install_when_not_running(mocker):
     expected_output = f"""Upgrading KX Insights
 KX Insights is not deployed. Skipping to install
 
-kxi-operator not found. Do you want to install it? [y/N]: y
+kxi-operator not found. Do you want to install it? [Y/n]: y
 Installing chart kx-insights/kxi-operator with values from secret
 Installing chart kx-insights/insights with values from secret
 
