@@ -130,7 +130,7 @@ def mocked_subprocess_run(base_command, check=True, input=None, text=None):
     global subprocess_run_args
     subprocess_run_command.append(base_command)
     subprocess_run_args = (check, input, text)
-    if base_command == ['helm', 'uninstall', 'insights']:
+    if base_command == ['helm', 'uninstall', 'insights', '--namespace', test_namespace]:
         insights_installed_flag = False
     elif base_command == ['helm', 'uninstall', 'insights', '--namespace', 'kxi-operator']:
         operator_installed_flag = False
@@ -156,10 +156,10 @@ def mock_set_insights_operator_and_crd_installed_state(mocker, insights_flag, op
     mocker.patch('kxicli.commands.install.operator_installed', mocked_operator_installed)
     mocker.patch('kxicli.common.crd_exists', mocked_crd_exists)
 
-def mocked_insights_installed(name):
+def mocked_insights_installed(release, namespace):
     return insights_installed_flag
 
-def mocked_operator_installed(name):
+def mocked_operator_installed(release):
     return operator_installed_flag
 
 def mocked_crd_exists(name):
@@ -183,6 +183,16 @@ def mock_create_assembly(namespace, body, wait=None):
     asm_name = body['metadata']['name']
     print(f'Custom assembly resource {asm_name} created!')
     running_assembly[asm_name] = True
+
+def upgrades_mocks(mocker):
+    mock_subprocess_run(mocker)
+    mock_create_namespace(mocker)
+    mock_read_secret(mocker)
+    mock_copy_secret(mocker)
+    mock_delete_crd(mocker)
+    mocker.patch('kxicli.commands.assembly._get_assemblies_list', mock_list_assembly)
+    mocker.patch('kxicli.commands.assembly._delete_assembly', mock_delete_assembly)
+    mocker.patch('kxicli.commands.assembly._create_assembly', mock_create_assembly)
 
 def test_install_setup_when_creating_secrets(mocker):
     mock_secret_helm_add(mocker)
@@ -620,7 +630,7 @@ Helm values file for installation saved in {test_output_file}_new
 
 def test_install_run_when_provided_file(mocker):
     mock_subprocess_run(mocker)
-    mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
+    mock_set_insights_operator_and_crd_installed_state(mocker, False, True, True)
     mock_create_namespace(mocker)
 
     runner = CliRunner()
@@ -639,7 +649,7 @@ def test_install_run_when_no_file_provided(mocker):
     mock_read_create_patch_secret(mocker)
     mock_subprocess_run(mocker)
     mocker.patch('subprocess.check_output', mocked_helm_list_returns_empty_json)
-    mock_set_insights_operator_and_crd_installed_state(mocker, True, False, False)
+    mock_set_insights_operator_and_crd_installed_state(mocker, False, False, False)
     mock_create_namespace(mocker)
     
     f = open(test_output_file, 'w')
@@ -733,7 +743,7 @@ Installing chart internal-nexus-dev/insights with values file from values.yaml
 
 def test_install_run_when_provided_secret(mocker):
     mock_subprocess_run(mocker)
-    mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
+    mock_set_insights_operator_and_crd_installed_state(mocker, False, True, True)
     mock_create_namespace(mocker)
     mock_read_secret(mocker)
 
@@ -754,7 +764,7 @@ Installing chart kx-insights/insights with values from secret
 
 def test_install_run_when_provided_file_and_secret(mocker):
     mock_subprocess_run(mocker)
-    mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
+    mock_set_insights_operator_and_crd_installed_state(mocker, False, True, True)
     mock_create_namespace(mocker)
     mock_read_secret(mocker)
 
@@ -777,7 +787,7 @@ def test_install_run_installs_operator(mocker):
     mock_subprocess_run(mocker)
     mock_create_namespace(mocker)
     mock_copy_secret(mocker)
-    mock_set_insights_operator_and_crd_installed_state(mocker, True, False, False)
+    mock_set_insights_operator_and_crd_installed_state(mocker, False, False, False)
     global copy_secret_params
     copy_secret_params = []
 
@@ -805,7 +815,7 @@ def test_install_run_installs_operator_with_modified_secrets(mocker):
     mock_create_namespace(mocker)
     mock_read_secret(mocker)
     mock_copy_secret(mocker)    
-    mock_set_insights_operator_and_crd_installed_state(mocker, True, False, False)
+    mock_set_insights_operator_and_crd_installed_state(mocker, False, False, False)
     global test_vals
     global copy_secret_params
     copy_secret_params = []
@@ -836,7 +846,7 @@ Installing chart kx-insights/insights with values from secret
 
 def test_install_run_when_no_context_set(mocker):
     mock_subprocess_run(mocker)
-    mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
+    mock_set_insights_operator_and_crd_installed_state(mocker, False, True, True)
     mock_create_namespace(mocker)
     mocker.patch('kubernetes.config.list_kube_config_contexts', mocked_k8s_list_empty_config)
     
@@ -850,7 +860,6 @@ Please enter a namespace to install in [kxi]:
 kxi-operator already installed
 Installing chart kx-insights/insights with values file from {test_val_file}
 """
-    print(result)
     assert result.exit_code == 0
     assert result.output == expected_output
     assert subprocess_run_command == [['helm', 'install', '-f', test_val_file, 'insights', test_chart, '--version', '1.2.3', '--namespace', 'kxi']]
@@ -921,25 +930,19 @@ Uninstalling release atestrelease in namespace {test_namespace}
     assert delete_crd_params == []
 
 
-def test_delete_prompts_to_remove_insights_operator_and_crd(mocker):
+def test_delete_does_not_prompt_to_remove_operator_and_crd_when_insights_exists(mocker):
     mock_subprocess_run(mocker)
-    mocker.patch('kxicli.common.delete_crd', mocked_delete_crd)
+    mock_delete_crd(mocker)
     mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
 
     runner = CliRunner()
     with runner.isolated_filesystem():
         # these are responses to the various prompts
         user_input = f"""n
-n
-n
 """
         result = runner.invoke(main.cli, ['install', 'delete'], input=user_input)
         expected_output = f"""
 KX Insights is deployed. Do you want to uninstall? [y/N]: n
-
-The kxi-operator is deployed. Do you want to uninstall? [y/N]: n
-
-The assemblies CRDs ['assemblies.insights.kx.com', 'assemblyresources.insights.kx.com'] exist. Do you want to delete them? [y/N]: n
 """
     assert result.exit_code == 0
     assert result.output == expected_output
@@ -1038,9 +1041,7 @@ Deleting CRD assemblyresources.insights.kx.com
 
 def test_delete_from_given_namespace(mocker):
     mock_subprocess_run(mocker)
-    mocker.patch('kxicli.commands.install.insights_installed', mocked_return_true)
-    mocker.patch('kxicli.commands.install.operator_installed', mocked_return_false)
-    mocker.patch('kxicli.common.crd_exists', mocked_return_false)
+    mock_set_insights_operator_and_crd_installed_state(mocker, True, False, False)
     global delete_crd_params
     delete_crd_params = []
 
@@ -1059,6 +1060,30 @@ Uninstalling release insights in namespace a_test_namespace
     assert subprocess_run_command == [['helm','uninstall','insights','--namespace','a_test_namespace']]
     assert delete_crd_params == []
 
+
+def test_delete_when_insights_not_installed(mocker):
+    mock_subprocess_run(mocker)
+    mock_delete_crd(mocker)
+    mock_set_insights_operator_and_crd_installed_state(mocker, False, True, True)
+
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        # these are responses to the various prompts
+        user_input = f"""n
+n
+"""
+        result = runner.invoke(main.cli, ['install', 'delete'], input=user_input)
+        expected_output = f"""
+KX Insights installation not found
+
+The kxi-operator is deployed. Do you want to uninstall? [y/N]: n
+
+The assemblies CRDs ['assemblies.insights.kx.com', 'assemblyresources.insights.kx.com'] exist. Do you want to delete them? [y/N]: n
+"""
+    assert result.exit_code == 0
+    assert result.output == expected_output
+    assert subprocess_run_command == []
+    assert delete_crd_params == []
 
 def test_install_when_not_deploying_keycloak(mocker):
     mock_secret_helm_add(mocker)
@@ -1168,16 +1193,8 @@ def test_get_values_returns_decoded_secret(mocker):
         assert result.output == f.read() + '\n'
 
 def test_upgrade(mocker):
-    mock_subprocess_run(mocker)
+    upgrades_mocks(mocker)
     mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
-    mock_create_namespace(mocker)
-    mock_read_secret(mocker)
-    mock_copy_secret(mocker)
-    mock_delete_crd(mocker)
-    mocker.patch('kxicli.commands.assembly._get_assemblies_list', mock_list_assembly)
-    mocker.patch('kxicli.commands.assembly._delete_assembly', mock_delete_assembly)
-    mocker.patch('kxicli.commands.assembly._create_assembly', mock_create_assembly)
-
     test_asm_backup = os.path.dirname(__file__) + '/files/test-assembly-backup.yaml'
     if os.path.exists(test_asm_backup):
         os.remove(test_asm_backup)
@@ -1248,12 +1265,8 @@ Upgrade to version 1.2.3 complete
     os.remove(test_asm_backup)
 
 def test_upgrade_skips_to_install_when_not_running(mocker):
-    mock_subprocess_run(mocker)
-    mock_create_namespace(mocker)
-    mock_read_secret(mocker)
-    mock_copy_secret(mocker)
+    upgrades_mocks(mocker)
     mock_set_insights_operator_and_crd_installed_state(mocker, False, False, False)
-
     runner = CliRunner()
     user_input = f"""y
 """
@@ -1274,3 +1287,55 @@ Upgrade to version 1.2.3 complete
         ['helm', 'install', '-f', '-', 'insights', test_operator_chart, '--version', '1.2.3', '--namespace', 'kxi-operator'],
         ['helm', 'install', '-f', '-', 'insights', test_chart, '--version', '1.2.3', '--namespace', test_namespace]
     ]
+
+def test_upgrade_when_user_declines_to_uninstall_insights(mocker):
+    upgrades_mocks(mocker)
+    mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
+    test_asm_backup = os.path.dirname(__file__) + '/files/test-assembly-backup.yaml'
+    if os.path.exists(test_asm_backup):
+        os.remove(test_asm_backup)
+    with open(test_asm_file) as f:
+        test_asm_file_contents = yaml.safe_load(f)
+    runner = CliRunner()
+    user_input = f"""n
+"""
+    with runner.isolated_filesystem():
+        result = runner.invoke(main.cli, ['install', 'upgrade', '--version', '1.2.3', '--assembly-backup-filepath', test_asm_backup], input=user_input)
+    expected_output = f"""Upgrading KX Insights
+
+Backing up assemblies
+Persisted assembly definitions for ['{test_asm_name}'] to {test_asm_backup}
+
+Tearing down assemblies
+Deleting assembly {test_asm_name}
+Are you sure you want to delete {test_asm_name} [y/N]: y
+
+Uninstalling insights and operator
+
+KX Insights is deployed. Do you want to uninstall? [y/N]: n
+
+Reinstalling insights and operator
+
+kxi-operator already installed
+
+KX Insights already installed
+
+Reapplying assemblies
+Submitting assembly from {test_asm_backup}
+Submitting assembly {test_asm_name}
+Custom assembly resource {test_asm_name} created!
+
+Upgrade to version 1.2.3 complete
+"""
+    assert result.exit_code == 0
+    assert result.output == expected_output
+    with open(test_asm_backup) as f:
+        assert yaml.safe_load(f) == {'items': [test_asm_file_contents]}
+    assert subprocess_run_command == []
+    assert delete_crd_params == []
+    assert insights_installed_flag == True
+    assert operator_installed_flag ==True
+    assert crd_exists_flag == True
+    assert running_assembly[test_asm_name] == True
+    os.remove(test_asm_backup)
+

@@ -264,11 +264,11 @@ def test_get_operator_version_returns_prompts_for_operator_version_if_rc(monkeyp
 
 def test_insights_installed_returns_true_when_already_exists(mocker):
     mocker.patch('subprocess.check_output', mocked_helm_list_returns_valid_json)
-    assert install.insights_installed('insights') == True
+    assert install.insights_installed('insights', test_ns) == True
 
 def test_insights_installed_returns_false_when_already_exists(mocker):
     mocker.patch('subprocess.check_output', mocked_helm_list_returns_empty_json)
-    assert install.insights_installed('insights') == False
+    assert install.insights_installed('insights', test_ns) == False
 
 def test_operator_installed_returns_true_when_already_exists(mocker):
     mocker.patch('subprocess.check_output', mocked_helm_list_returns_valid_json)
