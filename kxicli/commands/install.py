@@ -207,7 +207,7 @@ def upgrade(namespace, release, chart_repo_name, assembly_backup_filepath, versi
     values_secret = get_install_values(namespace=namespace, install_config_secret=install_config_secret)
     image_pull_secret,license_secret = get_image_and_license_secret_from_values(values_secret, filepath, image_pull_secret, license_secret)
 
-    if not insights_installed(release):
+    if not insights_installed(release, namespace):
         click.echo('KX Insights is not deployed. Skipping to install')
         install_operator_and_release(release=release, namespace=namespace, version=version, operator_version=operator_version, values_file=filepath, values_secret=values_secret, image_pull_secret=image_pull_secret, license_secret=license_secret, chart_repo_name=chart_repo_name)
         click.secho(f'\nUpgrade to version {version} complete', bold=True)
@@ -682,20 +682,28 @@ def install_operator_and_release(release, namespace, version, operator_version, 
 
             helm_install(release, chart=f'{chart_repo_name}/kxi-operator', values_file=values_file, values_secret=values_secret, version=get_operator_version(version, operator_version), namespace=operator_namespace)
 
-    helm_install(release, chart=f'{chart_repo_name}/insights', values_file=values_file, values_secret=values_secret, version=version, namespace=namespace)
+    if insights_installed(release, namespace):
+        click.echo('\nKX Insights already installed')
+    else:
+        helm_install(release, chart=f'{chart_repo_name}/insights', values_file=values_file, values_secret=values_secret, version=version, namespace=namespace)
 
 def delete_release_operator_and_crds(release, namespace):
     """Delete insights, operator and CRDs"""
-    if insights_installed(release) and click.confirm('\nKX Insights is deployed. Do you want to uninstall?'):
-            helm_uninstall(release=release, namespace=namespace)  
+    if not insights_installed(release, namespace):
+        click.echo('\nKX Insights installation not found')
+    else:
+        if click.confirm('\nKX Insights is deployed. Do you want to uninstall?'):
+            helm_uninstall(release=release, namespace=namespace)
+        else:
+            return
 
     if operator_installed(release) and click.confirm('\nThe kxi-operator is deployed. Do you want to uninstall?'):
-            helm_uninstall(release=release, namespace=operator_namespace)        
+        helm_uninstall(release=release, namespace=operator_namespace)
 
     crds = common.get_existing_crds(['assemblies.insights.kx.com','assemblyresources.insights.kx.com'])
     if len(crds) > 0 and click.confirm(f'\nThe assemblies CRDs {crds} exist. Do you want to delete them?'):
-            for i in crds:
-                common.delete_crd(i)
+        for i in crds:
+            common.delete_crd(i)
 
 def helm_add_repo(repo, url, username, password):
     """Call 'helm repo add' using subprocess.run"""
@@ -825,9 +833,9 @@ def prompt_for_client_secret(client_name):
 
     return client_secret
 
-def insights_installed(release):
+def insights_installed(release, namespace):
     """Check if a helm release of insights exists"""
-    base_command = ['helm', 'list', '--filter', release, '--deployed', '-o', 'json']
+    base_command = ['helm', 'list', '--filter', release, '--deployed', '-o', 'json','--namespace', namespace]
     try:
         log.debug(f'List command {base_command}')
         l = subprocess.check_output(base_command)
