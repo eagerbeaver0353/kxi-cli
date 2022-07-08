@@ -16,6 +16,7 @@ CUSTOM_OBJECT_API = 'kubernetes.client.CustomObjectsApi'
 PREFERRED_VERSION_FUNC = 'kxicli.commands.assembly.get_preferred_api_version'
 PREFERRED_VERSION = 'v1'
 TEST_NS = 'test_ns'
+test_asm_file = os.path.dirname(__file__) + '/files/assembly-v1.yaml'
 
 TEST_ASSEMBLY = {
         'apiVersion': 'insights.kx.com/v1' ,
@@ -26,8 +27,9 @@ TEST_ASSEMBLY = {
         'status': {
             'conditions': [
                 {
-                    'type': 'AssemblyReady',
-                    'status': 'True'
+                    'status': 'True',
+                    'type': 'AssemblyReady'
+
                 }
             ]
         }
@@ -42,8 +44,8 @@ TEST_ASSEMBLY2 = {
         'status': {
             'conditions': [
                 {
-                    'type': 'AssemblyReady',
-                    'status': 'True'
+                    'status': 'True',
+                    'type': 'AssemblyReady'
                 }
             ]
         }
@@ -180,25 +182,42 @@ def test_backup_assemblies_when_no_assemblies_running(mocker):
     assert assembly._backup_assemblies(namespace='test_ns', filepath=filename) == None
     assert not os.path.exists(filename)
 
+def test_add_last_applied_configuration_annotation():
+    res = assembly._add_last_applied_configuration_annotation(TEST_ASSEMBLY)
+    assert assembly.CONFIG_ANNOTATION in res['metadata']['annotations']
+    assert res['metadata']['annotations'][assembly.CONFIG_ANNOTATION] == '\n' + json.dumps(TEST_ASSEMBLY)
+
 def test_create_assembly_submits_to_k8s_api(mocker):
     mock_create_assemblies(mocker.patch(CUSTOM_OBJECT_API).return_value)
-    test_asm_file = os.path.dirname(__file__) + '/files/assembly-v1.yaml'
     with open(test_asm_file) as f:
         test_asm = yaml.safe_load(f)
 
     assembly._create_assembly(namespace='test_ns', body=test_asm)
 
-    assert appended_args == [{'group': 'insights.kx.com', 'version': PREFERRED_VERSION, 'namespace': 'test_ns', 'plural': 'assemblies', 'body': test_asm}]
+    assert appended_args == [{'group': assembly.API_GROUP, 'version': PREFERRED_VERSION, 'namespace': 'test_ns', 'plural': 'assemblies', 'body': assembly._add_last_applied_configuration_annotation(test_asm)}]
+
+def test_create_assembly_submits_last_applied_configuration_to_k8s_api(mocker):
+    mock_create_assemblies(mocker.patch(CUSTOM_OBJECT_API).return_value)
+    with open(test_asm_file) as f:
+        test_asm = yaml.safe_load(f)
+
+    deployed_asm = copy.deepcopy(test_asm)
+    deployed_asm['metadata']['name'] = deployed_asm['metadata']['name'] + '-v1'
+    test_asm['metadata']['annotations'] = {}
+    test_asm['metadata']['annotations'][assembly.CONFIG_ANNOTATION] = "\n" + json.dumps(deployed_asm)
+
+    assembly._create_assembly(namespace='test_ns', body=test_asm)
+
+    assert appended_args == [{'group': assembly.API_GROUP, 'version': PREFERRED_VERSION, 'namespace': 'test_ns', 'plural': 'assemblies', 'body': assembly._add_last_applied_configuration_annotation(deployed_asm)}]
 
 def test_create_assemblies_from_file_creates_one_assembly(mocker):
     mock_create_assemblies(mocker.patch(CUSTOM_OBJECT_API).return_value)
-    test_asm_file = os.path.dirname(__file__) + '/files/assembly-v1.yaml'
     with open(test_asm_file) as f:
         test_asm = yaml.safe_load(f)
     
     assembly._create_assemblies_from_file(namespace='test_ns', filepath=test_asm_file)
 
-    assert appended_args == [{'group': 'insights.kx.com', 'version': PREFERRED_VERSION, 'namespace': 'test_ns', 'plural': 'assemblies', 'body': test_asm}]
+    assert appended_args == [{'group': assembly.API_GROUP, 'version': PREFERRED_VERSION, 'namespace': 'test_ns', 'plural': 'assemblies', 'body': assembly._add_last_applied_configuration_annotation(test_asm)}]
 
 def test_create_assemblies_from_file_creates_two_assemblies(mocker):
     mock_instance = mocker.patch(CUSTOM_OBJECT_API).return_value
@@ -213,8 +232,8 @@ def test_create_assemblies_from_file_creates_two_assemblies(mocker):
     with open(filename, 'rb') as f:
         assert yaml.full_load(f) == ASSEMBLY_LIST
     assert appended_args == [
-        {'group': 'insights.kx.com', 'version': PREFERRED_VERSION, 'namespace': 'test_ns', 'plural': 'assemblies', 'body': TEST_ASSEMBLY},
-        {'group': 'insights.kx.com', 'version': PREFERRED_VERSION, 'namespace': 'test_ns', 'plural': 'assemblies', 'body': TEST_ASSEMBLY2}
+        {'group': assembly.API_GROUP, 'version': PREFERRED_VERSION, 'namespace': 'test_ns', 'plural': 'assemblies', 'body': assembly._add_last_applied_configuration_annotation(TEST_ASSEMBLY)},
+        {'group': assembly.API_GROUP, 'version': PREFERRED_VERSION, 'namespace': 'test_ns', 'plural': 'assemblies', 'body': assembly._add_last_applied_configuration_annotation(TEST_ASSEMBLY2)}
     ]
     os.remove(filename)
 
@@ -232,7 +251,7 @@ def test_create_assemblies_from_file_removes_resourceVersion(mocker):
     assembly._backup_assemblies(namespace='test_ns', filepath=filename)
     assembly._create_assemblies_from_file(namespace='test_ns', filepath=filename)
 
-    assert appended_args == [{'group': 'insights.kx.com', 'version': PREFERRED_VERSION, 'namespace': 'test_ns', 'plural': 'assemblies', 'body': TEST_ASSEMBLY}]
+    assert appended_args == [{'group': assembly.API_GROUP, 'version': PREFERRED_VERSION, 'namespace': 'test_ns', 'plural': 'assemblies', 'body': assembly._add_last_applied_configuration_annotation(TEST_ASSEMBLY)}]
     os.remove(filename)
 
 def test_create_assemblies_from_file_creates_when_one_already_exists(mocker):
@@ -252,7 +271,7 @@ def test_create_assemblies_from_file_creates_when_one_already_exists(mocker):
     with open(filename, 'rb') as f:
         assert yaml.full_load(f) == ASSEMBLY_LIST
     assert appended_args == [
-        {'group': 'insights.kx.com', 'version': PREFERRED_VERSION, 'namespace': 'test_ns', 'plural': 'assemblies', 'body': TEST_ASSEMBLY2}
+        {'group': assembly.API_GROUP, 'version': PREFERRED_VERSION, 'namespace': 'test_ns', 'plural': 'assemblies', 'body': assembly._add_last_applied_configuration_annotation(TEST_ASSEMBLY2)}
     ]
     os.remove(filename)
 
@@ -267,7 +286,7 @@ def test_delete_assembly(mocker):
     assembly._delete_assembly(namespace='test_ns', name=ASM_NAME, wait=False, force=True)
     
     assert appended_args == [
-        {'group': 'insights.kx.com', 'version': PREFERRED_VERSION, 'namespace': 'test_ns', 'plural': 'assemblies', 'name': ASM_NAME}
+        {'group': assembly.API_GROUP, 'version': PREFERRED_VERSION, 'namespace': 'test_ns', 'plural': 'assemblies', 'name': ASM_NAME}
     ]
 
 def test_delete_running_assemblies(mocker):
@@ -279,12 +298,11 @@ def test_delete_running_assemblies(mocker):
     assembly._delete_running_assemblies(namespace='test_ns', wait=False, force=True)
     
     assert appended_args == [
-        {'group': 'insights.kx.com', 'version': PREFERRED_VERSION, 'namespace': 'test_ns', 'plural': 'assemblies', 'name': ASM_NAME},
-        {'group': 'insights.kx.com', 'version': PREFERRED_VERSION, 'namespace': 'test_ns', 'plural': 'assemblies', 'name': ASM_NAME2}
+        {'group': assembly.API_GROUP, 'version': PREFERRED_VERSION, 'namespace': 'test_ns', 'plural': 'assemblies', 'name': ASM_NAME},
+        {'group': assembly.API_GROUP, 'version': PREFERRED_VERSION, 'namespace': 'test_ns', 'plural': 'assemblies', 'name': ASM_NAME2}
     ]
 
 def test_read_assembly_file_returns_contents():
-    test_asm_file = os.path.dirname(__file__) + '/files/assembly-v1.yaml'
     with open(test_asm_file) as f:
         test_asm = yaml.safe_load(f)
     assert assembly._read_assembly_file(test_asm_file) == test_asm
@@ -385,7 +403,7 @@ def test_cli_assembly_delete_with_confirm(mocker):
     # answer 'y' to the prompt asking to confirm you want to delete the assembly
     result = TEST_CLI.invoke(main.cli, ['assembly', 'delete', '--name', ASM_NAME], input='y')
 
-    assert stored_args == {'group': 'insights.kx.com', 'version': PREFERRED_VERSION, 'namespace': 'test', 'plural': 'assemblies', 'name': ASM_NAME}
+    assert stored_args == {'group': assembly.API_GROUP, 'version': PREFERRED_VERSION, 'namespace': 'test', 'plural': 'assemblies', 'name': ASM_NAME}
     assert result.exit_code == 0
     assert result.output == f"""Deleting assembly {ASM_NAME}
 Are you sure you want to delete {ASM_NAME} [y/N]: y
@@ -443,7 +461,6 @@ def test_cli_assembly_list_error_response(mocker):
     assert result.exit_code == 1
 
 def test_cli_assembly_create_from_file(mocker):
-    test_asm_file = os.path.dirname(__file__) + '/files/assembly-v1.yaml'
     with open(test_asm_file) as f:
         test_asm = yaml.safe_load(f)
     mock_create_assemblies(mocker.patch(CUSTOM_OBJECT_API).return_value)
@@ -454,10 +471,9 @@ def test_cli_assembly_create_from_file(mocker):
     assert result.output == f"""Submitting assembly from {test_asm_file}
 Custom assembly resource basic-assembly created!
 """
-    assert appended_args == [{'group': 'insights.kx.com', 'version': PREFERRED_VERSION, 'namespace': 'test', 'plural': 'assemblies', 'body': test_asm}]
+    assert appended_args == [{'group': assembly.API_GROUP, 'version': PREFERRED_VERSION, 'namespace': 'test', 'plural': 'assemblies', 'body': assembly._add_last_applied_configuration_annotation(test_asm)}]
 
 def test_cli_assembly_create_and_wait(mocker):
-    test_asm_file = os.path.dirname(__file__) + '/files/assembly-v1.yaml'
     with open(test_asm_file) as f:
         test_asm = yaml.safe_load(f)
     mock_instance = mocker.patch(CUSTOM_OBJECT_API).return_value
@@ -471,7 +487,7 @@ def test_cli_assembly_create_and_wait(mocker):
 Waiting for assembly to enter "Ready" state
 Custom assembly resource basic-assembly created!
 """
-    assert appended_args == [{'group': 'insights.kx.com', 'version': PREFERRED_VERSION, 'namespace': 'test', 'plural': 'assemblies', 'body': test_asm}]
+    assert appended_args == [{'group': assembly.API_GROUP, 'version': PREFERRED_VERSION, 'namespace': 'test', 'plural': 'assemblies', 'body': assembly._add_last_applied_configuration_annotation(test_asm)}]
 
 def test_cli_assembly_backup_assemblies(mocker):
     mock_list_assemblies(mocker.patch(CUSTOM_OBJECT_API).return_value)
