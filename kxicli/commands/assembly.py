@@ -5,6 +5,7 @@ import os
 import json
 import yaml
 import click
+import copy
 import kubernetes as k8s
 from kxicli import common
 from kxicli import log
@@ -12,6 +13,7 @@ from kxicli import log
 API_GROUP = 'insights.kx.com'
 API_VERSION = 'v1'
 API_PLURAL = 'assemblies'
+CONFIG_ANNOTATION = 'kubectl.kubernetes.io/last-applied-configuration'
 
 @click.group()
 def assembly():
@@ -166,13 +168,26 @@ def _create_assemblies_from_file(namespace, filepath, wait=None):
     else:
         _create_assembly(namespace,asm_list,wait)
 
+def _add_last_applied_configuration_annotation(body):
+    annotated_body = copy.deepcopy(body)
+    if 'annotations' not in annotated_body['metadata']:
+        annotated_body['metadata']['annotations'] = {}
+    if CONFIG_ANNOTATION not in annotated_body['metadata']['annotations']:
+        annotated_body['metadata']['annotations'][CONFIG_ANNOTATION] = "\n" + json.dumps(body)
+    return annotated_body
+
 def _create_assembly(namespace, body, wait=None):
     """Create an assembly"""
     common.load_kube_config()
     api = k8s.client.CustomObjectsApi()
 
+    if 'annotations' in body['metadata'] and CONFIG_ANNOTATION in body['metadata']['annotations']:
+       body = yaml.safe_load(body['metadata']['annotations'][CONFIG_ANNOTATION])
+
     if 'resourceVersion' in body['metadata']:
         del body['metadata']['resourceVersion']
+    body = _add_last_applied_configuration_annotation(body)
+
     api_version = body['apiVersion'].split('/')
 
     api.create_namespaced_custom_object(

@@ -22,6 +22,7 @@
         "certmanager",
         "assemblyresources",
         "servicegateway",
-        "Apiextensions"
+        "Apiextensions",
+        "kubectl"
     ]
 }
