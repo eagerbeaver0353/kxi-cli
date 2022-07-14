@@ -1,6 +1,12 @@
 """This end 2 end test validates the inputs and outputs of the install command directly"""
 import os
 import base64
+import shutil
+from collections.abc import Generator
+from contextlib import contextmanager
+from pathlib import Path
+from tempfile import mkdtemp
+
 import yaml
 import kubernetes as k8s
 import filecmp
@@ -26,7 +32,7 @@ test_val_file = os.path.dirname(__file__) + '/files/test-values.yaml'
 test_val_file_shared_keycloak = os.path.dirname(__file__) + '/files/test-values-shared-keycloak.yaml'
 test_k8s_config = os.path.dirname(__file__) + '/files/test-kube-config'
 test_lic_file = os.path.dirname(__file__) + '/files/test-license'
-test_output_file = os.path.dirname(__file__) + '/files/output-values.yaml'
+expected_test_output_file = str(Path(__file__).parent / 'files' / 'output-values.yaml')
 test_output_file_lic_env_var = os.path.dirname(__file__) + '/files/output-values-license-as-env-var.yaml'
 test_docker_config_json = os.path.dirname(__file__) + '/files/test-docker-config-json'
 test_asm_file = os.path.dirname(__file__) + '/files/assembly-v1.yaml'
@@ -49,6 +55,21 @@ copy_secret_params=[]
 # override where the command looks for the docker config json
 # by default this is $HOME/.docker/config.json
 main.install.docker_config_file_path = test_docker_config_json
+
+
+@contextmanager
+def temp_test_output_file(prefix: str = 'kxicli-e2e-'):
+    dir_name: str = str()
+    inited: bool = False
+    try:
+        dir_name = mkdtemp(prefix=prefix)
+        inited = True
+        output_file_name = str(Path(dir_name).joinpath('output-values.yaml'))
+        yield output_file_name
+    finally:
+        if inited:
+            shutil.rmtree(dir_name)
+
 
 def mocked_create_secret(namespace, name, secret_type, data=None, string_data=None):
     print(f'Secret {name} successfully created')
@@ -197,12 +218,12 @@ def upgrades_mocks(mocker):
 def test_install_setup_when_creating_secrets(mocker):
     mock_secret_helm_add(mocker)
     mock_create_namespace(mocker)
-    os.remove(test_output_file)
+    with temp_test_output_file() as test_output_file:
 
-    runner = CliRunner()
-    with runner.isolated_filesystem():
-        # these are responses to the various prompts
-        user_input = f"""{test_host}
+        runner = CliRunner()
+        with runner.isolated_filesystem():
+            # these are responses to the various prompts
+            user_input = f"""{test_host}
 {test_chart_repo_name}
 {test_chart_repo_url}
 {test_user}
@@ -225,11 +246,11 @@ n
 n
 n
 """
-        result = runner.invoke(main.cli, ['install', 'setup', '--output-file', test_output_file], input=user_input)
+            result = runner.invoke(main.cli, ['install', 'setup', '--output-file', test_output_file], input=user_input)
 
-        # Transcript here is not intended because multi line strings are
-        # interpreted directly including indentation
-        expected_output = f"""KX Insights Install Setup
+            # Transcript here is not intended because multi line strings are
+            # interpreted directly including indentation
+            expected_output = f"""KX Insights Install Setup
 
 Running in namespace {test_namespace} on the cluster {test_cluster}
 
@@ -282,18 +303,18 @@ Helm values file for installation saved in {test_output_file}
 
 """
 
-    assert result.exit_code == 0
-    assert result.output == expected_output
+        assert result.exit_code == 0
+        assert result.output == expected_output
 
 def test_install_setup_when_providing_secrets(mocker):
     mock_secret_helm_add(mocker)
     mock_create_namespace(mocker)
-    os.remove(test_output_file)
+    with temp_test_output_file() as test_output_file:
 
-    runner = CliRunner()
-    with runner.isolated_filesystem():
-        # these are responses to the various prompts
-        user_input = f"""{test_host}
+        runner = CliRunner()
+        with runner.isolated_filesystem():
+            # these are responses to the various prompts
+            user_input = f"""{test_host}
 {test_chart_repo_name}
 {test_chart_repo_url}
 {test_user}
@@ -315,11 +336,11 @@ y
 operator-secret
 n
 """
-        result = runner.invoke(main.cli, ['install', 'setup', '--output-file', test_output_file], input=user_input)
+            result = runner.invoke(main.cli, ['install', 'setup', '--output-file', test_output_file], input=user_input)
 
-        # Transcript here is not intended because multi line strings are
-        # interpreted directly including indentation
-        expected_output = f"""KX Insights Install Setup
+            # Transcript here is not intended because multi line strings are
+            # interpreted directly including indentation
+            expected_output = f"""KX Insights Install Setup
 
 Running in namespace {test_namespace} on the cluster {test_cluster}
 
@@ -363,19 +384,19 @@ KX Insights installation setup complete
 Helm values file for installation saved in {test_output_file}
 
 """
-    assert result.exit_code == 0
-    assert result.output == expected_output
-    assert filecmp.cmp(test_output_file, test_val_file)
+        assert result.exit_code == 0
+        assert result.output == expected_output
+        assert filecmp.cmp(test_output_file, test_val_file)
 
 def test_install_setup_when_passed_license_env_var_in_command_line(mocker):
     mock_secret_helm_add(mocker)
     mock_create_namespace(mocker)
-    os.rename(test_output_file, f'{test_output_file}_bk')
+    with temp_test_output_file() as test_output_file:
 
-    runner = CliRunner()
-    with runner.isolated_filesystem():
-        # these are responses to the various prompts
-        user_input = f"""{test_host}
+        runner = CliRunner()
+        with runner.isolated_filesystem():
+            # these are responses to the various prompts
+            user_input = f"""{test_host}
 {test_chart_repo_name}
 {test_chart_repo_url}
 {test_user}
@@ -397,11 +418,11 @@ y
 operator-secret
 n
 """
-        result = runner.invoke(main.cli, ['install', 'setup', '--output-file', test_output_file, '--license-as-env-var', 'True'], input=user_input)
+            result = runner.invoke(main.cli, ['install', 'setup', '--output-file', test_output_file, '--license-as-env-var', 'True'], input=user_input)
 
-        # Transcript here is not intended because multi line strings are
-        # interpreted directly including indentation
-        expected_output = f"""KX Insights Install Setup
+            # Transcript here is not intended because multi line strings are
+            # interpreted directly including indentation
+            expected_output = f"""KX Insights Install Setup
 
 Running in namespace {test_namespace} on the cluster {test_cluster}
 
@@ -445,21 +466,23 @@ KX Insights installation setup complete
 Helm values file for installation saved in {test_output_file}
 
 """
-    assert result.exit_code == 0
-    assert result.output == expected_output
-    assert filecmp.cmp(test_output_file, test_output_file_lic_env_var)
-    os.rename(f'{test_output_file}_bk', test_output_file)
+        assert result.exit_code == 0
+        assert result.output == expected_output
+        assert filecmp.cmp(test_output_file, test_output_file_lic_env_var)
+
 
 def test_install_setup_overwrites_when_values_file_exists(mocker):
     mock_secret_helm_add(mocker)
     mock_create_namespace(mocker)
-    f = open(test_output_file, 'w')
-    f.write('a test values file')
+    with temp_test_output_file() as test_output_file:
+        f = open(test_output_file, 'w')
+        f.write('a test values file')
+        f.close()
 
-    runner = CliRunner()
-    with runner.isolated_filesystem():
-        # these are responses to the various prompts
-        user_input = f"""{test_host}
+        runner = CliRunner()
+        with runner.isolated_filesystem():
+            # these are responses to the various prompts
+            user_input = f"""{test_host}
 {test_chart_repo_name}
 {test_chart_repo_url}
 {test_user}
@@ -482,11 +505,11 @@ operator-secret
 n
 y
 """
-        result = runner.invoke(main.cli, ['install', 'setup', '--output-file', test_output_file], input=user_input)
+            result = runner.invoke(main.cli, ['install', 'setup', '--output-file', test_output_file], input=user_input)
 
-        # Transcript here is not intended because multi line strings are
-        # interpreted directly including indentation
-        expected_output = f"""KX Insights Install Setup
+            # Transcript here is not intended because multi line strings are
+            # interpreted directly including indentation
+            expected_output = f"""KX Insights Install Setup
 
 Running in namespace {test_namespace} on the cluster {test_cluster}
 
@@ -532,21 +555,22 @@ KX Insights installation setup complete
 Helm values file for installation saved in {test_output_file}
 
 """
-    assert result.exit_code == 0
-    assert result.output == expected_output
-    assert filecmp.cmp(test_output_file, test_val_file)
+        assert result.exit_code == 0
+        assert result.output == expected_output
+        assert filecmp.cmp(test_output_file, test_val_file)
 
 def test_install_setup_creates_new_when_values_file_exists(mocker):
     mock_secret_helm_add(mocker)
     mock_create_namespace(mocker)
-    f = open(test_output_file, 'w')
-    f.write("a test values file")
-    f.close()
+    with temp_test_output_file() as test_output_file:
+        f = open(test_output_file, 'w')
+        f.write("a test values file")
+        f.close()
 
-    runner = CliRunner()
-    with runner.isolated_filesystem():
-        # these are responses to the various prompts
-        user_input = f"""{test_host}
+        runner = CliRunner()
+        with runner.isolated_filesystem():
+            # these are responses to the various prompts
+            user_input = f"""{test_host}
 {test_chart_repo_name}
 {test_chart_repo_url}
 {test_user}
@@ -570,11 +594,11 @@ n
 n
 {test_output_file}_new
 """
-        result = runner.invoke(main.cli, ['install', 'setup', '--output-file', test_output_file], input=user_input)
+            result = runner.invoke(main.cli, ['install', 'setup', '--output-file', test_output_file], input=user_input)
 
-        # Transcript here is not intended because multi line strings are
-        # interpreted directly including indentation
-        expected_output = f"""KX Insights Install Setup
+            # Transcript here is not intended because multi line strings are
+            # interpreted directly including indentation
+            expected_output = f"""KX Insights Install Setup
 
 Running in namespace {test_namespace} on the cluster {test_cluster}
 
@@ -621,12 +645,11 @@ KX Insights installation setup complete
 Helm values file for installation saved in {test_output_file}_new
 
 """
-    assert result.exit_code == 0
-    assert result.output == expected_output
-    assert filecmp.cmp(f'{test_output_file}_new', test_val_file)
-    f = open(test_output_file, "r")
-    assert f.read() == "a test values file"             # assert that the original file is unchanged
-    os.rename(f'{test_output_file}_new', test_output_file)
+        assert result.exit_code == 0
+        assert result.output == expected_output
+        assert filecmp.cmp(f'{test_output_file}_new', test_val_file)
+        f = open(test_output_file, "r")
+        assert f.read() == "a test values file"             # assert that the original file is unchanged
 
 def test_install_run_when_provided_file(mocker):
     mock_subprocess_run(mocker)
@@ -651,16 +674,16 @@ def test_install_run_when_no_file_provided(mocker):
     mocker.patch('subprocess.check_output', mocked_helm_list_returns_empty_json)
     mock_set_insights_operator_and_crd_installed_state(mocker, False, False, False)
     mock_create_namespace(mocker)
-    
-    f = open(test_output_file, 'w')
-    f.write("a test values file")
-    f.close()
-    
-    runner = CliRunner()
-    with runner.isolated_filesystem():
-        # these are responses to the various prompts
-                # these are responses to the various prompts
-        user_input = f"""{test_host}
+    with temp_test_output_file() as test_output_file:
+        f = open(test_output_file, 'w')
+        f.write("a test values file")
+        f.close()
+
+        runner = CliRunner()
+        with runner.isolated_filesystem():
+            # these are responses to the various prompts
+                    # these are responses to the various prompts
+            user_input = f"""{test_host}
 {test_chart_repo_name}
 {test_chart_repo_url}
 {test_user}
@@ -683,9 +706,9 @@ operator-secret
 n
 n
 """
-        result = runner.invoke(main.cli, ['install', 'run', '--version', '1.2.3'], input=user_input)
-        
-        expected_output = f"""No values file provided, invoking "kxi install setup"
+            result = runner.invoke(main.cli, ['install', 'run', '--version', '1.2.3'], input=user_input)
+
+            expected_output = f"""No values file provided, invoking "kxi install setup"
 
 KX Insights Install Setup
 
@@ -734,12 +757,12 @@ Helm values file for installation saved in values.yaml
 kxi-operator not found. Do you want to install it? [Y/n]: n
 Installing chart internal-nexus-dev/insights with values file from values.yaml
 """    
-    assert result.exit_code == 0
-    assert result.output == expected_output
-    assert subprocess_run_command == [
-        ['helm', 'repo', 'add', '--username', test_user, '--password', test_pass, test_chart_repo_name, test_chart_repo_url],
-        ['helm', 'install', '-f', 'values.yaml', 'insights', test_chart_repo_name+'/insights', '--version', '1.2.3', '--namespace', test_namespace]
-    ]
+        assert result.exit_code == 0
+        assert result.output == expected_output
+        assert subprocess_run_command == [
+            ['helm', 'repo', 'add', '--username', test_user, '--password', test_pass, test_chart_repo_name, test_chart_repo_url],
+            ['helm', 'install', '-f', 'values.yaml', 'insights', test_chart_repo_name+'/insights', '--version', '1.2.3', '--namespace', test_namespace]
+        ]
 
 def test_install_run_when_provided_secret(mocker):
     mock_subprocess_run(mocker)
@@ -1088,17 +1111,18 @@ The assemblies CRDs ['assemblies.insights.kx.com', 'assemblyresources.insights.k
 def test_install_when_not_deploying_keycloak(mocker):
     mock_secret_helm_add(mocker)
     mock_create_namespace(mocker)
+    with temp_test_output_file() as test_output_file:
+        shutil.copyfile(expected_test_output_file, test_output_file)
+        # Ideally would patch sys.argv with args but can't find a way to get this to stick
+        #   'mocker.patch('sys.argv', args)'
+        # doesn't seem to be persist into the runner.invoke
+        args = ['install', 'setup', '--keycloak-auth-url', test_auth_url, '--output-file', test_output_file]
+        mocker.patch('kxicli.commands.install.deploy_keycloak', lambda:False)
 
-    # Ideally would patch sys.argv with args but can't find a way to get this to stick
-    #   'mocker.patch('sys.argv', args)'
-    # doesn't seem to be persist into the runner.invoke
-    args = ['install', 'setup', '--keycloak-auth-url', test_auth_url, '--output-file', test_output_file]
-    mocker.patch('kxicli.commands.install.deploy_keycloak', lambda:False)
-
-    runner = CliRunner()
-    with runner.isolated_filesystem():
-        # these are responses to the various prompts
-        user_input = f"""{test_host}
+        runner = CliRunner()
+        with runner.isolated_filesystem():
+            # these are responses to the various prompts
+            user_input = f"""{test_host}
 {test_chart_repo_name}
 {test_chart_repo_url}
 {test_user}
@@ -1118,11 +1142,11 @@ operator-secret
 n
 y
 """
-        result = runner.invoke(main.cli, args, input=user_input)
+            result = runner.invoke(main.cli, args, input=user_input)
 
-        # Transcript here is not intended because multi line strings are
-        # interpreted directly including indentation
-        expected_output = f"""KX Insights Install Setup
+            # Transcript here is not intended because multi line strings are
+            # interpreted directly including indentation
+            expected_output = f"""KX Insights Install Setup
 
 Running in namespace {test_namespace} on the cluster {test_cluster}
 
@@ -1169,9 +1193,9 @@ Helm values file for installation saved in {test_output_file}
 
 """
 
-    assert result.exit_code == 0
-    assert result.output == expected_output
-    assert filecmp.cmp(test_output_file, test_val_file_shared_keycloak)
+        assert result.exit_code == 0
+        assert result.output == expected_output
+        assert filecmp.cmp(test_output_file, test_val_file_shared_keycloak)
 
 def test_get_values_returns_error_when_does_not_exist(mocker):
     mocker.patch('kxicli.commands.install.read_secret', return_none)
