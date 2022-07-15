@@ -968,7 +968,7 @@ def test_list_versions_custom_repo(mocker):
 
     runner = CliRunner()
     with runner.isolated_filesystem():
-        result = runner.invoke(main.cli, ['install', 'list-versions', '--repo', test_chart_repo_name])
+        result = runner.invoke(main.cli, ['install', 'list-versions', '--chart-repo-name', test_chart_repo_name])
         expected_output = f"""Listing available KX Insights versions in repo {test_chart_repo_name}
 """
     assert result.exit_code == 0
@@ -1404,6 +1404,6 @@ Upgrade to version 1.2.3 complete
     assert insights_installed_flag == True
     assert operator_installed_flag ==True
     assert crd_exists_flag == True
-    assert running_assembly[test_asm_name] == True
-    os.remove(test_asm_backup)
-
+    assert running_assembly[test_asm_name] == True    
+    os.remove(test_asm_backup)        
+    
