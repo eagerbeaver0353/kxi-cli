@@ -163,27 +163,27 @@ def setup(namespace, chart_repo_name, license_secret, license_as_env_var, client
 @click.option('--namespace', default=lambda: default_val('namespace'), help=help_text('namespace'))
 @click.option('--filepath', help='Values file to install with')
 @click.option('--release', default=lambda: default_val('release.name'), help=help_text('release.name'))
-@click.option('--repo', default=lambda: default_val('chart.repo.name'), help=help_text('chart.repo.name'))
+@click.option('--chart-repo-name', default=lambda: default_val('chart.repo.name'), help=help_text('chart.repo.name'))
 @click.option('--version', required=True, help='Version to install')
 @click.option('--operator-version', default=None, help='Version of the operator to install')
 @click.option('--image-pull-secret', default=None, help=help_text('image.pullSecret'))
 @click.option('--license-secret', default=None, help=help_text('license.secret'))
 @click.option('--install-config-secret', default=None, help=help_text('install.configSecret'))
 @click.pass_context
-def run(ctx, namespace, filepath, release, repo, version, operator_version, image_pull_secret, license_secret, install_config_secret):
+def run(ctx, namespace, filepath, release, chart_repo_name, version, operator_version, image_pull_secret, license_secret, install_config_secret):
     """Install KX Insights with a values file"""
 
     # Run setup prompts if necessary
     if filepath is None and install_config_secret is None:
         click.echo('No values file provided, invoking "kxi install setup"\n')
-        filepath, repo = ctx.invoke(setup)
+        filepath, chart_repo_name = ctx.invoke(setup)
 
     _, namespace = get_namespace(namespace)
 
     values_secret = get_install_values(namespace=namespace, install_config_secret=install_config_secret)
     image_pull_secret,license_secret = get_image_and_license_secret_from_values(values_secret, filepath, image_pull_secret, license_secret)
 
-    install_operator_and_release(release=release, namespace=namespace, version=version, operator_version=operator_version, values_file=filepath, values_secret=values_secret, image_pull_secret=image_pull_secret, license_secret=license_secret, chart_repo_name=repo)
+    install_operator_and_release(release=release, namespace=namespace, version=version, operator_version=operator_version, values_file=filepath, values_secret=values_secret, image_pull_secret=image_pull_secret, license_secret=license_secret, chart_repo_name=chart_repo_name)
 
 @install.command()
 @click.option('--namespace', default=lambda: default_val('namespace'), help=help_text('namespace'))
@@ -240,12 +240,12 @@ def delete(release, namespace):
     delete_release_operator_and_crds(release=release, namespace=namespace)
     
 @install.command()
-@click.option('--repo', default=lambda: default_val('chart.repo.name'), help=help_text('chart.repo.name'))
-def list_versions(repo):
+@click.option('--chart-repo-name', default=lambda: default_val('chart.repo.name'), help=help_text('chart.repo.name'))
+def list_versions(chart_repo_name):
     """
     List available versions of KX Insights
     """
-    helm_list_versions(repo)
+    helm_list_versions(chart_repo_name)
     
 @install.command()
 @click.option('--namespace', default=lambda: default_val('namespace'), help=help_text('namespace'))
@@ -707,21 +707,21 @@ def delete_release_operator_and_crds(release, namespace):
         for i in crds:
             common.delete_crd(i)
 
-def helm_add_repo(repo, url, username, password):
+def helm_add_repo(chart_repo_name, url, username, password):
     """Call 'helm repo add' using subprocess.run"""
-    log.debug('Attempting to call: helm repo add --username {username} --password {len(password)*"*" {repo} {url}')
+    log.debug('Attempting to call: helm repo add --username {username} --password {len(password)*"*" {chart_repo_name} {url}')
     try:
-        subprocess.run(['helm', 'repo', 'add', '--username', username, '--password', password, repo, url], check=True)
+        subprocess.run(['helm', 'repo', 'add', '--username', username, '--password', password, chart_repo_name, url], check=True)
     except subprocess.CalledProcessError:
         # Pass here so that the password isn't printed in the log
         pass
 
-def helm_list_versions(repo):
+def helm_list_versions(chart_repo_name):
     """Call 'helm search repo' using subprocess.run"""
     log.debug('Attempting to call: helm search repo')
     try:
-        chart=f'{repo}/insights'
-        click.echo(f'Listing available KX Insights versions in repo {repo}')
+        chart=f'{chart_repo_name}/insights'
+        click.echo(f'Listing available KX Insights versions in repo {chart_repo_name}')
         
         subprocess.run(['helm', 'search', 'repo', chart], check=True)
     except subprocess.CalledProcessError as e:
