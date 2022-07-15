@@ -4,7 +4,7 @@ import click
 import pkg_resources
 from kxicli import config
 from kxicli import log
-from kxicli.commands import client, assembly, query, auth, install
+from kxicli.commands import client, assembly, query, auth, install, package
 
 CLI_VERSION = pkg_resources.require('kxicli')[0].version
 PYTHON_VERSION = f'{sys.version_info.major}.{sys.version_info.minor}'
@@ -39,6 +39,7 @@ cli.add_command(assembly.assembly)
 cli.add_command(auth.auth)
 cli.add_command(install.install)
 cli.add_command(configure)
+cli.add_command(package.package)
 
 if __name__ == '__main__':
     cli()  # pylint: disable=no-value-for-parameter

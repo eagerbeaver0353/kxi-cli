@@ -9,3 +9,5 @@ site
 .hypothesis
 launch.json
 settings.json
+build
+.DS_Store
