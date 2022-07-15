@@ -1,20 +1,18 @@
 """This end 2 end test validates the inputs and outputs of the install command directly"""
+import copy
+import filecmp
 import os
-import base64
 import shutil
-from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
 from tempfile import mkdtemp
 
-import yaml
 import kubernetes as k8s
-import filecmp
-import copy
+import yaml
 from click.testing import CliRunner
-from kxicli import main
+
 from kxicli import common
-from kxicli.commands import assembly
+from kxicli import main
 
 common.config.config_file = os.path.dirname(__file__) + '/files/test-cli-config'
 common.config.load_config("default")
@@ -72,6 +70,7 @@ def temp_test_output_file(prefix: str = 'kxicli-e2e-'):
         if inited:
             shutil.rmtree(dir_name)
 
+
 @contextmanager
 def temp_config_file(prefix: str = 'kxicli-config-', file_name='test-cli-config'):
     dir_name: str = str()
@@ -88,6 +87,17 @@ def temp_config_file(prefix: str = 'kxicli-config-', file_name='test-cli-config'
             shutil.rmtree(dir_name)
             common.config.config_file = test_cli_config_static
             common.config.load_config("default")
+
+
+def compare_files(file1: str, file2: str):
+    if os.name == 'nt':
+        with temp_test_output_file() as temp_file1:
+            with open(temp_file1, 'w', newline='\n') as tf, open(file1, 'r') as of:
+                for line in of.readlines():
+                    tf.write(line)
+            return filecmp.cmp(temp_file1, file2, shallow=False)
+    else:
+        return filecmp.cmp(file1, file2, shallow=False)
 
 
 def mocked_create_secret(namespace, name, secret_type, data=None, string_data=None):
@@ -409,7 +419,7 @@ Helm values file for installation saved in {test_output_file}
 """
         assert result.exit_code == 0
         assert result.output == expected_output
-        assert filecmp.cmp(test_output_file, test_val_file)
+        assert compare_files(test_output_file, test_val_file)
         with open(test_cli_config, "r") as f:
             assert f.read() == """[default]
 hostname = https://test.kx.com
@@ -504,7 +514,7 @@ Helm values file for installation saved in {test_output_file}
 
         assert result.exit_code == 0
         assert result.output == expected_output
-        assert filecmp.cmp(test_output_file, test_output_file_lic_env_var)
+        assert compare_files(test_output_file, test_output_file_lic_env_var)
 
 
 def test_install_setup_overwrites_when_values_file_exists(mocker):
@@ -595,7 +605,7 @@ Helm values file for installation saved in {test_output_file}
 """
         assert result.exit_code == 0
         assert result.output == expected_output
-        assert filecmp.cmp(test_output_file, test_val_file)
+        assert compare_files(test_output_file, test_val_file)
 
 def test_install_setup_creates_new_when_values_file_exists(mocker):
     mock_secret_helm_add(mocker)
@@ -687,9 +697,9 @@ Helm values file for installation saved in {test_output_file}_new
 """
         assert result.exit_code == 0
         assert result.output == expected_output
-        assert filecmp.cmp(f'{test_output_file}_new', test_val_file)
-        f = open(test_output_file, "r")
-        assert f.read() == "a test values file"             # assert that the original file is unchanged
+        assert compare_files(f'{test_output_file}_new', test_val_file)
+        with open(test_output_file, "r") as f:
+            assert f.read() == "a test values file"             # assert that the original file is unchanged
 
 def test_install_run_when_provided_file(mocker):
     mock_subprocess_run(mocker)
@@ -1239,7 +1249,7 @@ Helm values file for installation saved in {test_output_file}
 
         assert result.exit_code == 0
         assert result.output == expected_output
-        assert filecmp.cmp(test_output_file, test_val_file_shared_keycloak)
+        assert compare_files(test_output_file, test_val_file_shared_keycloak)
 
 def test_get_values_returns_error_when_does_not_exist(mocker):
     mocker.patch('kxicli.commands.install.read_secret', return_none)
