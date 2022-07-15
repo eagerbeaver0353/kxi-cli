@@ -15,7 +15,22 @@ def load_config(profile):
     global config
 
     config = configparser.ConfigParser(default_section=profile)
+    config.optionxform = str
     config.read(config_file)
+
+def append_config(profile, name, value):
+    """Append an option to the configuration for a specific profile"""
+    click.echo(f'Persisting option {name} to file {config_file}')
+
+    global config
+
+    if profile not in config:
+        config[profile] = {}
+
+    os.makedirs(config_dir, exist_ok=True)
+    with open(config_file, 'w+') as f:
+        config[profile][name] = value
+        config.write(f)
 
 def set_config(profile):
     """Set the configuration for a specific profile"""

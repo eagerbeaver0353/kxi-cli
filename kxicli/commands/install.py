@@ -83,11 +83,13 @@ def setup(namespace, chart_repo_name, license_secret, license_as_env_var, client
     if deploy_keycloak() and not('--keycloak-secret' in sys.argv and '--keycloak-postgresql-secret' in sys.argv):
         keycloak_secret, keycloak_postgresql_secret = prompt_for_keycloak(namespace, keycloak_secret, keycloak_postgresql_secret)
 
-    if '--gui-client-secret' not in sys.argv:
+    if not gui_client_secret:
         gui_client_secret = prompt_for_client_secret('gui')
+        common.config.append_config(profile=common.config.config.default_section, name='guiClientSecret', value=gui_client_secret)
 
-    if '--operator-client-secret' not in sys.argv:
+    if not operator_client_secret:
         operator_client_secret = prompt_for_client_secret('operator')
+        common.config.append_config(profile=common.config.config.default_section, name='operatorClientSecret', value=operator_client_secret)
 
     if 'ingress-cert-secret' not in sys.argv:
         click.secho('\nIngress', bold=True)

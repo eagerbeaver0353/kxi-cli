@@ -16,6 +16,7 @@ from kxicli import main
 from kxicli import common
 from kxicli.commands import assembly
 
+common.config.config_file = os.path.dirname(__file__) + '/files/test-cli-config'
 common.config.load_config("default")
 
 test_host = 'test.internal-insights.kx.com'
@@ -31,6 +32,7 @@ test_operator_chart = 'kx-insights/kxi-operator'
 test_val_file = os.path.dirname(__file__) + '/files/test-values.yaml'
 test_val_file_shared_keycloak = os.path.dirname(__file__) + '/files/test-values-shared-keycloak.yaml'
 test_k8s_config = os.path.dirname(__file__) + '/files/test-kube-config'
+test_cli_config_static = os.path.dirname(__file__) + '/files/test-cli-config'
 test_lic_file = os.path.dirname(__file__) + '/files/test-license'
 expected_test_output_file = str(Path(__file__).parent / 'files' / 'output-values.yaml')
 test_output_file_lic_env_var = os.path.dirname(__file__) + '/files/output-values-license-as-env-var.yaml'
@@ -69,6 +71,23 @@ def temp_test_output_file(prefix: str = 'kxicli-e2e-'):
     finally:
         if inited:
             shutil.rmtree(dir_name)
+
+@contextmanager
+def temp_config_file(prefix: str = 'kxicli-config-', file_name='test-cli-config'):
+    dir_name: str = str()
+    inited: bool = False
+    try:
+        dir_name = mkdtemp(prefix=prefix)
+        inited = True
+        output_file_name = str(Path(dir_name).joinpath(file_name))
+        shutil.copyfile(common.config.config_file, output_file_name)
+        common.config.config_file = output_file_name
+        yield output_file_name
+    finally:
+        if inited:
+            shutil.rmtree(dir_name)
+            common.config.config_file = test_cli_config_static
+            common.config.load_config("default")
 
 
 def mocked_create_secret(namespace, name, secret_type, data=None, string_data=None):
@@ -218,7 +237,7 @@ def upgrades_mocks(mocker):
 def test_install_setup_when_creating_secrets(mocker):
     mock_secret_helm_add(mocker)
     mock_create_namespace(mocker)
-    with temp_test_output_file() as test_output_file:
+    with temp_test_output_file() as test_output_file, temp_config_file() as test_cli_config:
 
         runner = CliRunner()
         with runner.isolated_filesystem():
@@ -290,8 +309,10 @@ Please enter the Postgresql user password (input hidden):
 Secret kxi-postgresql successfully created
 Do you want to set a secret for the gui service account explicitly [y/N]: n
 Randomly generating client secret for gui and setting in values file, record this value for reuse during upgrade
+Persisting option guiClientSecret to file {test_cli_config}
 Do you want to set a secret for the operator service account explicitly [y/N]: n
 Randomly generating client secret for operator and setting in values file, record this value for reuse during upgrade
+Persisting option operatorClientSecret to file {test_cli_config}
 
 Ingress
 Do you want to provide a self-managed cert for the ingress [y/N]: n
@@ -309,7 +330,7 @@ Helm values file for installation saved in {test_output_file}
 def test_install_setup_when_providing_secrets(mocker):
     mock_secret_helm_add(mocker)
     mock_create_namespace(mocker)
-    with temp_test_output_file() as test_output_file:
+    with temp_test_output_file() as test_output_file, temp_config_file() as test_cli_config:
 
         runner = CliRunner()
         with runner.isolated_filesystem():
@@ -372,8 +393,10 @@ Do you have an existing keycloak postgresql secret [y/N]: y
 Please enter the name of the existing secret: {common.get_default_val('keycloak.postgresqlSecret')}
 Do you want to set a secret for the gui service account explicitly [y/N]: y
 Please enter the secret (input hidden): 
+Persisting option guiClientSecret to file {test_cli_config}
 Do you want to set a secret for the operator service account explicitly [y/N]: y
 Please enter the secret (input hidden): 
+Persisting option operatorClientSecret to file {test_cli_config}
 
 Ingress
 Do you want to provide a self-managed cert for the ingress [y/N]: n
@@ -387,11 +410,21 @@ Helm values file for installation saved in {test_output_file}
         assert result.exit_code == 0
         assert result.output == expected_output
         assert filecmp.cmp(test_output_file, test_val_file)
+        with open(test_cli_config, "r") as f:
+            assert f.read() == """[default]
+hostname = https://test.kx.com
+namespace = test
+client.id = client
+client.secret = secret
+guiClientSecret = gui-secret
+operatorClientSecret = operator-secret
+
+"""
 
 def test_install_setup_when_passed_license_env_var_in_command_line(mocker):
     mock_secret_helm_add(mocker)
     mock_create_namespace(mocker)
-    with temp_test_output_file() as test_output_file:
+    with temp_test_output_file() as test_output_file, temp_config_file() as test_cli_config:
 
         runner = CliRunner()
         with runner.isolated_filesystem():
@@ -454,8 +487,10 @@ Do you have an existing keycloak postgresql secret [y/N]: y
 Please enter the name of the existing secret: {common.get_default_val('keycloak.postgresqlSecret')}
 Do you want to set a secret for the gui service account explicitly [y/N]: y
 Please enter the secret (input hidden): 
+Persisting option guiClientSecret to file {test_cli_config}
 Do you want to set a secret for the operator service account explicitly [y/N]: y
 Please enter the secret (input hidden): 
+Persisting option operatorClientSecret to file {test_cli_config}
 
 Ingress
 Do you want to provide a self-managed cert for the ingress [y/N]: n
@@ -466,6 +501,7 @@ KX Insights installation setup complete
 Helm values file for installation saved in {test_output_file}
 
 """
+
         assert result.exit_code == 0
         assert result.output == expected_output
         assert filecmp.cmp(test_output_file, test_output_file_lic_env_var)
@@ -474,7 +510,7 @@ Helm values file for installation saved in {test_output_file}
 def test_install_setup_overwrites_when_values_file_exists(mocker):
     mock_secret_helm_add(mocker)
     mock_create_namespace(mocker)
-    with temp_test_output_file() as test_output_file:
+    with temp_test_output_file() as test_output_file, temp_config_file() as test_cli_config:
         f = open(test_output_file, 'w')
         f.write('a test values file')
         f.close()
@@ -541,8 +577,10 @@ Do you have an existing keycloak postgresql secret [y/N]: y
 Please enter the name of the existing secret: {common.get_default_val('keycloak.postgresqlSecret')}
 Do you want to set a secret for the gui service account explicitly [y/N]: y
 Please enter the secret (input hidden): 
+Persisting option guiClientSecret to file {test_cli_config}
 Do you want to set a secret for the operator service account explicitly [y/N]: y
 Please enter the secret (input hidden): 
+Persisting option operatorClientSecret to file {test_cli_config}
 
 Ingress
 Do you want to provide a self-managed cert for the ingress [y/N]: n
@@ -562,7 +600,7 @@ Helm values file for installation saved in {test_output_file}
 def test_install_setup_creates_new_when_values_file_exists(mocker):
     mock_secret_helm_add(mocker)
     mock_create_namespace(mocker)
-    with temp_test_output_file() as test_output_file:
+    with temp_test_output_file() as test_output_file, temp_config_file() as test_cli_config:
         f = open(test_output_file, 'w')
         f.write("a test values file")
         f.close()
@@ -630,8 +668,10 @@ Do you have an existing keycloak postgresql secret [y/N]: y
 Please enter the name of the existing secret: {common.get_default_val('keycloak.postgresqlSecret')}
 Do you want to set a secret for the gui service account explicitly [y/N]: y
 Please enter the secret (input hidden): 
+Persisting option guiClientSecret to file {test_cli_config}
 Do you want to set a secret for the operator service account explicitly [y/N]: y
 Please enter the secret (input hidden): 
+Persisting option operatorClientSecret to file {test_cli_config}
 
 Ingress
 Do you want to provide a self-managed cert for the ingress [y/N]: n
@@ -674,7 +714,7 @@ def test_install_run_when_no_file_provided(mocker):
     mocker.patch('subprocess.check_output', mocked_helm_list_returns_empty_json)
     mock_set_insights_operator_and_crd_installed_state(mocker, False, False, False)
     mock_create_namespace(mocker)
-    with temp_test_output_file() as test_output_file:
+    with temp_test_output_file() as test_output_file, temp_config_file() as test_cli_config:
         f = open(test_output_file, 'w')
         f.write("a test values file")
         f.close()
@@ -742,8 +782,10 @@ Do you have an existing keycloak postgresql secret [y/N]: y
 Please enter the name of the existing secret: {common.get_default_val('keycloak.postgresqlSecret')}
 Do you want to set a secret for the gui service account explicitly [y/N]: y
 Please enter the secret (input hidden): 
+Persisting option guiClientSecret to file {test_cli_config}
 Do you want to set a secret for the operator service account explicitly [y/N]: y
 Please enter the secret (input hidden): 
+Persisting option operatorClientSecret to file {test_cli_config}
 
 Ingress
 Do you want to provide a self-managed cert for the ingress [y/N]: n
@@ -1111,7 +1153,7 @@ The assemblies CRDs ['assemblies.insights.kx.com', 'assemblyresources.insights.k
 def test_install_when_not_deploying_keycloak(mocker):
     mock_secret_helm_add(mocker)
     mock_create_namespace(mocker)
-    with temp_test_output_file() as test_output_file:
+    with temp_test_output_file() as test_output_file, temp_config_file() as test_cli_config:
         shutil.copyfile(expected_test_output_file, test_output_file)
         # Ideally would patch sys.argv with args but can't find a way to get this to stick
         #   'mocker.patch('sys.argv', args)'
@@ -1178,8 +1220,10 @@ Secret kxi-certificate successfully created
 Keycloak
 Do you want to set a secret for the gui service account explicitly [y/N]: y
 Please enter the secret (input hidden): 
+Persisting option guiClientSecret to file {test_cli_config}
 Do you want to set a secret for the operator service account explicitly [y/N]: y
 Please enter the secret (input hidden): 
+Persisting option operatorClientSecret to file {test_cli_config}
 
 Ingress
 Do you want to provide a self-managed cert for the ingress [y/N]: n
