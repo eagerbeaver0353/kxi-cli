@@ -38,7 +38,7 @@ build dist:
   rules:
     - !reference [ .default-rules, rules ]
   script:
-    - python3 -m pip install --upgrade build
+    - python3 -m pip install --extra-index-url=https://${INT_NEXUS_USER_RW}:${INT_NEXUS_PASS_RW}@nexus.internal-insights.kx.com/repository/kxi/simple --upgrade build
     - python3 -m build
   artifacts:
     paths:
@@ -50,8 +50,8 @@ build dist:
   rules:
     - !reference [ .default-rules, rules ]
   script:
-    - pip install -r kxicli/tests/requirements.txt
-    - pip install dist/*.whl
+    - pip install --extra-index-url=https://${INT_NEXUS_USER_RW}:${INT_NEXUS_PASS_RW}@nexus.internal-insights.kx.com/repository/kxi/simple -r kxicli/tests/requirements.txt
+    - pip install --extra-index-url=https://${INT_NEXUS_USER_RW}:${INT_NEXUS_PASS_RW}@nexus.internal-insights.kx.com/repository/kxi/simple dist/*.whl
     - export KUBECONFIG=$(pwd)/kxicli/tests/files/test-kube-config
     - coverage run -m pytest
     - coverage report
@@ -79,10 +79,6 @@ whitesource-dep-scan:
     WS_PRODUCTVERSION: "main"
     WS_PROJECTNAME: "$CI_PROJECT_NAME"
     WS_PROJECTVERSION: "$CI_DEFAULT_BRANCH"
-
-run tests 3.6:
-  extends: .run-tests
-  image: python:3.6
 
 run tests 3.7:
   extends: .run-tests
@@ -132,7 +128,7 @@ pages:
   stage: docs
   script:
     - pip install -r mkdocs.requirements
-    - pip install .
+    - pip install --extra-index-url=https://${INT_NEXUS_USER_RW}:${INT_NEXUS_PASS_RW}@nexus.internal-insights.kx.com/repository/kxi/simple .
     - mkdocs build --strict
     - mv site public/
   artifacts:
