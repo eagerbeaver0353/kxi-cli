@@ -37,8 +37,10 @@ build dist:
   image: python:3
   rules:
     - !reference [ .default-rules, rules ]
+  before_script:
+    - python3 -m pip config set install.extra-index-url "https://${INT_NEXUS_USER_RW}:${INT_NEXUS_PASS_RW}@nexus.kxi-dev.kx.com/repository/kxi/simple"
+    - python3 -m pip install --upgrade build
   script:
-    - python3 -m pip install --extra-index-url=https://${INT_NEXUS_USER_RW}:${INT_NEXUS_PASS_RW}@nexus.internal-insights.kx.com/repository/kxi/simple --upgrade build
     - python3 -m build
   artifacts:
     paths:
@@ -49,9 +51,11 @@ build dist:
   image: python:3
   rules:
     - !reference [ .default-rules, rules ]
+  before_script:
+    - python3 -m pip config set install.extra-index-url "https://${INT_NEXUS_USER_RW}:${INT_NEXUS_PASS_RW}@nexus.kxi-dev.kx.com/repository/kxi/simple"
+    - pip install -r kxicli/tests/requirements.txt
+    - pip install dist/*.whl
   script:
-    - pip install --extra-index-url=https://${INT_NEXUS_USER_RW}:${INT_NEXUS_PASS_RW}@nexus.internal-insights.kx.com/repository/kxi/simple -r kxicli/tests/requirements.txt
-    - pip install --extra-index-url=https://${INT_NEXUS_USER_RW}:${INT_NEXUS_PASS_RW}@nexus.internal-insights.kx.com/repository/kxi/simple dist/*.whl
     - export KUBECONFIG=$(pwd)/kxicli/tests/files/test-kube-config
     - coverage run -m pytest
     - coverage report
@@ -100,12 +104,13 @@ publish package:
   stage: publish
   image: python:3
   variables:
-    PYPI_URL: "https://nexus.internal-insights.kx.com/repository/kxi/"
+    PYPI_URL: "$INSIGHTS_DEV_NEXUS_URL"
     TWINE_USERNAME: "$INT_NEXUS_USER_RW"
     TWINE_PASSWORD: "$INT_NEXUS_PASS_RW"
-  script:
+  before_script:
     - python -m pip install --upgrade twine
-    - python -m twine upload  --non-interactive --repository-url  "$PYPI_URL" dist/*.whl
+  script:
+    - python -m twine upload  --non-interactive --repository-url "$PYPI_URL" dist/*.whl
   rules:
     - if: $CI_COMMIT_TAG
 
@@ -113,12 +118,13 @@ publish package external kxi-pypi-public:
   stage: publish
   image: python:3
   variables:
-    PYPI_URL: "https://nexus.dl.kx.com/repository/kxi-pypi-public/"
+    PYPI_URL: "$INSIGHTS_PROD_NEXUS_URL"
     TWINE_USERNAME: "$EXT_NEXUS_USER_RW"
     TWINE_PASSWORD: "$EXT_NEXUS_PASS_RW"
-  script:
+  before_script:
     - python -m pip install --upgrade twine
-    - python -m twine upload  --non-interactive --repository-url  "$PYPI_URL" dist/*.whl
+  script:
+    - python -m twine upload  --non-interactive --repository-url "$PYPI_URL" dist/*.whl
   rules:
     - if: $CI_COMMIT_TAG
       when: manual
@@ -126,9 +132,11 @@ publish package external kxi-pypi-public:
 pages:
   image: python:3.8
   stage: docs
-  script:
+  before_script:
+    - python3 -m pip config set install.extra-index-url "https://${INT_NEXUS_USER_RW}:${INT_NEXUS_PASS_RW}@nexus.kxi-dev.kx.com/repository/kxi/simple"
     - pip install -r mkdocs.requirements
-    - pip install --extra-index-url=https://${INT_NEXUS_USER_RW}:${INT_NEXUS_PASS_RW}@nexus.internal-insights.kx.com/repository/kxi/simple .
+    - pip install .
+  script:
     - mkdocs build --strict
     - mv site public/
   artifacts:
