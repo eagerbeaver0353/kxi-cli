@@ -26,6 +26,7 @@ test_pass = 'password'
 test_auth_url = 'http://keycloak.keycloak.svc.cluster.local/auth/'
 test_chart = 'kx-insights/insights'
 test_operator_chart = 'kx-insights/kxi-operator'
+test_install_secret = 'test-install-secret'
 
 test_val_file = os.path.dirname(__file__) + '/files/test-values.yaml'
 test_val_file_shared_keycloak = os.path.dirname(__file__) + '/files/test-values-shared-keycloak.yaml'
@@ -834,7 +835,7 @@ def test_install_run_when_provided_secret(mocker):
     runner = CliRunner()
     with runner.isolated_filesystem():
         # these are responses to the various prompts
-        result = runner.invoke(main.cli, ['install', 'run', '--version', '1.2.3', '--install-config-secret', 'kxi-install-secret'])
+        result = runner.invoke(main.cli, ['install', 'run', '--version', '1.2.3', '--install-config-secret', test_install_secret])
         expected_output = f"""
 kxi-operator already installed
 Installing chart kx-insights/insights with values from secret
@@ -855,7 +856,7 @@ def test_install_run_when_provided_file_and_secret(mocker):
     runner = CliRunner()
     with runner.isolated_filesystem():
         # these are responses to the various prompts
-        result = runner.invoke(main.cli, ['install', 'run', '--version', '1.2.3', '--filepath', test_val_file, '--install-config-secret', 'kxi-install-secret'])
+        result = runner.invoke(main.cli, ['install', 'run', '--version', '1.2.3', '--filepath', test_val_file, '--install-config-secret', test_install_secret])
         expected_output = f"""
 kxi-operator already installed
 Installing chart kx-insights/insights with values from secret and values file from {test_val_file}
@@ -912,7 +913,7 @@ def test_install_run_installs_operator_with_modified_secrets(mocker):
         # these are responses to the various prompts
         user_input = f"""y
 """
-        result = runner.invoke(main.cli, ['install', 'run', '--version', '1.2.3', '--install-config-secret', 'kxi-install-secret'], input=user_input)
+        result = runner.invoke(main.cli, ['install', 'run', '--version', '1.2.3', '--install-config-secret', test_install_secret], input=user_input)
         expected_output = f"""
 kxi-operator not found. Do you want to install it? [Y/n]: y
 Installing chart kx-insights/kxi-operator with values from secret
@@ -1298,7 +1299,7 @@ y
 y
 y
 """
-        result = runner.invoke(main.cli, ['install', 'upgrade', '--version', '1.2.3', '--assembly-backup-filepath', test_asm_backup], input=user_input)
+        result = runner.invoke(main.cli, ['install', 'upgrade', '--version', '1.2.3', '--install-config-secret', test_install_secret, '--assembly-backup-filepath', test_asm_backup], input=user_input)
         expected_output = f"""Upgrading KX Insights
 
 Backing up assemblies
@@ -1358,7 +1359,7 @@ def test_upgrade_skips_to_install_when_not_running(mocker):
     user_input = f"""y
 """
     with runner.isolated_filesystem():
-        result = runner.invoke(main.cli, ['install', 'upgrade', '--version', '1.2.3'], input=user_input)
+        result = runner.invoke(main.cli, ['install', 'upgrade', '--version', '1.2.3', '--install-config-secret', test_install_secret], input=user_input)
     expected_output = f"""Upgrading KX Insights
 KX Insights is not deployed. Skipping to install
 
@@ -1387,7 +1388,7 @@ def test_upgrade_when_user_declines_to_uninstall_insights(mocker):
     user_input = f"""n
 """
     with runner.isolated_filesystem():
-        result = runner.invoke(main.cli, ['install', 'upgrade', '--version', '1.2.3', '--assembly-backup-filepath', test_asm_backup], input=user_input)
+        result = runner.invoke(main.cli, ['install', 'upgrade', '--version', '1.2.3', '--install-config-secret', test_install_secret, '--assembly-backup-filepath', test_asm_backup], input=user_input)
     expected_output = f"""Upgrading KX Insights
 
 Backing up assemblies

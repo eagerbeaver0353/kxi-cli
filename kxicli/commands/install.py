@@ -215,7 +215,7 @@ def run(ctx, namespace, filepath, release, chart_repo_name, version, operator_ve
 @click.option('--operator-version', default=None, help='Version of the operator to install')
 @click.option('--image-pull-secret', default=None, help=help_text('image.pullSecret'))
 @click.option('--license-secret', default=None, help=help_text('license.secret'))
-@click.option('--install-config-secret', default=lambda: default_val('install.configSecret'), help=help_text('install.configSecret'))
+@click.option('--install-config-secret', default=None, help=help_text('install.configSecret'))
 @click.option('--filepath', help='Values file to install with')
 def upgrade(namespace, release, chart_repo_name, assembly_backup_filepath, version, operator_version, image_pull_secret, license_secret, install_config_secret, filepath):
     """Upgrade KX Insights"""
