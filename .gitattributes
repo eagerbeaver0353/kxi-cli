@@ -1,0 +1,8 @@
+*       text    eol=lf
+
+*.svg      binary
+
+*.py     text diff=python
+*.md       text diff=markdown
+
+.gitattributes linguist-language=gitattributes
