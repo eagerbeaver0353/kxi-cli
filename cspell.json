@@ -24,6 +24,11 @@
         "servicegateway",
         "Apiextensions",
         "kubectl",
-        "pakxcli"
+        "pakxcli",
+        "rtype",
+        "vals",
+        "IPATH",
+        "COREV",
+        "DOCKERCONFIG"
     ]
 }

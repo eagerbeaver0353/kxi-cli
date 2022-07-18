@@ -103,6 +103,10 @@ def compare_files(file1: str, file2: str):
 def mocked_create_secret(namespace, name, secret_type, data=None, string_data=None):
     print(f'Secret {name} successfully created')
 
+def mock_validate_secret(mocker):
+    # Returns that the secret is valid and there are no missing keys
+    mocker.patch('kxicli.commands.install.validate_secret', return_value=(True, []))
+
 def mocked_patch_secret(namespace, name, secret_type, data=None, string_data=None):
     print(f'Secret {name} successfully updated')
 
@@ -340,6 +344,7 @@ Helm values file for installation saved in {test_output_file}
 def test_install_setup_when_providing_secrets(mocker):
     mock_secret_helm_add(mocker)
     mock_create_namespace(mocker)
+    mock_validate_secret(mocker)
     with temp_test_output_file() as test_output_file, temp_config_file() as test_cli_config:
 
         runner = CliRunner()
@@ -434,6 +439,7 @@ operatorClientSecret = operator-secret
 def test_install_setup_when_passed_license_env_var_in_command_line(mocker):
     mock_secret_helm_add(mocker)
     mock_create_namespace(mocker)
+    mock_validate_secret(mocker)
     with temp_test_output_file() as test_output_file, temp_config_file() as test_cli_config:
 
         runner = CliRunner()
@@ -520,6 +526,7 @@ Helm values file for installation saved in {test_output_file}
 def test_install_setup_overwrites_when_values_file_exists(mocker):
     mock_secret_helm_add(mocker)
     mock_create_namespace(mocker)
+    mock_validate_secret(mocker)
     with temp_test_output_file() as test_output_file, temp_config_file() as test_cli_config:
         f = open(test_output_file, 'w')
         f.write('a test values file')
@@ -610,6 +617,7 @@ Helm values file for installation saved in {test_output_file}
 def test_install_setup_creates_new_when_values_file_exists(mocker):
     mock_secret_helm_add(mocker)
     mock_create_namespace(mocker)
+    mock_validate_secret(mocker)
     with temp_test_output_file() as test_output_file, temp_config_file() as test_cli_config:
         f = open(test_output_file, 'w')
         f.write("a test values file")
@@ -724,6 +732,7 @@ def test_install_run_when_no_file_provided(mocker):
     mocker.patch('subprocess.check_output', mocked_helm_list_returns_empty_json)
     mock_set_insights_operator_and_crd_installed_state(mocker, False, False, False)
     mock_create_namespace(mocker)
+    mock_validate_secret(mocker)
     with temp_test_output_file() as test_output_file, temp_config_file() as test_cli_config:
         f = open(test_output_file, 'w')
         f.write("a test values file")
@@ -1414,6 +1423,5 @@ Upgrade to version 1.2.3 complete
     assert insights_installed_flag == True
     assert operator_installed_flag ==True
     assert crd_exists_flag == True
-    assert running_assembly[test_asm_name] == True    
-    os.remove(test_asm_backup)        
-    
+    assert running_assembly[test_asm_name] == True
+    os.remove(test_asm_backup)
