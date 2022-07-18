@@ -18,4 +18,6 @@ keycloak:
   auth:
     existingSecret: kxi-keycloak
   postgresql:
+    auth:
+      existingSecret: kxi-postgresql
     existingSecret: kxi-postgresql

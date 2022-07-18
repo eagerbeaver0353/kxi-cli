@@ -25,6 +25,24 @@ docker_config_file_path = str(Path.home() / '.docker' / 'config.json')
 install_namespace_default = 'kxi'
 operator_namespace = 'kxi-operator'
 
+SECRET_TYPE_TLS = 'kubernetes.io/tls'
+SECRET_TYPE_DOCKERCONFIG_JSON = 'kubernetes.io/dockerconfigjson'
+SECRET_TYPE_OPAQUE = 'Opaque'
+
+TLS_CRT = 'tls.crt'
+TLS_KEY = 'tls.key'
+
+# Basic validation for secrets checking secret type and data
+# Format is [expected_secret_type, required_secret_keys]
+# required_secret_keys must be a tuple, one-item tuples have a trailing comma
+SECRET_VALIDATION = {}
+SECRET_VALIDATION['keycloak']           = (SECRET_TYPE_OPAQUE,              ('admin-password', 'management-password'))
+SECRET_VALIDATION['postgresql']         = (SECRET_TYPE_OPAQUE,              ('postgresql-postgres-password', 'postgresql-password'))
+SECRET_VALIDATION['license']            = (SECRET_TYPE_OPAQUE,              ('license',))
+SECRET_VALIDATION['image_pull']         = (SECRET_TYPE_DOCKERCONFIG_JSON,   ('.dockerconfigjson',))
+SECRET_VALIDATION['ingress_cert']       = (SECRET_TYPE_TLS,                 (TLS_CRT, TLS_KEY))
+SECRET_VALIDATION['client_cert']        = (SECRET_TYPE_TLS,                 (TLS_CRT, TLS_KEY))
+
 @click.group()
 def install():
     """Insights installation commands"""
@@ -130,6 +148,9 @@ def setup(namespace, chart_repo_name, license_secret, license_as_env_var, client
                 'existingSecret': keycloak_secret
             },
             'postgresql': {
+                'auth': {
+                    'existingSecret': keycloak_postgresql_secret
+                },
                 'existingSecret': keycloak_postgresql_secret
             }
         }
@@ -310,7 +331,7 @@ def sanitize_auth_url(raw_string):
 def prompt_for_license(namespace, license_secret, license_as_env_var):
     """Prompt for an existing license or create on if it doesn't exist"""
     if click.confirm('Do you have an existing license secret'):
-        license_secret = prompt_for_existing_secret()
+        license_secret = prompt_and_validate_existing_secret(namespace, 'license')
     else:
         path_to_lic = click.prompt('Please enter the path to your kdb license')
         create_license_secret(namespace, license_secret, path_to_lic, license_as_env_var)
@@ -320,7 +341,7 @@ def prompt_for_license(namespace, license_secret, license_as_env_var):
 def prompt_for_client_cert(namespace, client_cert_secret):
     """Prompt for an existing client cert secret or create one if it doesn't exist"""
     if click.confirm('Do you have an existing client certificate issuer'):
-        client_cert_secret = prompt_for_existing_secret()
+        client_cert_secret = prompt_and_validate_existing_secret(namespace, 'client_cert')
     else:
         key = gen_private_key()
         cert = gen_cert(key)
@@ -333,7 +354,7 @@ def prompt_for_image_details(namespace, image_repo, image_pull_secret):
     image_repo = click.prompt('Please enter the image repository to pull images from', default=image_repo)
 
     if click.confirm(f'Do you have an existing image pull secret for {image_repo}'):
-        image_pull_secret = prompt_for_existing_secret()
+        image_pull_secret = prompt_and_validate_existing_secret(namespace, 'image_pull')
         return image_repo, image_pull_secret
 
     existing_config = check_existing_docker_config(image_repo, docker_config_file_path)
@@ -361,7 +382,7 @@ def prompt_for_keycloak(namespace, keycloak_secret, postgresql_secret):
     """Prompt for existing Keycloak secrets or create them if they don't exist"""
 
     if click.confirm('Do you have an existing keycloak secret'):
-        keycloak_secret = prompt_for_existing_secret()
+        keycloak_secret = prompt_and_validate_existing_secret(namespace, 'keycloak')
     else:
         admin_password = click.prompt('Please enter the Keycloak Admin password (input hidden)', hide_input=True)
         management_password = click.prompt('Please enter the Keycloak WildFly Management password (input hidden)', hide_input=True)
@@ -372,14 +393,18 @@ def prompt_for_keycloak(namespace, keycloak_secret, postgresql_secret):
         create_secret(namespace,keycloak_secret,'Opaque',data=data)
 
     if click.confirm('Do you have an existing keycloak postgresql secret'):
-        postgresql_secret = prompt_for_existing_secret()
+        postgresql_secret = prompt_and_validate_existing_secret(namespace, 'postgresql')
     else:
         postgresql_postgres_password = click.prompt('Please enter the Postgresql postgres password (input hidden)', hide_input=True)
         postgresql_password = click.prompt('Please enter the Postgresql user password (input hidden)', hide_input=True)
+
         data = {
             'postgresql-postgres-password': base64.b64encode(postgresql_postgres_password.encode()).decode('ascii'),
-            'postgresql-password': base64.b64encode(postgresql_password.encode()).decode('ascii')
+            'postgres-password': base64.b64encode(postgresql_postgres_password.encode()).decode('ascii'),
+            'postgresql-password': base64.b64encode(postgresql_password.encode()).decode('ascii'),
+            'password': base64.b64encode(postgresql_password.encode()).decode('ascii')
         }
+
         create_secret(namespace,postgresql_secret,'Opaque',data=data)
 
     return keycloak_secret, postgresql_secret
@@ -388,7 +413,7 @@ def prompt_for_ingress_cert(namespace, ingress_cert_secret):
     if click.confirm('Do you want to provide a self-managed cert for the ingress'):
         ingress_self_managed = True
         if click.confirm('Do you have an existing secret containing the cert for the ingress'):
-            ingress_cert_secret = prompt_for_existing_secret()
+            ingress_cert_secret = prompt_and_validate_existing_secret(namespace, 'ingress_cert')
         else:
             path_to_cert = click.prompt('Please enter the path to your TLS certificate')
             with open(path_to_cert, 'r') as cert_file:
@@ -423,14 +448,26 @@ def create_docker_config(image_repo, user, password):
 def prompt_for_existing_secret():
     return click.prompt('Please enter the name of the existing secret')
 
+def prompt_and_validate_existing_secret(namespace, secret_use):
+    secret_name = prompt_for_existing_secret()
+    if secret_use not in SECRET_VALIDATION:
+        # if no validation exists, continue without validation
+        log.debug(f'Could not find validation logic to validate the {secret_use} secret')
+        return secret_name
+
+    expected_type, required_keys = SECRET_VALIDATION[secret_use]
+    if not validate_secret(namespace, secret_name, expected_type, required_keys)[0]:
+        sys.exit(1)
+
+    return secret_name
+
 def check_existing_docker_config(image_repo, file_path):
     """Check local .docker/config.json for repo credentials"""
     log.debug(f'Checking {file_path} for existing credentials for the repository {image_repo}')
     try:
         with open(file_path, 'r') as f:
             config = json.loads(f.read())
-
-        if image_repo in config['auths']:
+        if 'auths' in config and image_repo in config['auths']:
             return config['auths'][image_repo]
     except FileNotFoundError:
         pass
@@ -488,8 +525,8 @@ def create_tls_secret(namespace, name, cert, key):
     cert_string = cert.public_bytes(serialization.Encoding.PEM)
 
     data = {
-        'tls.key': base64.b64encode(key_string).decode('ascii'),
-        'tls.crt': base64.b64encode(cert_string).decode('ascii')
+        TLS_KEY: base64.b64encode(key_string).decode('ascii'),
+        TLS_CRT: base64.b64encode(cert_string).decode('ascii')
     }
 
     return create_secret(
@@ -571,6 +608,52 @@ def get_secret_body(name, secret_type, data=None, string_data=None):
         secret.string_data = string_data
 
     return secret
+
+def validate_secret(namespace, name, secret_type, data_keys):
+    """Validates that specific keys exist in the data field of a secret and that the secret has the expected type
+
+    :param str namespace: Namespace to search for the secret
+    :param str name: Name of the secret
+    :param str secret_type: Expected type of the secret
+    :param tuple data_keys: Required keys in the secret
+    :rtype: bool
+    """
+    secret = read_secret(namespace, name)
+    if secret is None:
+        log.error(f'Secret {name} does not exist in the namespace {namespace}')
+        sys.exit(1)
+
+    missing_data_keys = get_missing_keys(secret.data, data_keys)
+
+    is_valid = True
+    if secret.type != secret_type:
+        log.error(f'Secret {name} is of type {secret.type} when it should {secret_type}')
+        is_valid = False
+
+    if missing_data_keys:
+        log.error(f'Secret {name} is missing required data keys {missing_data_keys}')
+        is_valid = False
+
+    return (is_valid, missing_data_keys)
+
+def get_missing_keys(dictionary, keys):
+    """Returns keys from 'keys' that are missing from 'dictionary'
+
+    :param dictionary: Dictionary to search for keys in
+    :type dictionary: dict or None
+    :param tuple keys: List of keys to search for
+    :rtype: list
+    """
+    missing_keys = []
+    # if the dictionary doesn't exist then all of the keys are missing
+    if dictionary is None:
+        missing_keys = list(keys)
+    else:
+        for k in keys:
+            if k not in dictionary:
+                missing_keys.append(k)
+
+    return missing_keys
 
 def get_install_values(namespace, install_config_secret):
     values_secret = None
