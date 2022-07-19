@@ -109,7 +109,7 @@ def _print_2d_list(data, headers):
     for row in data:
         click.echo(f'{row[0]:{padding}}{row[1]}')
 
-def _backup_assemblies(namespace, filepath):
+def _backup_assemblies(namespace, filepath, force):
     """Get assemblies' definitions"""
     res = _get_assemblies_list(namespace)
 
@@ -123,7 +123,7 @@ def _backup_assemblies(namespace, filepath):
         click.echo('No assemblies to back up')
         return None
 
-    if os.path.exists(filepath):
+    if not force and os.path.exists(filepath):
         if not click.confirm(f'\n{filepath} file exists. Do you want to overwrite it with a new assembly backup file?'):
             filepath = click.prompt('Please enter the path to write the assembly backup file')
     with open(filepath, 'w') as f:
@@ -209,11 +209,11 @@ def _create_assembly(namespace, body, wait=None):
 
 def _delete_assembly(namespace, name, wait, force):
     """Deletes an assembly given its name"""
-    click.echo(f'Deleting assembly {name}')
+    click.echo(f'Tearing down assembly {name}')
 
-    if not force and not click.confirm(f'Are you sure you want to delete {name}'):
-        click.echo(f'Not deleting assembly {name}')
-        sys.exit(0)
+    if not force and not click.confirm(f'Are you sure you want to teardown {name}'):
+        click.echo(f'Not tearing down assembly {name}')
+        return False
 
     common.load_kube_config()
     api = k8s.client.CustomObjectsApi()
@@ -228,14 +228,14 @@ def _delete_assembly(namespace, name, wait, force):
             )
     except k8s.client.rest.ApiException as exception:
         if exception.status == 404:
-            click.echo(f'Ignoring delete, {name} not found')
-            sys.exit(0)
+            click.echo(f'Ignoring teardown, {name} not found')
+            return False
         else:
             click.echo(f'Exception when calling CustomObjectsApi->delete_namespaced_custom_object: {exception}\n')
 
     asm_running = True
     if wait:
-        with click.progressbar(range(10), label='Waiting for assembly to be deleted') as bar:
+        with click.progressbar(range(10), label='Waiting for assembly to be torn down') as bar:
             for n in bar:
                 time.sleep((2 ** n) + (random.randint(0, 1000) / 1000))
                 try:
@@ -252,26 +252,32 @@ def _delete_assembly(namespace, name, wait, force):
                         break
         
         if asm_running: 
-            log.error('Assembly was not deleted in time, exiting')
-            sys.exit(1)
+            log.error('Assembly was not torn down in time, exiting')
+            return False
+
+    return True
 
 def _delete_running_assemblies(namespace, wait, force):
     """Deletes all assemblies running in a namespace"""
     asm_list = _get_assemblies_list(namespace)
+    deleted = []
     if 'items' in asm_list:
         for asm in asm_list['items']:
             if 'metadata' in asm and 'name' in asm['metadata']:
-                _delete_assembly(namespace=namespace, name=asm['metadata']['name'], wait=wait, force=force)
+                deleted.append(_delete_assembly(namespace=namespace, name=asm['metadata']['name'], wait=wait, force=force))
+
+    return deleted
 
 @assembly.command()
 @click.option('--namespace', default=lambda: common.get_default_val('namespace'), help='Namespace to retrieve assemblies from')
 @click.option('--filepath', default=lambda: common.get_default_val('assembly.backup.file'), help=common.get_help_text('assembly.backup.file'))
-def backup(namespace, filepath):
+@click.option('--force', is_flag=True, help='Overwrite assembly backup file without getting confirmation')
+def backup(namespace, filepath, force):
     """Back up running assemblies to a file"""
 
     _, namespace = common.get_namespace(namespace)
 
-    _backup_assemblies(namespace, filepath)
+    _backup_assemblies(namespace, filepath, force)
 
 @assembly.command()
 @click.option('--namespace', default=lambda: common.get_default_val('namespace'), help='Namespace to create assembly in')
@@ -316,8 +322,17 @@ def list(namespace):
 
 @assembly.command()
 @click.option('--namespace', default=lambda: common.get_default_val('namespace'), help='Namespace that the assembly is in')
-@click.option('--name', required=True, help='Name of the assembly to delete')
-@click.option('--wait', is_flag=True, help='Wait for all pods to be deleted')
+@click.option('--name', required=True, help='Name of the assembly to torn down')
+@click.option('--wait', is_flag=True, help='Wait for all pods to be torn down')
+@click.option('--force', is_flag=True, help='Delete assembly without getting confirmation')
+def teardown(namespace, name, wait, force):
+    """Tears down an assembly given its name"""
+    _delete_assembly(namespace, name, wait, force)
+
+@assembly.command()
+@click.option('--namespace', default=lambda: common.get_default_val('namespace'), help='Namespace that the assembly is in')
+@click.option('--name', required=True, help='Name of the assembly to torn down')
+@click.option('--wait', is_flag=True, help='Wait for all pods to be torn down')
 @click.option('--force', is_flag=True, help='Delete assembly without getting confirmation')
 def delete(namespace, name, wait, force):
     """Deletes an assembly given its name"""
