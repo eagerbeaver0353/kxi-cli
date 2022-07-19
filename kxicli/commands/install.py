@@ -189,8 +189,9 @@ def setup(namespace, chart_repo_name, license_secret, license_as_env_var, client
 @click.option('--image-pull-secret', default=None, help=help_text('image.pullSecret'))
 @click.option('--license-secret', default=None, help=help_text('license.secret'))
 @click.option('--install-config-secret', default=None, help=help_text('install.configSecret'))
+@click.option('--force', is_flag=True, help='Perform installation without prompting for confirmation')
 @click.pass_context
-def run(ctx, namespace, filepath, release, chart_repo_name, version, operator_version, image_pull_secret, license_secret, install_config_secret):
+def run(ctx, namespace, filepath, release, chart_repo_name, version, operator_version, image_pull_secret, license_secret, install_config_secret, force):
     """Install KX Insights with a values file"""
 
     # Run setup prompts if necessary
@@ -203,7 +204,7 @@ def run(ctx, namespace, filepath, release, chart_repo_name, version, operator_ve
     values_secret = get_install_values(namespace=namespace, install_config_secret=install_config_secret)
     image_pull_secret,license_secret = get_image_and_license_secret_from_values(values_secret, filepath, image_pull_secret, license_secret)
 
-    install_operator_and_release(release=release, namespace=namespace, version=version, operator_version=operator_version, values_file=filepath, values_secret=values_secret, image_pull_secret=image_pull_secret, license_secret=license_secret, chart_repo_name=chart_repo_name)
+    install_operator_and_release(release=release, namespace=namespace, version=version, operator_version=operator_version, values_file=filepath, values_secret=values_secret, image_pull_secret=image_pull_secret, license_secret=license_secret, chart_repo_name=chart_repo_name, force=force)
 
 @install.command()
 @click.option('--namespace', default=lambda: default_val('namespace'), help=help_text('namespace'))
@@ -216,10 +217,12 @@ def run(ctx, namespace, filepath, release, chart_repo_name, version, operator_ve
 @click.option('--license-secret', default=None, help=help_text('license.secret'))
 @click.option('--install-config-secret', default=None, help=help_text('install.configSecret'))
 @click.option('--filepath', help='Values file to install with')
-def upgrade(namespace, release, chart_repo_name, assembly_backup_filepath, version, operator_version, image_pull_secret, license_secret, install_config_secret, filepath):
+@click.option('--force', is_flag=True, help='Perform upgrade without prompting for confirmation')
+def upgrade(namespace, release, chart_repo_name, assembly_backup_filepath, version, operator_version, image_pull_secret, license_secret, install_config_secret, filepath, force):
     """Upgrade KX Insights"""
     _, namespace = common.get_namespace(namespace)
 
+    upgraded = False
     click.secho('Upgrading KX Insights', bold=True)
 
     # Read install values
@@ -231,33 +234,37 @@ def upgrade(namespace, release, chart_repo_name, assembly_backup_filepath, versi
 
     if not insights_installed(release, namespace):
         click.echo('KX Insights is not deployed. Skipping to install')
-        install_operator_and_release(release=release, namespace=namespace, version=version, operator_version=operator_version, values_file=filepath, values_secret=values_secret, image_pull_secret=image_pull_secret, license_secret=license_secret, chart_repo_name=chart_repo_name)
+        install_operator_and_release(release=release, namespace=namespace, version=version, operator_version=operator_version, values_file=filepath, values_secret=values_secret, image_pull_secret=image_pull_secret, license_secret=license_secret, chart_repo_name=chart_repo_name, force=force)
         click.secho(f'\nUpgrade to version {version} complete', bold=True)
         sys.exit(0)
 
     click.secho('\nBacking up assemblies', bold=True)
-    assembly_backup_filepath = assembly._backup_assemblies(namespace, assembly_backup_filepath)
+    assembly_backup_filepath = assembly._backup_assemblies(namespace, assembly_backup_filepath, force)
 
     click.secho('\nTearing down assemblies', bold=True)
-    assembly._delete_running_assemblies(namespace=namespace, wait=True, force=False)
+    click.secho('Assembly data will be persisted and state will be recovered post-upgrade')
+    deleted = assembly._delete_running_assemblies(namespace=namespace, wait=True, force=force)
 
-    click.secho('\nUninstalling insights and operator', bold=True)
-    delete_release_operator_and_crds(release=release, namespace=namespace)
+    if all(deleted):
+        click.secho('\nUninstalling insights and operator', bold=True)
+        delete_release_operator_and_crds(release=release, namespace=namespace, force=force)
 
-    click.secho('\nReinstalling insights and operator', bold=True)
-    install_operator_and_release(release=release, namespace=namespace, version=version, operator_version=operator_version, values_file=filepath, values_secret=values_secret, image_pull_secret=image_pull_secret, license_secret=license_secret, chart_repo_name=chart_repo_name)
+        click.secho('\nReinstalling insights and operator', bold=True)
+        upgraded = install_operator_and_release(release=release, namespace=namespace, version=version, operator_version=operator_version, values_file=filepath, values_secret=values_secret, image_pull_secret=image_pull_secret, license_secret=license_secret, chart_repo_name=chart_repo_name, force=force)
     
     click.secho('\nReapplying assemblies', bold=True)
     assembly._create_assemblies_from_file(namespace=namespace, filepath=assembly_backup_filepath)
 
-    click.secho(f'\nUpgrade to version {version} complete', bold=True)
+    if upgraded:
+        click.secho(f'\nUpgrade to version {version} complete', bold=True)
 
 @install.command()
 @click.option('--release', default=lambda: default_val('release.name'), help=help_text('release.name'))
 @click.option('--namespace', default=lambda: default_val('namespace'), help=help_text('namespace'))
-def delete(release, namespace):
+@click.option('--force', is_flag=True, help='Perform delete without prompting for confirmation')
+def delete(release, namespace, force):
     """Uninstall KX Insights"""
-    delete_release_operator_and_crds(release=release, namespace=namespace)
+    delete_release_operator_and_crds(release=release, namespace=namespace, force=force)
     
 @install.command()
 @click.option('--chart-repo-name', default=lambda: default_val('chart.repo.name'), help=help_text('chart.repo.name'))
@@ -744,12 +751,13 @@ def gen_cert(private_key):
 
     return builder.sign(private_key, hashes.SHA256(), default_backend())
 
-def install_operator_and_release(release, namespace, version, operator_version, values_file, values_secret, image_pull_secret, license_secret, chart_repo_name):
+def install_operator_and_release(release, namespace, version, operator_version, values_file, values_secret, image_pull_secret, license_secret, chart_repo_name, force):
     """Install operator and insights"""
+    install_complete = False
     if operator_installed(release):
         click.echo('\nkxi-operator already installed')
     else:
-        if click.confirm('\nkxi-operator not found. Do you want to install it?', default=True):
+        if force or click.confirm('\nkxi-operator not found. Do you want to install it?', default=True):
             create_namespace(operator_namespace)
 
             copy_secret(image_pull_secret, namespace, operator_namespace)
@@ -761,22 +769,25 @@ def install_operator_and_release(release, namespace, version, operator_version, 
         click.echo('\nKX Insights already installed')
     else:
         helm_install(release, chart=f'{chart_repo_name}/insights', values_file=values_file, values_secret=values_secret, version=version, namespace=namespace)
+        install_complete = True
 
-def delete_release_operator_and_crds(release, namespace):
+    return install_complete
+
+def delete_release_operator_and_crds(release, namespace, force):
     """Delete insights, operator and CRDs"""
     if not insights_installed(release, namespace):
         click.echo('\nKX Insights installation not found')
     else:
-        if click.confirm('\nKX Insights is deployed. Do you want to uninstall?'):
+        if force or click.confirm('\nKX Insights is deployed. Do you want to uninstall?'):
             helm_uninstall(release=release, namespace=namespace)
         else:
             return
 
-    if operator_installed(release) and click.confirm('\nThe kxi-operator is deployed. Do you want to uninstall?'):
+    if force or operator_installed(release) and click.confirm('\nThe kxi-operator is deployed. Do you want to uninstall?'):
         helm_uninstall(release=release, namespace=operator_namespace)
 
     crds = common.get_existing_crds(['assemblies.insights.kx.com','assemblyresources.insights.kx.com'])
-    if len(crds) > 0 and click.confirm(f'\nThe assemblies CRDs {crds} exist. Do you want to delete them?'):
+    if force or len(crds) > 0 and click.confirm(f'\nThe assemblies CRDs {crds} exist. Do you want to delete them?'):
         for i in crds:
             common.delete_crd(i)
 
