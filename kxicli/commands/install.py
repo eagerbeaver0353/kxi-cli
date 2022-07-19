@@ -295,14 +295,18 @@ def get_install_config_secret(namespace, install_config_secret):
 
     return values_secret
 
-def get_operator_version(insights_version, operator_version):
-    """Determine operator version to use"""
+def get_operator_version(chart_repo_name, insights_version, operator_version):
+    """Determine operator version to use. Retrieve the most recent operator minor version matching the insights version"""
     if operator_version is None:
-        if 'rc' in insights_version:
-            operator_version = click.prompt('Please enter the version of the operator you want to install')
+        insights_version_parsed = insights_version.split(".")
+        insights_version_minor = insights_version_parsed[0] + "." + insights_version_parsed[1]
+        ops_from_helm = subprocess.run(['helm', 'search', 'repo', f'{chart_repo_name}/kxi-operator', '--version', f'{insights_version_minor}', '--output', 'json'], check=True, capture_output=True, text=True)
+        ops_from_helm = json.loads(ops_from_helm.stdout)
+        if len(ops_from_helm):
+            operator_version = ops_from_helm[0]['version']
         else:
-            operator_version = insights_version
-
+            log.error(f'Cannot find operator version matching insights minor version {insights_version_minor}')
+            sys.exit(1)
     return operator_version
 
 def sanitize_ingress_host(raw_string):
@@ -763,7 +767,7 @@ def install_operator_and_release(release, namespace, version, operator_version, 
             copy_secret(image_pull_secret, namespace, operator_namespace)
             copy_secret(license_secret, namespace, operator_namespace)
 
-            helm_install(release, chart=f'{chart_repo_name}/kxi-operator', values_file=values_file, values_secret=values_secret, version=get_operator_version(version, operator_version), namespace=operator_namespace)
+            helm_install(release, chart=f'{chart_repo_name}/kxi-operator', values_file=values_file, values_secret=values_secret, version=get_operator_version(chart_repo_name, version, operator_version), namespace=operator_namespace)
 
     if insights_installed(release, namespace):
         click.echo('\nKX Insights already installed')

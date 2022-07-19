@@ -65,6 +65,20 @@ def mocked_helm_list_returns_valid_json(base_command):
 def mocked_helm_list_returns_empty_json(base_command):
     return '[]'
 
+def mocked_helm_search_returns_valid_json(base_command, check=True, capture_output=True, text=True):
+    return install.subprocess.CompletedProcess(
+        args=base_command, 
+        returncode=0,
+        stdout='[{"name":"kx-insights/kxi-operator","version":"1.1.0","app_version":"1.1.0-rc.43","description":"KX Insights Operator"}]\n'
+    )
+
+def mocked_helm_search_returns_empty_json(base_command, check=True, capture_output=True, text=True):
+    return install.subprocess.CompletedProcess(
+        args=base_command, 
+        returncode=0,
+        stdout='[]\n'
+    )
+
 def test_get_secret_body_string_data_parameter():
     sdata = {'a':'b'}
 
@@ -242,21 +256,22 @@ def test_get_install_values_exits_when_secret_not_found(mocker):
     assert pytest_wrapped_e.value.code == 1
 
 def test_get_operator_version_returns_operator_version_if_passed_regardless_of_rc():
-    non_rc = install.get_operator_version('1.2.3', '4.5.6')
-    rc = install.get_operator_version('1.2.3-rc.1', '4.5.6')
+    non_rc = install.get_operator_version('kxi-insights', '1.2.3', '4.5.6')
+    rc = install.get_operator_version('kxi-insights', '1.2.3-rc.1', '4.5.6')
 
     assert non_rc == '4.5.6'
     assert rc == '4.5.6'
 
-def test_get_operator_version_returns_insights_version_if_not_rc():
-    assert install.get_operator_version('1.2.3', None) == '1.2.3'
+def test_get_operator_version_returns_latest_minor_version(mocker):
+    mocker.patch('subprocess.run', mocked_helm_search_returns_valid_json)
+    assert install.get_operator_version('kxi-insights', '1.1.1', None) == '1.1.0'
 
-def test_get_operator_version_returns_prompts_for_operator_version_if_rc(monkeypatch):
-    test_version = '0.1.2-rc.2'
-    # patch stdin to end the prompt
-    monkeypatch.setattr('sys.stdin', io.StringIO(test_version))
-
-    assert install.get_operator_version('1.2.3-rc.1', None) == test_version
+def test_get_operator_version_returns_error_when_not_found(mocker):
+    mocker.patch('subprocess.run', mocked_helm_search_returns_empty_json)
+    with pytest.raises(SystemExit) as pytest_wrapped_e:
+        install.get_operator_version('kxi-insights', '5.6.7', None)
+    assert pytest_wrapped_e.type == SystemExit
+    assert pytest_wrapped_e.value.code == 1    
 
 def test_insights_installed_returns_true_when_already_exists(mocker):
     mocker.patch('subprocess.check_output', mocked_helm_list_returns_valid_json)

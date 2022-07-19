@@ -178,7 +178,13 @@ def mocked_create_namespace(namespace):
     pass
 
 def mock_create_namespace(mocker):
-   mocker.patch('kxicli.commands.install.create_namespace', mocked_create_namespace)
+    mocker.patch('kxicli.commands.install.create_namespace', mocked_create_namespace)
+
+def mocked_get_operator_version(chart_repo_name, insights_version, operator_version):
+    return insights_version
+
+def mock_get_operator_version(mocker):
+    mocker.patch('kxicli.commands.install.get_operator_version', mocked_get_operator_version)
 
 def mocked_subprocess_run(base_command, check=True, input=None, text=None):
     global insights_installed_flag
@@ -887,6 +893,7 @@ def test_install_run_installs_operator(mocker):
     mock_create_namespace(mocker)
     mock_copy_secret(mocker)
     mock_set_insights_operator_and_crd_installed_state(mocker, False, False, False)
+    mock_get_operator_version(mocker)
     global copy_secret_params
     copy_secret_params = []
 
@@ -915,6 +922,7 @@ def test_install_run_force_installs_operator(mocker):
     mock_create_namespace(mocker)
     mock_copy_secret(mocker)
     mock_set_insights_operator_and_crd_installed_state(mocker, False, False, False)
+    mock_get_operator_version(mocker)
     global copy_secret_params
     copy_secret_params = []
 
@@ -939,6 +947,7 @@ def test_install_run_installs_operator_with_modified_secrets(mocker):
     mock_read_secret(mocker)
     mock_copy_secret(mocker)    
     mock_set_insights_operator_and_crd_installed_state(mocker, False, False, False)
+    mock_get_operator_version(mocker)
     global test_vals
     global copy_secret_params
     copy_secret_params = []
@@ -1342,6 +1351,7 @@ def test_get_values_returns_decoded_secret(mocker):
 def test_upgrade(mocker):
     upgrades_mocks(mocker)
     mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
+    mock_get_operator_version(mocker)
     if os.path.exists(test_asm_backup):
         os.remove(test_asm_backup)
     with open(test_asm_file) as f:
@@ -1415,6 +1425,7 @@ Upgrade to version 1.2.3 complete
 def test_upgrade_skips_to_install_when_not_running(mocker):
     upgrades_mocks(mocker)
     mock_set_insights_operator_and_crd_installed_state(mocker, False, False, False)
+    mock_get_operator_version(mocker)
     runner = CliRunner()
     user_input = f"""y
 """
