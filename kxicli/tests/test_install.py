@@ -21,7 +21,6 @@ test_key = install.gen_private_key()
 test_cert = install.gen_cert(test_key)
 test_lic_file = os.path.dirname(__file__) + '/files/test-license'
 test_val_file = os.path.dirname(__file__) + '/files/test-values.yaml'
-test_kube_config = os.path.dirname(__file__) + '/files/test-kube-config'
 
 common.config.load_config("default")
 
@@ -33,9 +32,6 @@ IPATH_CLICK_PROMPT = 'click.prompt'
 
 with open(test_val_file, 'rb') as values_file:
     test_vals = yaml.full_load(values_file)
-
-with open(test_kube_config, 'r') as f:    
-    k8s_config = yaml.full_load(f)
 
 def raise_not_found(**kwargs):
     """Helper function to test try/except blocks"""
@@ -68,15 +64,6 @@ def mocked_helm_list_returns_valid_json(base_command):
 
 def mocked_helm_list_returns_empty_json(base_command):
     return '[]'
-
-def mocked_all_crds_exist(name):
-    return True
-
-def mocked_one_crd_exists(name):
-    return name == 'testcrd'
-
-def mock_k8s_contexts():
-    return ['', k8s_config['contexts'][0]]
 
 def test_get_secret_body_string_data_parameter():
     sdata = {'a':'b'}
@@ -287,18 +274,6 @@ def test_operator_installed_returns_false_when_already_exists(mocker):
     mocker.patch('subprocess.check_output', mocked_helm_list_returns_empty_json)
     assert install.operator_installed('insights') == False
 
-def test_get_existing_crds_return_all_crds(mocker):
-    mocker.patch('kxicli.common.crd_exists', mocked_all_crds_exist)
-    assert install.common.get_existing_crds(['testcrd']) == ['testcrd']
-    assert install.common.get_existing_crds(['testcrd', 'testcrd2']) == (['testcrd', 'testcrd2'])
-    assert install.common.get_existing_crds(['testcrd', 'testcrd2', 'testcrd3']) == (['testcrd', 'testcrd2', 'testcrd3'])
-
-def test_get_existing_crds_return_existing_crds_only(mocker):
-    mocker.patch('kxicli.common.crd_exists', mocked_one_crd_exists)
-    assert install.common.get_existing_crds(['testcrd']) == ['testcrd']
-    assert install.common.get_existing_crds(['testcrd', 'testcrd2']) == (['testcrd'])
-    assert install.common.get_existing_crds(['testcrd', 'testcrd2', 'testcrd3']) == (['testcrd'])
-
 def test_sanitize_auth_url():
     https_replaced = install.sanitize_auth_url('https://keycloak.keycloak.svc.cluster.local/auth/')
     trailing_slash = install.sanitize_auth_url('https://keycloak.keycloak.svc.cluster.local/auth')
@@ -308,14 +283,6 @@ def test_sanitize_auth_url():
     assert https_replaced == expected
     assert trailing_slash == expected
     assert prepend_http == expected
-
-def test_get_namespace(mocker):
-    mocker.patch('kubernetes.config.list_kube_config_contexts', mock_k8s_contexts)
-    
-    res = install.get_namespace(None)
-    assert res[1] == 'test'
-    assert res[0] == k8s_config['contexts'][0]
-    assert 'cluster' in res[0]['context'].keys()
 
 def test_get_image_and_license_secret_from_values_returns_defaults():
     assert install.get_image_and_license_secret_from_values(None, None, None, None) == ('kxi-nexus-pull-secret','kxi-license')
