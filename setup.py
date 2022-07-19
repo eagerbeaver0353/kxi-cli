@@ -3,7 +3,7 @@ import os
 
 setup(
     name='kxicli',
-    version='1.0.0-rc.6',
+    version='1.0.0-rc.7',
     packages=find_packages(),
     include_package_data=True,
     install_requires=[
