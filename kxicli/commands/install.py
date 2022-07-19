@@ -22,7 +22,6 @@ from kxicli.common import get_default_val as default_val
 from kxicli.common import get_help_text as help_text
 
 docker_config_file_path = str(Path.home() / '.docker' / 'config.json')
-install_namespace_default = 'kxi'
 operator_namespace = 'kxi-operator'
 
 SECRET_TYPE_TLS = 'kubernetes.io/tls'
@@ -70,7 +69,7 @@ def setup(namespace, chart_repo_name, license_secret, license_as_env_var, client
 
     click.secho('KX Insights Install Setup', bold=True)
 
-    active_context, namespace = get_namespace(namespace)
+    active_context, namespace = common.get_namespace(namespace)
     create_namespace(namespace)
     click.echo(f'\nRunning in namespace {namespace} on the cluster {active_context["context"]["cluster"]}')
 
@@ -199,7 +198,7 @@ def run(ctx, namespace, filepath, release, chart_repo_name, version, operator_ve
         click.echo('No values file provided, invoking "kxi install setup"\n')
         filepath, chart_repo_name = ctx.invoke(setup)
 
-    _, namespace = get_namespace(namespace)
+    _, namespace = common.get_namespace(namespace)
 
     values_secret = get_install_values(namespace=namespace, install_config_secret=install_config_secret)
     image_pull_secret,license_secret = get_image_and_license_secret_from_values(values_secret, filepath, image_pull_secret, license_secret)
@@ -219,7 +218,7 @@ def run(ctx, namespace, filepath, release, chart_repo_name, version, operator_ve
 @click.option('--filepath', help='Values file to install with')
 def upgrade(namespace, release, chart_repo_name, assembly_backup_filepath, version, operator_version, image_pull_secret, license_secret, install_config_secret, filepath):
     """Upgrade KX Insights"""
-    _, namespace = get_namespace(namespace)
+    _, namespace = common.get_namespace(namespace)
 
     click.secho('Upgrading KX Insights', bold=True)
 
@@ -276,15 +275,6 @@ def get_values(namespace,install_config_secret):
     Display the kxi-install-config secret used for storing installation values
     """
     click.echo(get_install_config_secret(namespace=namespace, install_config_secret=install_config_secret))
-
-def get_namespace(namespace):
-    _, active_context = k8s.config.list_kube_config_contexts()
-    if '--namespace' not in sys.argv:
-        if 'namespace' in active_context['context']:
-            namespace = active_context['context']['namespace']
-        else:
-            namespace = click.prompt('\nPlease enter a namespace to install in', default=install_namespace_default)
-    return active_context, namespace
 
 def get_install_config_secret(namespace, install_config_secret):
     """

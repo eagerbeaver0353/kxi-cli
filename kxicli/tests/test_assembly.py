@@ -102,6 +102,9 @@ def mock_delete_assemblies(mock_instance):
     appended_args = []
     mock_instance.delete_namespaced_custom_object.side_effect = append_args
 
+def mocked_k8s_list_empty_config():
+    return ([], {'context':()})
+
 def test_format_assembly_status_if_no_status_key():
     assert assembly._format_assembly_status({}) == {}
 
@@ -472,6 +475,25 @@ def test_cli_assembly_create_from_file(mocker):
 Custom assembly resource basic-assembly created!
 """
     assert appended_args == [{'group': assembly.API_GROUP, 'version': PREFERRED_VERSION, 'namespace': 'test', 'plural': 'assemblies', 'body': assembly._add_last_applied_configuration_annotation(test_asm)}]
+
+def test_cli_assembly_create_with_context_not_set(mocker):
+    with open(test_asm_file) as f:
+        test_asm = yaml.safe_load(f)
+    mock_create_assemblies(mocker.patch(CUSTOM_OBJECT_API).return_value)
+    mocker.patch('kubernetes.config.list_kube_config_contexts', mocked_k8s_list_empty_config)
+
+    result = TEST_CLI.invoke(main.cli, ['assembly', 'create', '--filepath', test_asm_file], input='a-test-namespace\n')
+    
+    assert result.exit_code == 0
+    assert result.output == f"""
+Please enter a namespace to run in [test]: a-test-namespace
+Submitting assembly from {test_asm_file}
+Custom assembly resource basic-assembly created!
+"""
+    assert appended_args == [{'group': assembly.API_GROUP, 'version': PREFERRED_VERSION, 'namespace': 'a-test-namespace', 'plural': 'assemblies', 'body': assembly._add_last_applied_configuration_annotation(test_asm)}]
+
+    mocker.patch('kubernetes.config.list_kube_config_contexts', mocked_k8s_list_empty_config)
+
 
 def test_cli_assembly_create_and_wait(mocker):
     with open(test_asm_file) as f:

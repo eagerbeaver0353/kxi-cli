@@ -268,6 +268,9 @@ def _delete_running_assemblies(namespace, wait, force):
 @click.option('--filepath', default=lambda: common.get_default_val('assembly.backup.file'), help=common.get_help_text('assembly.backup.file'))
 def backup(namespace, filepath):
     """Back up running assemblies to a file"""
+
+    _, namespace = common.get_namespace(namespace)
+
     _backup_assemblies(namespace, filepath)
 
 @assembly.command()
@@ -276,6 +279,9 @@ def backup(namespace, filepath):
 @click.option('--wait', is_flag=True, help='Wait for all pods to be running')
 def create(namespace, filepath, wait):
     """Create an assembly given an assembly file"""
+    
+    _, namespace = common.get_namespace(namespace)
+
     _create_assemblies_from_file(namespace, filepath, wait)
 
 @assembly.command()
@@ -284,6 +290,9 @@ def create(namespace, filepath, wait):
 @click.option('--wait-for-ready', is_flag=True, help='Wait for assembly to reach "Ready" state')
 def status(namespace, name, wait_for_ready):
     """Print status of the assembly"""
+
+    _, namespace = common.get_namespace(namespace)
+
     if wait_for_ready:
         with click.progressbar(range(10), label='Waiting for assembly to enter "Ready" state') as bar:
             for n in bar:
@@ -297,6 +306,9 @@ def status(namespace, name, wait_for_ready):
 @click.option('--namespace', default=lambda: common.get_default_val('namespace'), help='Namespace that the assemblies are in')
 def list(namespace):
     """List assemblies"""
+
+    _, namespace = common.get_namespace(namespace)
+
     if _list_assemblies(namespace):
         sys.exit(0)
     else:
@@ -309,6 +321,9 @@ def list(namespace):
 @click.option('--force', is_flag=True, help='Delete assembly without getting confirmation')
 def delete(namespace, name, wait, force):
     """Deletes an assembly given its name"""
+
+    _, namespace = common.get_namespace(namespace)
+
     _delete_assembly(namespace, name, wait, force)
 
 def get_preferred_api_version(group_name):

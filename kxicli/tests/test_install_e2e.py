@@ -940,14 +940,14 @@ def test_install_run_when_no_context_set(mocker):
         # these are responses to the various prompts
         result = runner.invoke(main.cli, ['install', 'run', '--version', '1.2.3', '--filepath', test_val_file])
         expected_output = f"""
-Please enter a namespace to install in [kxi]: 
+Please enter a namespace to run in [test]: 
 
 kxi-operator already installed
 Installing chart kx-insights/insights with values file from {test_val_file}
 """
     assert result.exit_code == 0
     assert result.output == expected_output
-    assert subprocess_run_command == [['helm', 'install', '-f', test_val_file, 'insights', test_chart, '--version', '1.2.3', '--namespace', 'kxi']]
+    assert subprocess_run_command == [['helm', 'install', '-f', test_val_file, 'insights', test_chart, '--version', '1.2.3', '--namespace', 'test']]
 
 def test_delete(mocker):
     mock_subprocess_run(mocker)
