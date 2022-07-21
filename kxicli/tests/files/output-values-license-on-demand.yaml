@@ -1,0 +1,25 @@
+global:
+  caIssuer:
+    name: kxi-certificate
+    secretName: kxi-certificate
+  image:
+    repository: test-repo.internal-insights.kx.com
+  imagePullSecrets:
+  - name: kxi-nexus-pull-secret
+  ingress:
+    host: test.internal-insights.kx.com
+  keycloak:
+    guiClientSecret: gui-secret
+    operatorClientSecret: operator-secret
+  license:
+    onDemand: true
+    secretName: kxi-license
+keycloak:
+  auth:
+    existingSecret: kxi-keycloak
+  postgresql:
+    auth:
+      existingSecret: kxi-postgresql
+    existingSecret: kxi-postgresql
+kxi-acc-svc:
+  enabled: false

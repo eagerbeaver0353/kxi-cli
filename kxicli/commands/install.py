@@ -83,10 +83,10 @@ def setup(namespace, chart_repo_name, license_secret, license_as_env_var, client
         username = click.prompt('Please enter the username for the chart repository')
         password = click.prompt('Please enter the password for the chart repository (input hidden)', hide_input=True)
         helm_add_repo(chart_repo_name, chart_repo_url, username, password)
-
+    
     if '--license-secret' not in sys.argv:
         click.secho('\nLicense details', bold=True)
-        license_secret = prompt_for_license(namespace, license_secret, license_as_env_var)
+        license_secret, license_on_demand = prompt_for_license(namespace, license_secret, license_as_env_var)
 
     if not('--image-repo' in sys.argv and '--image-pull-secret' in sys.argv):
         click.secho('\nImage repository', bold=True)
@@ -164,6 +164,10 @@ def setup(namespace, chart_repo_name, license_secret, license_as_env_var, client
 
     if license_as_env_var:
         install_file['global']['license']['asFile'] = False
+
+    if license_on_demand:
+        install_file['global']['license']['onDemand'] = True
+        install_file['kxi-acc-svc'] = {'enabled': False}
 
     if os.path.exists(output_file):
         if not click.confirm(f'\n{output_file} file exists. Do you want to overwrite it with a new values file?'):
@@ -331,13 +335,16 @@ def sanitize_auth_url(raw_string):
 
 def prompt_for_license(namespace, license_secret, license_as_env_var):
     """Prompt for an existing license or create on if it doesn't exist"""
+    license_on_demand = False
     if click.confirm('Do you have an existing license secret'):
         license_secret = prompt_and_validate_existing_secret(namespace, 'license')
     else:
         path_to_lic = click.prompt('Please enter the path to your kdb license')
+        if os.path.basename(path_to_lic) == 'kc.lic':
+            license_on_demand = True
         create_license_secret(namespace, license_secret, path_to_lic, license_as_env_var)
 
-    return license_secret
+    return license_secret, license_on_demand
 
 def prompt_for_client_cert(namespace, client_cert_secret):
     """Prompt for an existing client cert secret or create one if it doesn't exist"""
