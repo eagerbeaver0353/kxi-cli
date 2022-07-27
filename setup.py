@@ -14,6 +14,7 @@ setup(
         "pyyaml>=6.0",
         "cryptography>=2.8",
         "pakxcli==1.0.0rc1",
+        "packaging>=21.3"
     ],
     python_requires=">=3.7",
     entry_points={
