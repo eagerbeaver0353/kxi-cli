@@ -31,7 +31,7 @@ test_install_secret = 'test-install-secret'
 
 test_val_file = os.path.dirname(__file__) + '/files/test-values.yaml'
 test_val_file_shared_keycloak = os.path.dirname(__file__) + '/files/test-values-shared-keycloak.yaml'
-test_k8s_config = os.path.dirname(__file__) + '/files/test-kube-config'
+test_k8s_config = str(Path(__file__).parent / 'files' / 'test-kube-config')
 test_cli_config_static = os.path.dirname(__file__) + '/files/test-cli-config'
 test_lic_file = os.path.dirname(__file__) + '/files/test-license'
 expected_test_output_file = str(Path(__file__).parent / 'files' / 'output-values.yaml')
