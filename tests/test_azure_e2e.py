@@ -9,7 +9,7 @@ from kxicli import config
 from kxicli import main
 from kxicli.commands.azure import default_insights_namespace
 from kxicli.common import get_default_val
-from kxicli.tests.test_azure import fun_assembly_create_assemblies_from_file, _create_assemblies_from_file, \
+from test_azure import fun_assembly_create_assemblies_from_file, _create_assemblies_from_file, \
     fun_assembly_delete_running_assemblies, _delete_running_assemblies, \
     fun_assembly_backup_assemblies, _backup_assemblies, fake_version, fake_values_str, fun_install_read_secret, \
     read_secret, fun_subprocess_run, subprocess_run_helm_success, \
@@ -17,7 +17,7 @@ from kxicli.tests.test_azure import fun_assembly_create_assemblies_from_file, _c
     fun_install_operator_installed, install_operator_installed, fun_common_get_existing_crds, \
     common_get_existing_crds, fun_common_delete_crd, fun_install_insights_installed, install_insights_installed, \
     fun_install_create_namespace
-from kxicli.tests.utils import temp_file
+from utils import temp_file
 
 a_test_asm_str: str = 'a test asm file'
 default_config_file = str(Path(__file__).parent / 'files' / 'test-cli-config')

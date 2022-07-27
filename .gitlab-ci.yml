@@ -54,10 +54,10 @@ build dist:
     - !reference [ .default-rules, rules ]
   before_script:
     - python3 -m pip config set install.extra-index-url "https://${INT_NEXUS_USER_RW}:${INT_NEXUS_PASS_RW}@nexus.kxi-dev.kx.com/repository/kxi/simple"
-    - pip install -r kxicli/tests/requirements.txt
+    - pip install -r tests/requirements.txt
     - pip install dist/*.whl
   script:
-    - export KUBECONFIG=$(pwd)/kxicli/tests/files/test-kube-config
+    - export KUBECONFIG=$(pwd)/tests/files/test-kube-config
     - coverage run -m pytest
     - coverage report
     - coverage html

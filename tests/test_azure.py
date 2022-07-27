@@ -19,7 +19,7 @@ from kxicli.commands.azure import LocalHelmVersion, minimum_helm_version, _get_h
     uninstall_insights, delete_assemblies, backup_assemblies, get_assemblies, get_docker_config, get_repo_url, \
     get_values, get_helm_version_checked
 from kxicli.common import get_default_val as default_val
-from kxicli.tests.utils import temp_file
+from utils import temp_file
 
 # fun names
 
