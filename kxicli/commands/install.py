@@ -768,6 +768,9 @@ def gen_cert(private_key):
 def install_operator_and_release(release, namespace, version, operator_version, values_file, values_secret, image_pull_secret, license_secret, chart_repo_name, force):
     """Install operator and insights"""
     install_complete = False
+
+    subprocess.run(['helm', 'repo', 'update'], check=True)
+
     if operator_installed(release):
         click.echo('\nkxi-operator already installed')
     else:
