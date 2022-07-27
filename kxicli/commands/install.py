@@ -6,6 +6,7 @@ import random
 import string
 import subprocess
 import sys
+from functools import partial
 from pathlib import Path
 
 import click
@@ -18,6 +19,8 @@ from cryptography.hazmat.primitives import serialization, asymmetric, hashes
 from kxicli import common
 from kxicli import log
 from kxicli.commands import assembly
+from kxicli.commands.common import arg_force, arg_filepath, arg_version, arg_operator_version, \
+    arg_release, arg_namespace, arg_assembly_backup_filepath
 from kxicli.common import get_default_val as default_val
 from kxicli.common import get_help_text as help_text
 
@@ -47,7 +50,7 @@ def install():
     """Insights installation commands"""
 
 @install.command()
-@click.option('--namespace', default=lambda: default_val('namespace'), help=help_text('namespace'))
+@arg_namespace()
 @click.option('--chart-repo-name', default=lambda: default_val('chart.repo.name'), help=help_text('chart.repo.name'))
 @click.option('--license-secret', default=lambda: default_val('license.secret'), help=help_text('license.secret'))
 @click.option('--license-as-env-var', default=False, help=help_text('license.envVar'))
@@ -184,16 +187,16 @@ def setup(namespace, chart_repo_name, license_secret, license_as_env_var, client
     return output_file, chart_repo_name
 
 @install.command()
-@click.option('--namespace', default=lambda: default_val('namespace'), help=help_text('namespace'))
-@click.option('--filepath', help='Values file to install with')
-@click.option('--release', default=lambda: default_val('release.name'), help=help_text('release.name'))
+@arg_namespace()
+@arg_filepath()
+@arg_release()
 @click.option('--chart-repo-name', default=lambda: default_val('chart.repo.name'), help=help_text('chart.repo.name'))
-@click.option('--version', required=True, help='Version to install')
-@click.option('--operator-version', default=None, help='Version of the operator to install')
+@arg_version()
+@arg_operator_version()
 @click.option('--image-pull-secret', default=None, help=help_text('image.pullSecret'))
 @click.option('--license-secret', default=None, help=help_text('license.secret'))
 @click.option('--install-config-secret', default=None, help=help_text('install.configSecret'))
-@click.option('--force', is_flag=True, help='Perform installation without prompting for confirmation')
+@arg_force()
 @click.pass_context
 def run(ctx, namespace, filepath, release, chart_repo_name, version, operator_version, image_pull_secret, license_secret, install_config_secret, force):
     """Install KX Insights with a values file"""
@@ -211,17 +214,17 @@ def run(ctx, namespace, filepath, release, chart_repo_name, version, operator_ve
     install_operator_and_release(release=release, namespace=namespace, version=version, operator_version=operator_version, values_file=filepath, values_secret=values_secret, image_pull_secret=image_pull_secret, license_secret=license_secret, chart_repo_name=chart_repo_name, force=force)
 
 @install.command()
-@click.option('--namespace', default=lambda: default_val('namespace'), help=help_text('namespace'))
-@click.option('--release', default=lambda: default_val('release.name'), help=help_text('release.name'))
+@arg_namespace()
+@arg_release()
 @click.option('--chart-repo-name', default=lambda: default_val('chart.repo.name'), help=help_text('chart.repo.name'))
-@click.option('--assembly-backup-filepath', default=lambda: common.get_default_val('assembly.backup.file'), help=common.get_help_text('assembly.backup.file'))
-@click.option('--version', required=True, help='Version to install')
-@click.option('--operator-version', default=None, help='Version of the operator to install')
+@arg_assembly_backup_filepath()
+@arg_version()
+@arg_operator_version()
 @click.option('--image-pull-secret', default=None, help=help_text('image.pullSecret'))
 @click.option('--license-secret', default=None, help=help_text('license.secret'))
 @click.option('--install-config-secret', default=None, help=help_text('install.configSecret'))
-@click.option('--filepath', help='Values file to install with')
-@click.option('--force', is_flag=True, help='Perform upgrade without prompting for confirmation')
+@arg_filepath()
+@arg_force()
 def upgrade(namespace, release, chart_repo_name, assembly_backup_filepath, version, operator_version, image_pull_secret, license_secret, install_config_secret, filepath, force):
     """Upgrade KX Insights"""
     _, namespace = common.get_namespace(namespace)
@@ -263,9 +266,9 @@ def upgrade(namespace, release, chart_repo_name, assembly_backup_filepath, versi
         click.secho(f'\nUpgrade to version {version} complete', bold=True)
 
 @install.command()
-@click.option('--release', default=lambda: default_val('release.name'), help=help_text('release.name'))
-@click.option('--namespace', default=lambda: default_val('namespace'), help=help_text('namespace'))
-@click.option('--force', is_flag=True, help='Perform delete without prompting for confirmation')
+@arg_release()
+@arg_namespace()
+@arg_force()
 def delete(release, namespace, force):
     """Uninstall KX Insights"""
     delete_release_operator_and_crds(release=release, namespace=namespace, force=force)
@@ -279,7 +282,7 @@ def list_versions(chart_repo_name):
     helm_list_versions(chart_repo_name)
     
 @install.command()
-@click.option('--namespace', default=lambda: default_val('namespace'), help=help_text('namespace'))
+@arg_namespace()
 @click.option('--install-config-secret', default=lambda: default_val('install.configSecret'), help=help_text('install.configSecret'))
 def get_values(namespace,install_config_secret):
     """
@@ -940,9 +943,9 @@ def insights_installed(release, namespace):
     except subprocess.CalledProcessError as e:
         click.echo(e)
 
-def operator_installed(release):
+def operator_installed(release, namespace: str = operator_namespace):
     """Check if a helm release of the operator exists"""
-    base_command = ['helm', 'list', '--filter', release, '--deployed', '-o', 'json','--namespace', operator_namespace]
+    base_command = ['helm', 'list', '--filter', release, '--deployed', '-o', 'json','--namespace', namespace]
     try:
         log.debug(f'List command {base_command}')
         l = subprocess.check_output(base_command)

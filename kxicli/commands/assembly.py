@@ -1,19 +1,36 @@
-import time
+import copy
+import json
+import os
 import random
 import sys
-import os
-import json
-import yaml
+import time
+from functools import partial
+
 import click
-import copy
 import kubernetes as k8s
+import yaml
+
 from kxicli import common
 from kxicli import log
+from kxicli.commands.common import arg_force, arg_namespace as arg_common_namespace
+from kxicli.common import get_default_val as default_val
+from kxicli.common import get_help_text as help_text
 
 API_GROUP = 'insights.kx.com'
 API_VERSION = 'v1'
 API_PLURAL = 'assemblies'
 CONFIG_ANNOTATION = 'kubectl.kubernetes.io/last-applied-configuration'
+
+arg_namespace = partial(
+    arg_common_namespace, default=lambda: default_val('namespace')
+)
+
+arg_filepath = partial(
+    click.option, '--filepath', default=lambda: default_val('assembly.backup.file'),
+    help=help_text('assembly.backup.file'),
+    type=click.STRING
+)
+
 
 @click.group()
 def assembly():
@@ -269,9 +286,9 @@ def _delete_running_assemblies(namespace, wait, force):
     return deleted
 
 @assembly.command()
-@click.option('--namespace', default=lambda: common.get_default_val('namespace'), help='Namespace to retrieve assemblies from')
-@click.option('--filepath', default=lambda: common.get_default_val('assembly.backup.file'), help=common.get_help_text('assembly.backup.file'))
-@click.option('--force', is_flag=True, help='Overwrite assembly backup file without getting confirmation')
+@arg_namespace()
+@arg_filepath()
+@arg_force()
 def backup(namespace, filepath, force):
     """Back up running assemblies to a file"""
 
@@ -280,8 +297,8 @@ def backup(namespace, filepath, force):
     _backup_assemblies(namespace, filepath, force)
 
 @assembly.command()
-@click.option('--namespace', default=lambda: common.get_default_val('namespace'), help='Namespace to create assembly in')
-@click.option('--filepath', required=True, help='Path to assembly file')
+@arg_namespace()
+@arg_filepath()
 @click.option('--wait', is_flag=True, help='Wait for all pods to be running')
 def create(namespace, filepath, wait):
     """Create an assembly given an assembly file"""
@@ -291,7 +308,7 @@ def create(namespace, filepath, wait):
     _create_assemblies_from_file(namespace, filepath, wait)
 
 @assembly.command()
-@click.option('--namespace', default=lambda: common.get_default_val('namespace'), help='Namespace that the assembly is in')
+@arg_namespace()
 @click.option('--name', required=True, help='Name of the assembly get the status of')
 @click.option('--wait-for-ready', is_flag=True, help='Wait for assembly to reach "Ready" state')
 def status(namespace, name, wait_for_ready):
@@ -309,7 +326,7 @@ def status(namespace, name, wait_for_ready):
         _assembly_status(namespace, name, print_status=True)
 
 @assembly.command()
-@click.option('--namespace', default=lambda: common.get_default_val('namespace'), help='Namespace that the assemblies are in')
+@arg_namespace()
 def list(namespace):
     """List assemblies"""
 
@@ -321,19 +338,19 @@ def list(namespace):
         sys.exit(1)
 
 @assembly.command()
-@click.option('--namespace', default=lambda: common.get_default_val('namespace'), help='Namespace that the assembly is in')
+@arg_namespace()
 @click.option('--name', required=True, help='Name of the assembly to torn down')
 @click.option('--wait', is_flag=True, help='Wait for all pods to be torn down')
-@click.option('--force', is_flag=True, help='Delete assembly without getting confirmation')
+@arg_force()
 def teardown(namespace, name, wait, force):
     """Tears down an assembly given its name"""
     _delete_assembly(namespace, name, wait, force)
 
 @assembly.command()
-@click.option('--namespace', default=lambda: common.get_default_val('namespace'), help='Namespace that the assembly is in')
+@arg_namespace()
 @click.option('--name', required=True, help='Name of the assembly to torn down')
 @click.option('--wait', is_flag=True, help='Wait for all pods to be torn down')
-@click.option('--force', is_flag=True, help='Delete assembly without getting confirmation')
+@arg_force()
 def delete(namespace, name, wait, force):
     """Deletes an assembly given its name"""
 
