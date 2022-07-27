@@ -833,7 +833,10 @@ Installing chart kx-insights/insights with values file from {test_val_file}
 """    
     assert result.exit_code == 0
     assert result.output == expected_output
-    assert subprocess_run_command == [['helm', 'install', '-f', test_val_file, 'insights', test_chart, '--version', '1.2.3', '--namespace', test_namespace]]
+    assert subprocess_run_command == [
+            ['helm', 'repo', 'update'],
+            ['helm', 'install', '-f', test_val_file, 'insights', test_chart, '--version', '1.2.3', '--namespace', test_namespace]
+        ]
 
 def test_install_run_when_no_file_provided(mocker):
     mock_read_create_patch_secret(mocker)
@@ -931,6 +934,7 @@ Installing chart internal-nexus-dev/insights with values file from values.yaml
         assert result.output == expected_output
         assert subprocess_run_command == [
             ['helm', 'repo', 'add', '--username', test_user, '--password', test_pass, test_chart_repo_name, test_chart_repo_url],
+            ['helm', 'repo', 'update'],
             ['helm', 'install', '-f', 'values.yaml', 'insights', test_chart_repo_name+'/insights', '--version', '1.2.3', '--namespace', test_namespace]
         ]
 
@@ -952,7 +956,10 @@ Installing chart kx-insights/insights with values from secret
         values = str(values_file.read())
     assert result.exit_code == 0
     assert result.output == expected_output
-    assert subprocess_run_command == [['helm', 'install', '-f', '-', 'insights', test_chart, '--version', '1.2.3', '--namespace', test_namespace]]
+    assert subprocess_run_command == [
+            ['helm', 'repo', 'update'],
+            ['helm', 'install', '-f', '-', 'insights', test_chart, '--version', '1.2.3', '--namespace', test_namespace]
+        ]
     assert subprocess_run_args == (True, values, True)
 
 def test_install_run_when_provided_file_and_secret(mocker):
@@ -973,7 +980,10 @@ Installing chart kx-insights/insights with values from secret and values file fr
         values = str(values_file.read())
     assert result.exit_code == 0
     assert result.output == expected_output
-    assert subprocess_run_command == [['helm', 'install', '-f', '-', '-f', test_val_file, 'insights', test_chart, '--version', '1.2.3', '--namespace', test_namespace]]
+    assert subprocess_run_command == [
+            ['helm', 'repo', 'update'],
+            ['helm', 'install', '-f', '-', '-f', test_val_file, 'insights', test_chart, '--version', '1.2.3', '--namespace', test_namespace]
+        ]
     assert subprocess_run_args == (True, values, True)
 
 def test_install_run_installs_operator(mocker):
@@ -1000,6 +1010,7 @@ Installing chart kx-insights/insights with values file from {test_val_file}
     assert result.output == expected_output
     assert copy_secret_params == [('kxi-nexus-pull-secret',test_namespace,'kxi-operator'),('kxi-license',test_namespace,'kxi-operator')]
     assert subprocess_run_command == [
+        ['helm', 'repo', 'update'],
         ['helm', 'install', '-f', test_val_file, 'insights', test_operator_chart, '--version', '1.2.3', '--namespace', 'kxi-operator'],
         ['helm', 'install', '-f', test_val_file, 'insights', test_chart, '--version', '1.2.3', '--namespace', test_namespace]
         ]
@@ -1024,6 +1035,7 @@ Installing chart kx-insights/insights with values file from {test_val_file}
     assert result.output == expected_output
     assert copy_secret_params == [('kxi-nexus-pull-secret',test_namespace,'kxi-operator'),('kxi-license',test_namespace,'kxi-operator')]
     assert subprocess_run_command == [
+        ['helm', 'repo', 'update'],
         ['helm', 'install', '-f', test_val_file, 'insights', test_operator_chart, '--version', '1.2.3', '--namespace', 'kxi-operator'],
         ['helm', 'install', '-f', test_val_file, 'insights', test_chart, '--version', '1.2.3', '--namespace', test_namespace]
         ]
@@ -1058,6 +1070,7 @@ Installing chart kx-insights/insights with values from secret
     assert result.output == expected_output
     assert copy_secret_params == [('new-image-pull-secret',test_namespace,'kxi-operator'),('new-license-secret',test_namespace,'kxi-operator')]
     assert subprocess_run_command == [
+        ['helm', 'repo', 'update'],
         ['helm', 'install', '-f', '-', 'insights', test_operator_chart, '--version', '1.2.3', '--namespace', 'kxi-operator'],
         ['helm', 'install', '-f', '-', 'insights', test_chart, '--version', '1.2.3', '--namespace', test_namespace]
         ]
@@ -1082,7 +1095,10 @@ Installing chart kx-insights/insights with values file from {test_val_file}
 """
     assert result.exit_code == 0
     assert result.output == expected_output
-    assert subprocess_run_command == [['helm', 'install', '-f', test_val_file, 'insights', test_chart, '--version', '1.2.3', '--namespace', 'test']]
+    assert subprocess_run_command == [
+        ['helm', 'repo', 'update'],
+        ['helm', 'install', '-f', test_val_file, 'insights', test_chart, '--version', '1.2.3', '--namespace', 'test']
+    ]
 
 def test_delete(mocker):
     mock_subprocess_run(mocker)
@@ -1499,6 +1515,7 @@ Upgrade to version 1.2.3 complete
     assert subprocess_run_command == [
         ['helm', 'uninstall', 'insights','--namespace', test_namespace],
         ['helm', 'uninstall', 'insights', '--namespace', 'kxi-operator'],
+        ['helm', 'repo', 'update'],
         ['helm', 'install', '-f', '-', 'insights', test_operator_chart, '--version', '1.2.3', '--namespace', 'kxi-operator'],
         ['helm', 'install', '-f', '-', 'insights', test_chart, '--version', '1.2.3', '--namespace', test_namespace]
     ]
@@ -1531,6 +1548,7 @@ Upgrade to version 1.2.3 complete
     assert result.exit_code == 0
     assert result.output == expected_output
     assert subprocess_run_command == [
+        ['helm', 'repo', 'update'],
         ['helm', 'install', '-f', '-', 'insights', test_operator_chart, '--version', '1.2.3', '--namespace', 'kxi-operator'],
         ['helm', 'install', '-f', '-', 'insights', test_chart, '--version', '1.2.3', '--namespace', test_namespace]
     ]
@@ -1575,7 +1593,7 @@ Custom assembly resource {test_asm_name} created!
     assert result.output == expected_output
     with open(test_asm_backup) as f:
         assert yaml.safe_load(f) == {'items': [test_asm_file_contents]}
-    assert subprocess_run_command == []
+    assert subprocess_run_command == [['helm', 'repo', 'update']]
     assert delete_crd_params == []
     assert insights_installed_flag == True
     assert operator_installed_flag ==True
