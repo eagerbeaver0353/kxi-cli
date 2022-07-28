@@ -1,20 +1,26 @@
-import sys
 import json
+import sys
+
 import click
 import requests
+
 from kxicli import common
 from kxicli import log
+
 
 @click.group()
 def client():
     """Commands for interacting with clients"""
 
+
 @client.command()
 @click.option('--hostname', default=lambda: common.get_default_val('hostname'), help=common.get_help_text('hostname'))
 @click.option('--name', required=True, help='Name of client to enrol')
 @click.option('--insert-topic', required=True, help='Topic to insert data on')
-@click.option('--client-id', default=lambda: common.get_default_val('client.id'), help='Client ID to request an access token with')
-@click.option('--client-secret', default=lambda: common.get_default_val('client.secret'), help='Client secret to request access token')
+@click.option('--client-id', default=lambda: common.get_default_val('client.id'),
+              help='Client ID to request an access token with')
+@click.option('--client-secret', default=lambda: common.get_default_val('client.secret'),
+              help='Client secret to request access token')
 @click.option('--realm', default=lambda: common.get_default_val('realm'), help=common.get_help_text('realm'))
 def enrol(hostname, name, insert_topic, client_id, client_secret, realm):
     """Enrol a client in the system"""
@@ -38,11 +44,14 @@ def enrol(hostname, name, insert_topic, client_id, client_secret, realm):
         log.error(r.text)
         sys.exit(1)
 
+
 @client.command()
 @click.option('--hostname', default=lambda: common.get_default_val('hostname'), help=common.get_help_text('hostname'))
 @click.option('--name', required=True, help='Name of the client to remove')
-@click.option('--client-id', default=lambda: common.get_default_val('client.id'), help='Client ID to request an access token with')
-@click.option('--client-secret', default=lambda: common.get_default_val('client.secret'), help='Client secret to request access token with')
+@click.option('--client-id', default=lambda: common.get_default_val('client.id'),
+              help='Client ID to request an access token with')
+@click.option('--client-secret', default=lambda: common.get_default_val('client.secret'),
+              help='Client secret to request access token with')
 @click.option('--realm', default=lambda: common.get_default_val('realm'), help=common.get_help_text('realm'))
 def remove(hostname, name, client_id, client_secret, realm):
     """Remove a client from the system"""
@@ -62,6 +71,7 @@ def remove(hostname, name, client_id, client_secret, realm):
         log.error(r.text)
         sys.exit(1)
 
+
 @client.command()
 @click.option('--hostname', default=lambda: common.get_default_val('hostname'), help=common.get_help_text('hostname'))
 @click.option('--uid', required=True, help='Client UID to request info for')
@@ -74,6 +84,7 @@ def info(hostname, uid):
     else:
         log.error(r.text)
         sys.exit(1)
+
 
 @client.command('list')
 @click.option('--hostname', default=lambda: common.get_default_val('hostname'), help=common.get_help_text('hostname'))

@@ -1,16 +1,20 @@
-import sys
-import json
 import datetime
-import requests
+import json
+import sys
+
 import click
+import requests
 from tabulate import tabulate
+
 from kxicli import common
 from kxicli import log
+
 
 @click.command()
 @click.option('--hostname', default=lambda: common.get_default_val('hostname'), help=common.get_help_text('hostname'))
 @click.option('--client-id', default=lambda: common.get_default_val('client.id'), help='Client ID to query with')
-@click.option('--client-secret', default=lambda: common.get_default_val('client.secret'), help='Client secret to request access token')
+@click.option('--client-secret', default=lambda: common.get_default_val('client.secret'),
+              help='Client secret to request access token')
 @click.option('--table', required=True, help='Name of the table to query')
 @click.option('--counts', is_flag=True, help='Only return the column count and row count of the returned data')
 @click.option('--realm', default=lambda: common.get_default_val('realm'), help=common.get_help_text('realm'))

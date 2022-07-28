@@ -1,5 +1,5 @@
-import pytest
 from click.testing import CliRunner, tempfile
+
 from kxicli import main
 
 

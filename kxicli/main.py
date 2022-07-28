@@ -11,7 +11,8 @@ from kxicli.commands import client, assembly, auth, install, package, azure
 CLI_VERSION = pkg_resources.require('kxicli')[0].version
 PYTHON_VERSION = f'{sys.version_info.major}.{sys.version_info.minor}'
 PKG_DIR = os.path.dirname(os.path.abspath(__file__))
-VERSION_MSG=f'%(prog)s, version %(version)s from { PKG_DIR } (Python { PYTHON_VERSION })'
+VERSION_MSG = f'%(prog)s, version %(version)s from {PKG_DIR} (Python {PYTHON_VERSION})'
+
 
 @click.group()
 @click.version_option(CLI_VERSION, message=VERSION_MSG)
@@ -21,7 +22,7 @@ VERSION_MSG=f'%(prog)s, version %(version)s from { PKG_DIR } (Python { PYTHON_VE
 def cli(ctx, debug, profile):
     """KX Insights CLI"""
     if debug:
-        log.GLOBAL_DEBUG_LOG=True
+        log.GLOBAL_DEBUG_LOG = True
         log.debug(f'Version {CLI_VERSION}')
         log.debug('Enabled global debug logging')
 
@@ -29,12 +30,14 @@ def cli(ctx, debug, profile):
     if not profile in config.config and not ctx.invoked_subcommand == 'configure':
         config.set_config(profile)
 
+
 @click.command()
 @click.option('--profile', default='default', help='Name of profile to configure.')
 def configure(profile):
     """Configure the CLI"""
     config.set_config(profile)
     click.echo(f'CLI successfully configured, configuration stored in {config.config_file}')
+
 
 cli.add_command(client.client)
 cli.add_command(assembly.assembly)

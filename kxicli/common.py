@@ -1,8 +1,9 @@
 import sys
-import os
+
 import click
-import requests
 import kubernetes as k8s
+import requests
+
 from kxicli import config
 from kxicli import log
 
@@ -55,12 +56,14 @@ DEFAULT_VALUES = {
 # Flag to indicate if k8s.config.load_config has already been called
 CONFIG_ALREADY_LOADED = False
 
+
 def get_help_text(option):
     """Get help text for an option from configuration"""
     if option in HELP_TEXT:
         return HELP_TEXT[option]
 
     return ''
+
 
 def get_default_val(option):
     """Get default value for an option from configuration"""
@@ -72,12 +75,13 @@ def get_default_val(option):
 
     return ''
 
+
 def get_access_token(hostname, client_id, client_secret, realm):
     """Get Keycloak client access token"""
     log.debug('Requesting access token')
     url = f'{hostname}/auth/realms/{realm}/protocol/openid-connect/token'
     headers = {
-        'Content-Type' : 'application/x-www-form-urlencoded'
+        'Content-Type': 'application/x-www-form-urlencoded'
     }
     payload = {
         'grant_type': 'client_credentials',
@@ -93,12 +97,13 @@ def get_access_token(hostname, client_id, client_secret, realm):
     click.echo(r.text)
     sys.exit(1)
 
+
 def get_admin_token(hostname, username, password):
     """Get Keycloak Admin API token from hostname"""
     log.debug('Requesting admin access token')
     url = f'{hostname}/auth/realms/master/protocol/openid-connect/token'
     headers = {
-        'Content-Type' : 'application/x-www-form-urlencoded'
+        'Content-Type': 'application/x-www-form-urlencoded'
     }
 
     payload = {
@@ -115,12 +120,14 @@ def get_admin_token(hostname, username, password):
     click.echo(r.text)
     sys.exit(1)
 
+
 def load_kube_config():
     global CONFIG_ALREADY_LOADED
 
     if not CONFIG_ALREADY_LOADED:
         k8s.config.load_config()
         CONFIG_ALREADY_LOADED = True
+
 
 def crd_exists(name):
     load_kube_config()
@@ -135,12 +142,14 @@ def crd_exists(name):
         else:
             click.echo(f'Exception when calling ApiextensionsV1Api->list_custom_resource_definition: {exception}')
 
+
 def get_existing_crds(names):
     crds = []
     for n in names:
         if crd_exists(n):
             crds.append(n)
     return crds
+
 
 def delete_crd(name):
     load_kube_config()
@@ -151,6 +160,7 @@ def delete_crd(name):
         api.delete_custom_resource_definition(name)
     except k8s.client.rest.ApiException as exception:
         click.echo(f'Exception when calling ApiextensionsV1Api->delete_custom_resource_definition: {exception}')
+
 
 def get_namespace(namespace):
     _, active_context = k8s.config.list_kube_config_contexts()

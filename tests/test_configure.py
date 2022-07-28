@@ -1,12 +1,12 @@
-import os
 import shutil
 from contextlib import contextmanager
 from pathlib import Path
 from tempfile import mkdtemp
 
 from click.testing import CliRunner
-from kxicli import main
+
 from kxicli import config
+from kxicli import main
 
 config.config_file = str(Path(__file__).parent / 'files' / 'test-cli-config')
 
@@ -23,6 +23,7 @@ def temp_config_file(prefix: str = 'kxicli-config-', file_name='test-cli-config'
     finally:
         if inited:
             shutil.rmtree(dir_name)
+
 
 def test_append_config_parameter_appends_to_file_default():
     config.load_config('default')
@@ -41,9 +42,10 @@ client.secret = secret
 test-name = test-value
 
 """
-    #restore
+    # restore
     config.config_file = str(Path(__file__).parent / 'files' / 'test-cli-config')
     config.load_config('default')
+
 
 def test_append_config_parameter_appends_to_file_new_profile():
     config.load_config('default')
@@ -64,9 +66,10 @@ client.secret = secret
 test-name = test-value
 
 """
-    #restore
+    # restore
     config.config_file = str(Path(__file__).parent / 'files' / 'test-cli-config')
     config.load_config('default')
+
 
 def test_configure_output_is_correct():
     with temp_config_file() as config_file_name:
@@ -83,13 +86,12 @@ def test_configure_output_is_correct():
 
             result = runner.invoke(main.cli, ['configure'], input=user_input)
 
-
         expected_output = (
-            'Hostname [https://test.kx.com]: https://test.kx.com\n'
-            'Namespace [test]: test\n'
-            'Client ID [client]: client\n'
-            'Client Secret (input hidden): \n'
-            'CLI successfully configured, configuration stored in ' + config.config_file + '\n'
+                'Hostname [https://test.kx.com]: https://test.kx.com\n'
+                'Namespace [test]: test\n'
+                'Client ID [client]: client\n'
+                'Client Secret (input hidden): \n'
+                'CLI successfully configured, configuration stored in ' + config.config_file + '\n'
         )
 
         assert result.exit_code == 0
