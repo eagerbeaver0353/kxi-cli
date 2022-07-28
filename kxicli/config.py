@@ -10,6 +10,7 @@ config_file = str(config_dir_path / 'cli-config')
 
 config = None
 
+
 def load_config(profile):
     """Load a configuration profile from the config file"""
     global config
@@ -17,6 +18,7 @@ def load_config(profile):
     config = configparser.ConfigParser(default_section=profile)
     config.optionxform = str
     config.read(config_file)
+
 
 def append_config(profile, name, value):
     """Append an option to the configuration for a specific profile"""
@@ -31,6 +33,7 @@ def append_config(profile, name, value):
     with open(config_file, 'w+') as f:
         config[profile][name] = value
         config.write(f)
+
 
 def set_config(profile):
     """Set the configuration for a specific profile"""
@@ -56,10 +59,10 @@ def set_config(profile):
             type=str,
             default=config.get(profile, 'client.id', fallback=''))
 
-        config[profile]['client.secret'] =  click.prompt(
+        config[profile]['client.secret'] = click.prompt(
             'Client Secret (input hidden)',
             type=str,
             hide_input=True
-            )
+        )
 
         config.write(f)

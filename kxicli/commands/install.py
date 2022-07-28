@@ -6,7 +6,6 @@ import random
 import string
 import subprocess
 import sys
-from functools import partial
 from pathlib import Path
 
 import click
@@ -37,37 +36,48 @@ TLS_KEY = 'tls.key'
 # Basic validation for secrets checking secret type and data
 # Format is [expected_secret_type, required_secret_keys]
 # required_secret_keys must be a tuple, one-item tuples have a trailing comma
-SECRET_VALIDATION = {}
-SECRET_VALIDATION['keycloak']           = (SECRET_TYPE_OPAQUE,              ('admin-password', 'management-password'))
-SECRET_VALIDATION['postgresql']         = (SECRET_TYPE_OPAQUE,              ('postgresql-postgres-password', 'postgresql-password'))
-SECRET_VALIDATION['license']            = (SECRET_TYPE_OPAQUE,              ('license',))
-SECRET_VALIDATION['image_pull']         = (SECRET_TYPE_DOCKERCONFIG_JSON,   ('.dockerconfigjson',))
-SECRET_VALIDATION['ingress_cert']       = (SECRET_TYPE_TLS,                 (TLS_CRT, TLS_KEY))
-SECRET_VALIDATION['client_cert']        = (SECRET_TYPE_TLS,                 (TLS_CRT, TLS_KEY))
+SECRET_VALIDATION = {
+    'keycloak': (SECRET_TYPE_OPAQUE, ('admin-password', 'management-password')),
+    'postgresql': (SECRET_TYPE_OPAQUE, ('postgresql-postgres-password', 'postgresql-password')),
+    'license': (SECRET_TYPE_OPAQUE, ('license',)),
+    'image_pull': (SECRET_TYPE_DOCKERCONFIG_JSON, ('.dockerconfigjson',)),
+    'ingress_cert': (SECRET_TYPE_TLS, (TLS_CRT, TLS_KEY)),
+    'client_cert': (SECRET_TYPE_TLS, (TLS_CRT, TLS_KEY))
+}
+
 
 @click.group()
 def install():
     """Insights installation commands"""
+
 
 @install.command()
 @arg_namespace()
 @click.option('--chart-repo-name', default=lambda: default_val('chart.repo.name'), help=help_text('chart.repo.name'))
 @click.option('--license-secret', default=lambda: default_val('license.secret'), help=help_text('license.secret'))
 @click.option('--license-as-env-var', default=False, help=help_text('license.envVar'))
-@click.option('--client-cert-secret', default=lambda: default_val('client.cert.secret'), help=help_text('client.cert.secret'))
+@click.option('--client-cert-secret', default=lambda: default_val('client.cert.secret'),
+              help=help_text('client.cert.secret'))
 @click.option('--image-repo', default=lambda: default_val('image.repository'), help=help_text('image.repository'))
-@click.option('--image-pull-secret', default=lambda: default_val('image.pullSecret'), help=help_text('image.pullSecret'))
+@click.option('--image-pull-secret', default=lambda: default_val('image.pullSecret'),
+              help=help_text('image.pullSecret'))
 @click.option('--gui-client-secret', default=lambda: default_val('guiClientSecret'), help=help_text('guiClientSecret'))
-@click.option('--operator-client-secret', default=lambda: default_val('operatorClientSecret'), help=help_text('operatorClientSecret'))
+@click.option('--operator-client-secret', default=lambda: default_val('operatorClientSecret'),
+              help=help_text('operatorClientSecret'))
 @click.option('--keycloak-secret', default=lambda: default_val('keycloak.secret'), help=help_text('keycloak.secret'))
-@click.option('--keycloak-postgresql-secret', default=lambda: default_val('keycloak.postgresqlSecret'), help=help_text('keycloak.postgresqlSecret'))
+@click.option('--keycloak-postgresql-secret', default=lambda: default_val('keycloak.postgresqlSecret'),
+              help=help_text('keycloak.postgresqlSecret'))
 @click.option('--keycloak-auth-url', help=help_text('keycloak.authURL'))
 @click.option('--ingress-host', help=help_text('ingress.host'))
-@click.option('--ingress-cert-secret', default=lambda: default_val('ingress.cert.secret'), help=help_text('ingress.cert.secret'))
+@click.option('--ingress-cert-secret', default=lambda: default_val('ingress.cert.secret'),
+              help=help_text('ingress.cert.secret'))
 @click.option('--output-file', default=lambda: default_val('install.outputFile'), help=help_text('install.outputFile'))
-@click.option('--install-config-secret', default=lambda: default_val('install.configSecret'), help=help_text('install.configSecret'))
-def setup(namespace, chart_repo_name, license_secret, license_as_env_var, client_cert_secret, image_repo, image_pull_secret, gui_client_secret, operator_client_secret,
-                keycloak_secret, keycloak_postgresql_secret, keycloak_auth_url, ingress_host, ingress_cert_secret, output_file, install_config_secret):
+@click.option('--install-config-secret', default=lambda: default_val('install.configSecret'),
+              help=help_text('install.configSecret'))
+def setup(namespace, chart_repo_name, license_secret, license_as_env_var, client_cert_secret, image_repo,
+          image_pull_secret, gui_client_secret, operator_client_secret,
+          keycloak_secret, keycloak_postgresql_secret, keycloak_auth_url, ingress_host, ingress_cert_secret,
+          output_file, install_config_secret):
     """Perform necessary setup steps to install Insights"""
 
     click.secho('KX Insights Install Setup', bold=True)
@@ -81,17 +91,19 @@ def setup(namespace, chart_repo_name, license_secret, license_as_env_var, client
 
     if '--chart-repo-name' not in sys.argv:
         click.secho('\nChart details', bold=True)
-        chart_repo_name = click.prompt('Please enter a name for the chart repository to set locally', default=default_val('chart.repo.name'))
-        chart_repo_url = click.prompt('Please enter the chart repository URL to pull charts from', default=default_val('chart.repo.url'))
+        chart_repo_name = click.prompt('Please enter a name for the chart repository to set locally',
+                                       default=default_val('chart.repo.name'))
+        chart_repo_url = click.prompt('Please enter the chart repository URL to pull charts from',
+                                      default=default_val('chart.repo.url'))
         username = click.prompt('Please enter the username for the chart repository')
         password = click.prompt('Please enter the password for the chart repository (input hidden)', hide_input=True)
         helm_add_repo(chart_repo_name, chart_repo_url, username, password)
-    
+
     if '--license-secret' not in sys.argv:
         click.secho('\nLicense details', bold=True)
         license_secret, license_on_demand = prompt_for_license(namespace, license_secret, license_as_env_var)
 
-    if not('--image-repo' in sys.argv and '--image-pull-secret' in sys.argv):
+    if not ('--image-repo' in sys.argv and '--image-pull-secret' in sys.argv):
         click.secho('\nImage repository', bold=True)
         image_repo, image_pull_secret = prompt_for_image_details(namespace, image_repo, image_pull_secret)
 
@@ -100,16 +112,19 @@ def setup(namespace, chart_repo_name, license_secret, license_as_env_var, client
         client_cert_secret = prompt_for_client_cert(namespace, client_cert_secret)
 
     click.secho('\nKeycloak', bold=True)
-    if deploy_keycloak() and not('--keycloak-secret' in sys.argv and '--keycloak-postgresql-secret' in sys.argv):
-        keycloak_secret, keycloak_postgresql_secret = prompt_for_keycloak(namespace, keycloak_secret, keycloak_postgresql_secret)
+    if deploy_keycloak() and not ('--keycloak-secret' in sys.argv and '--keycloak-postgresql-secret' in sys.argv):
+        keycloak_secret, keycloak_postgresql_secret = prompt_for_keycloak(namespace, keycloak_secret,
+                                                                          keycloak_postgresql_secret)
 
     if not gui_client_secret:
         gui_client_secret = prompt_for_client_secret('gui')
-        common.config.append_config(profile=common.config.config.default_section, name='guiClientSecret', value=gui_client_secret)
+        common.config.append_config(profile=common.config.config.default_section, name='guiClientSecret',
+                                    value=gui_client_secret)
 
     if not operator_client_secret:
         operator_client_secret = prompt_for_client_secret('operator')
-        common.config.append_config(profile=common.config.config.default_section, name='operatorClientSecret', value=operator_client_secret)
+        common.config.append_config(profile=common.config.config.default_section, name='operatorClientSecret',
+                                    value=operator_client_secret)
 
     if 'ingress-cert-secret' not in sys.argv:
         click.secho('\nIngress', bold=True)
@@ -126,8 +141,8 @@ def setup(namespace, chart_repo_name, license_secret, license_as_env_var, client
                 'secretName': license_secret
             },
             'caIssuer': {
-               'name': client_cert_secret,
-               'secretName': client_cert_secret
+                'name': client_cert_secret,
+                'secretName': client_cert_secret
             },
             'image': {
                 'repository': image_repo
@@ -186,6 +201,7 @@ def setup(namespace, chart_repo_name, license_secret, license_as_env_var, client
 
     return output_file, chart_repo_name
 
+
 @install.command()
 @arg_namespace()
 @arg_filepath()
@@ -198,7 +214,8 @@ def setup(namespace, chart_repo_name, license_secret, license_as_env_var, client
 @click.option('--install-config-secret', default=None, help=help_text('install.configSecret'))
 @arg_force()
 @click.pass_context
-def run(ctx, namespace, filepath, release, chart_repo_name, version, operator_version, image_pull_secret, license_secret, install_config_secret, force):
+def run(ctx, namespace, filepath, release, chart_repo_name, version, operator_version, image_pull_secret,
+        license_secret, install_config_secret, force):
     """Install KX Insights with a values file"""
 
     # Run setup prompts if necessary
@@ -209,9 +226,14 @@ def run(ctx, namespace, filepath, release, chart_repo_name, version, operator_ve
     _, namespace = common.get_namespace(namespace)
 
     values_secret = get_install_values(namespace=namespace, install_config_secret=install_config_secret)
-    image_pull_secret,license_secret = get_image_and_license_secret_from_values(values_secret, filepath, image_pull_secret, license_secret)
+    image_pull_secret, license_secret = get_image_and_license_secret_from_values(values_secret, filepath,
+                                                                                 image_pull_secret, license_secret)
 
-    install_operator_and_release(release=release, namespace=namespace, version=version, operator_version=operator_version, values_file=filepath, values_secret=values_secret, image_pull_secret=image_pull_secret, license_secret=license_secret, chart_repo_name=chart_repo_name, force=force)
+    install_operator_and_release(release=release, namespace=namespace, version=version,
+                                 operator_version=operator_version, values_file=filepath, values_secret=values_secret,
+                                 image_pull_secret=image_pull_secret, license_secret=license_secret,
+                                 chart_repo_name=chart_repo_name, force=force)
+
 
 @install.command()
 @arg_namespace()
@@ -225,7 +247,8 @@ def run(ctx, namespace, filepath, release, chart_repo_name, version, operator_ve
 @click.option('--install-config-secret', default=None, help=help_text('install.configSecret'))
 @arg_filepath()
 @arg_force()
-def upgrade(namespace, release, chart_repo_name, assembly_backup_filepath, version, operator_version, image_pull_secret, license_secret, install_config_secret, filepath, force):
+def upgrade(namespace, release, chart_repo_name, assembly_backup_filepath, version, operator_version, image_pull_secret,
+            license_secret, install_config_secret, filepath, force):
     """Upgrade KX Insights"""
     _, namespace = common.get_namespace(namespace)
 
@@ -237,11 +260,15 @@ def upgrade(namespace, release, chart_repo_name, assembly_backup_filepath, versi
         log.error('At least one of --install-config-secret and --filepath options must be provided')
         sys.exit(1)
     values_secret = get_install_values(namespace=namespace, install_config_secret=install_config_secret)
-    image_pull_secret,license_secret = get_image_and_license_secret_from_values(values_secret, filepath, image_pull_secret, license_secret)
+    image_pull_secret, license_secret = get_image_and_license_secret_from_values(values_secret, filepath,
+                                                                                 image_pull_secret, license_secret)
 
     if not insights_installed(release, namespace):
         click.echo('KX Insights is not deployed. Skipping to install')
-        install_operator_and_release(release=release, namespace=namespace, version=version, operator_version=operator_version, values_file=filepath, values_secret=values_secret, image_pull_secret=image_pull_secret, license_secret=license_secret, chart_repo_name=chart_repo_name, force=force)
+        install_operator_and_release(release=release, namespace=namespace, version=version,
+                                     operator_version=operator_version, values_file=filepath,
+                                     values_secret=values_secret, image_pull_secret=image_pull_secret,
+                                     license_secret=license_secret, chart_repo_name=chart_repo_name, force=force)
         click.secho(f'\nUpgrade to version {version} complete', bold=True)
         sys.exit(0)
 
@@ -257,13 +284,18 @@ def upgrade(namespace, release, chart_repo_name, assembly_backup_filepath, versi
         delete_release_operator_and_crds(release=release, namespace=namespace, force=force)
 
         click.secho('\nReinstalling insights and operator', bold=True)
-        upgraded = install_operator_and_release(release=release, namespace=namespace, version=version, operator_version=operator_version, values_file=filepath, values_secret=values_secret, image_pull_secret=image_pull_secret, license_secret=license_secret, chart_repo_name=chart_repo_name, force=force)
-    
+        upgraded = install_operator_and_release(release=release, namespace=namespace, version=version,
+                                                operator_version=operator_version, values_file=filepath,
+                                                values_secret=values_secret, image_pull_secret=image_pull_secret,
+                                                license_secret=license_secret, chart_repo_name=chart_repo_name,
+                                                force=force)
+
     click.secho('\nReapplying assemblies', bold=True)
     assembly._create_assemblies_from_file(namespace=namespace, filepath=assembly_backup_filepath)
 
     if upgraded:
         click.secho(f'\nUpgrade to version {version} complete', bold=True)
+
 
 @install.command()
 @arg_release()
@@ -272,7 +304,8 @@ def upgrade(namespace, release, chart_repo_name, assembly_backup_filepath, versi
 def delete(release, namespace, force):
     """Uninstall KX Insights"""
     delete_release_operator_and_crds(release=release, namespace=namespace, force=force)
-    
+
+
 @install.command()
 @click.option('--chart-repo-name', default=lambda: default_val('chart.repo.name'), help=help_text('chart.repo.name'))
 def list_versions(chart_repo_name):
@@ -280,15 +313,18 @@ def list_versions(chart_repo_name):
     List available versions of KX Insights
     """
     helm_list_versions(chart_repo_name)
-    
+
+
 @install.command()
 @arg_namespace()
-@click.option('--install-config-secret', default=lambda: default_val('install.configSecret'), help=help_text('install.configSecret'))
-def get_values(namespace,install_config_secret):
+@click.option('--install-config-secret', default=lambda: default_val('install.configSecret'),
+              help=help_text('install.configSecret'))
+def get_values(namespace, install_config_secret):
     """
     Display the kxi-install-config secret used for storing installation values
     """
     click.echo(get_install_config_secret(namespace=namespace, install_config_secret=install_config_secret))
+
 
 def get_install_config_secret(namespace, install_config_secret):
     """
@@ -302,12 +338,15 @@ def get_install_config_secret(namespace, install_config_secret):
 
     return values_secret
 
+
 def get_operator_version(chart_repo_name, insights_version, operator_version):
     """Determine operator version to use. Retrieve the most recent operator minor version matching the insights version"""
     if operator_version is None:
         insights_version_parsed = insights_version.split(".")
         insights_version_minor = insights_version_parsed[0] + "." + insights_version_parsed[1]
-        ops_from_helm = subprocess.run(['helm', 'search', 'repo', f'{chart_repo_name}/kxi-operator', '--version', f'{insights_version_minor}', '--output', 'json'], check=True, capture_output=True, text=True)
+        ops_from_helm = subprocess.run(
+            ['helm', 'search', 'repo', f'{chart_repo_name}/kxi-operator', '--version', f'{insights_version_minor}',
+             '--output', 'json'], check=True, capture_output=True, text=True)
         ops_from_helm = json.loads(ops_from_helm.stdout)
         if len(ops_from_helm):
             operator_version = ops_from_helm[0]['version']
@@ -316,9 +355,11 @@ def get_operator_version(chart_repo_name, insights_version, operator_version):
             sys.exit(1)
     return operator_version
 
+
 def sanitize_ingress_host(raw_string):
     """Sanitize a host name to allow it to be used"""
     return raw_string.replace('http://', '').replace('https://', '')
+
 
 def sanitize_auth_url(raw_string):
     """Sanitize a Keycloak auth url to allow it to be used"""
@@ -336,6 +377,7 @@ def sanitize_auth_url(raw_string):
 
     return trimmed
 
+
 def prompt_for_license(namespace, license_secret, license_as_env_var):
     """Prompt for an existing license or create on if it doesn't exist"""
     license_on_demand = False
@@ -349,6 +391,7 @@ def prompt_for_license(namespace, license_secret, license_as_env_var):
 
     return license_secret, license_on_demand
 
+
 def prompt_for_client_cert(namespace, client_cert_secret):
     """Prompt for an existing client cert secret or create one if it doesn't exist"""
     if click.confirm('Do you have an existing client certificate issuer'):
@@ -359,6 +402,7 @@ def prompt_for_client_cert(namespace, client_cert_secret):
         create_tls_secret(namespace, client_cert_secret, cert, key)
 
     return client_cert_secret
+
 
 def prompt_for_image_details(namespace, image_repo, image_pull_secret):
     """Prompt for an existing image pull secret or create on if it doesn't exist"""
@@ -373,7 +417,8 @@ def prompt_for_image_details(namespace, image_repo, image_pull_secret):
     if existing_config:
         # parse the user from the existing config which is a base64 encoded string of "username:password"
         user = base64.b64decode(existing_config['auth']).decode('ascii').split(':')[0]
-        if click.confirm(f'Credentials {user}@{image_repo} exist in {docker_config_file_path}, do you want to use these'):
+        if click.confirm(
+                f'Credentials {user}@{image_repo} exist in {docker_config_file_path}, do you want to use these'):
             docker_config = {
                 'auths': {
                     image_repo: existing_config
@@ -389,6 +434,7 @@ def prompt_for_image_details(namespace, image_repo, image_pull_secret):
 
     return image_repo, image_pull_secret
 
+
 def prompt_for_keycloak(namespace, keycloak_secret, postgresql_secret):
     """Prompt for existing Keycloak secrets or create them if they don't exist"""
 
@@ -396,17 +442,19 @@ def prompt_for_keycloak(namespace, keycloak_secret, postgresql_secret):
         keycloak_secret = prompt_and_validate_existing_secret(namespace, 'keycloak')
     else:
         admin_password = click.prompt('Please enter the Keycloak Admin password (input hidden)', hide_input=True)
-        management_password = click.prompt('Please enter the Keycloak WildFly Management password (input hidden)', hide_input=True)
+        management_password = click.prompt('Please enter the Keycloak WildFly Management password (input hidden)',
+                                           hide_input=True)
         data = {
             'admin-password': base64.b64encode(admin_password.encode()).decode('ascii'),
             'management-password': base64.b64encode(management_password.encode()).decode('ascii')
         }
-        create_secret(namespace,keycloak_secret,'Opaque',data=data)
+        create_secret(namespace, keycloak_secret, 'Opaque', data=data)
 
     if click.confirm('Do you have an existing keycloak postgresql secret'):
         postgresql_secret = prompt_and_validate_existing_secret(namespace, 'postgresql')
     else:
-        postgresql_postgres_password = click.prompt('Please enter the Postgresql postgres password (input hidden)', hide_input=True)
+        postgresql_postgres_password = click.prompt('Please enter the Postgresql postgres password (input hidden)',
+                                                    hide_input=True)
         postgresql_password = click.prompt('Please enter the Postgresql user password (input hidden)', hide_input=True)
 
         data = {
@@ -416,9 +464,10 @@ def prompt_for_keycloak(namespace, keycloak_secret, postgresql_secret):
             'password': base64.b64encode(postgresql_password.encode()).decode('ascii')
         }
 
-        create_secret(namespace,postgresql_secret,'Opaque',data=data)
+        create_secret(namespace, postgresql_secret, 'Opaque', data=data)
 
     return keycloak_secret, postgresql_secret
+
 
 def prompt_for_ingress_cert(namespace, ingress_cert_secret):
     if click.confirm('Do you want to provide a self-managed cert for the ingress'):
@@ -442,11 +491,12 @@ def prompt_for_ingress_cert(namespace, ingress_cert_secret):
 
     return ingress_self_managed, ingress_cert_secret
 
+
 def create_docker_config(image_repo, user, password):
     """Output the .dockerconfigjson format given a repo, username and password"""
     config = {
         'auths': {
-            image_repo : {
+            image_repo: {
                 'username': user,
                 'password': password,
                 'auth': base64.b64encode(f'{user}:{password}'.encode()).decode('ascii')
@@ -456,8 +506,10 @@ def create_docker_config(image_repo, user, password):
 
     return config
 
+
 def prompt_for_existing_secret():
     return click.prompt('Please enter the name of the existing secret')
+
 
 def prompt_and_validate_existing_secret(namespace, secret_use):
     secret_name = prompt_for_existing_secret()
@@ -472,6 +524,7 @@ def prompt_and_validate_existing_secret(namespace, secret_use):
 
     return secret_name
 
+
 def check_existing_docker_config(image_repo, file_path):
     """Check local .docker/config.json for repo credentials"""
     log.debug(f'Checking {file_path} for existing credentials for the repository {image_repo}')
@@ -485,6 +538,7 @@ def check_existing_docker_config(image_repo, file_path):
 
     return None
 
+
 def create_license_secret(namespace, name, filepath, asEnv=False):
     """Create a KX license secret in a given namespace"""
 
@@ -496,11 +550,11 @@ def create_license_secret(namespace, name, filepath, asEnv=False):
     }
 
     if asEnv:
-        string_data=license_data
-        data=None
+        string_data = license_data
+        data = None
     else:
-        string_data=None
-        data=license_data
+        string_data = None
+        data = license_data
 
     return create_secret(
         namespace=namespace,
@@ -509,6 +563,7 @@ def create_license_secret(namespace, name, filepath, asEnv=False):
         string_data=string_data,
         data=data
     )
+
 
 def create_docker_config_secret(namespace, name, docker_config):
     """Create a KX a Docker config secret in a given namespace"""
@@ -523,6 +578,7 @@ def create_docker_config_secret(namespace, name, docker_config):
         secret_type='kubernetes.io/dockerconfigjson',
         data=data
     )
+
 
 def create_tls_secret(namespace, name, cert, key):
     """Create a TLS secret in a given namespace from a cert and private key"""
@@ -547,8 +603,10 @@ def create_tls_secret(namespace, name, cert, key):
         data=data
     )
 
+
 def build_install_secret(data):
     return {'values.yaml': base64.b64encode(yaml.dump(data).encode()).decode('ascii')}
+
 
 def create_install_config_secret(namespace, name, data):
     """Create a secret to store install values in a given namespace"""
@@ -566,6 +624,7 @@ def create_install_config_secret(namespace, name, data):
 
     return values_secret
 
+
 def read_secret(namespace, name):
     common.load_kube_config()
 
@@ -577,6 +636,7 @@ def read_secret(namespace, name):
             return None
     else:
         return secret
+
 
 def create_secret(namespace, name, secret_type, data=None, string_data=None):
     """Helper function to create a Kubernetes secret"""
@@ -591,6 +651,7 @@ def create_secret(namespace, name, secret_type, data=None, string_data=None):
         sys.exit(1)
 
     click.echo(f'Secret {name} successfully created')
+
 
 def patch_secret(namespace, name, secret_type, data=None, string_data=None):
     """Helper function to update a Kubernetes secret"""
@@ -607,6 +668,7 @@ def patch_secret(namespace, name, secret_type, data=None, string_data=None):
     click.echo(f'Secret {name} successfully updated')
     return patched_secret
 
+
 def get_secret_body(name, secret_type, data=None, string_data=None):
     """Create the body for a request to create_namespaced_secret"""
     secret = k8s.client.V1Secret()
@@ -619,6 +681,7 @@ def get_secret_body(name, secret_type, data=None, string_data=None):
         secret.string_data = string_data
 
     return secret
+
 
 def validate_secret(namespace, name, secret_type, data_keys):
     """Validates that specific keys exist in the data field of a secret and that the secret has the expected type
@@ -647,6 +710,7 @@ def validate_secret(namespace, name, secret_type, data_keys):
 
     return (is_valid, missing_data_keys)
 
+
 def get_missing_keys(dictionary, keys):
     """Returns keys from 'keys' that are missing from 'dictionary'
 
@@ -666,6 +730,7 @@ def get_missing_keys(dictionary, keys):
 
     return missing_keys
 
+
 def get_install_values(namespace, install_config_secret):
     values_secret = None
     if install_config_secret:
@@ -675,6 +740,7 @@ def get_install_values(namespace, install_config_secret):
             sys.exit(1)
 
     return values_secret
+
 
 def get_image_and_license_secret_from_values(values_secret, values_file, image_pull_secret, license_secret):
     """Read image_pull_secret and license_secret from argument, values file, values secret, default"""
@@ -697,10 +763,12 @@ def get_image_and_license_secret_from_values(values_secret, values_file, image_p
                     sys.exit(1)
 
     if not image_pull_secret:
-        image_pull_secret = get_from_values_dict(['global','imagePullSecrets',0,'name'], values_secret_dict, values_file_dict, default_val('image.pullSecret'))
+        image_pull_secret = get_from_values_dict(['global', 'imagePullSecrets', 0, 'name'], values_secret_dict,
+                                                 values_file_dict, default_val('image.pullSecret'))
 
     if not license_secret:
-        license_secret = get_from_values_dict(['global','license','secretName'], values_secret_dict, values_file_dict, default_val('license.secret'))
+        license_secret = get_from_values_dict(['global', 'license', 'secretName'], values_secret_dict, values_file_dict,
+                                              default_val('license.secret'))
 
     return image_pull_secret, license_secret
 
@@ -731,6 +799,7 @@ def get_from_values_dict(key, values_secret_dict, values_file_dict, default):
 
     return val
 
+
 def gen_private_key():
     """Creates a basic private key"""
     log.debug('Generating private key with size 2048 and exponent 65537')
@@ -742,6 +811,7 @@ def gen_private_key():
     )
     return private_key
 
+
 def gen_cert(private_key):
     """Creates a basic certificate given a public key"""
     log.debug('Generating cert with common name insights.kx.com')
@@ -750,22 +820,25 @@ def gen_cert(private_key):
 
     # For a self-signed cert, the subject and the issuer are always the same
     builder = x509.CertificateBuilder(
-        issuer_name = subject,
-        subject_name = subject,
-        public_key = private_key.public_key(),
-        serial_number = x509.random_serial_number(),
-        not_valid_before = datetime.datetime.utcnow(),
-        not_valid_after = datetime.datetime.utcnow() + datetime.timedelta(days=3650)
+        issuer_name=subject,
+        subject_name=subject,
+        public_key=private_key.public_key(),
+        serial_number=x509.random_serial_number(),
+        not_valid_before=datetime.datetime.utcnow(),
+        not_valid_after=datetime.datetime.utcnow() + datetime.timedelta(days=3650)
     )
 
     # This must be set on the generated cert in order of it to be a valid Issuer in kubernetes
     builder = builder.add_extension(x509.BasicConstraints(ca=True, path_length=None), critical=True)
-    builder = builder.add_extension(x509.AuthorityKeyIdentifier.from_issuer_public_key(private_key.public_key()), critical=False)
+    builder = builder.add_extension(x509.AuthorityKeyIdentifier.from_issuer_public_key(private_key.public_key()),
+                                    critical=False)
     builder = builder.add_extension(x509.SubjectKeyIdentifier.from_public_key(private_key.public_key()), critical=False)
 
     return builder.sign(private_key, hashes.SHA256(), default_backend())
 
-def install_operator_and_release(release, namespace, version, operator_version, values_file, values_secret, image_pull_secret, license_secret, chart_repo_name, force):
+
+def install_operator_and_release(release, namespace, version, operator_version, values_file, values_secret,
+                                 image_pull_secret, license_secret, chart_repo_name, force):
     """Install operator and insights"""
     install_complete = False
 
@@ -780,15 +853,20 @@ def install_operator_and_release(release, namespace, version, operator_version, 
             copy_secret(image_pull_secret, namespace, operator_namespace)
             copy_secret(license_secret, namespace, operator_namespace)
 
-            helm_install(release, chart=f'{chart_repo_name}/kxi-operator', values_file=values_file, values_secret=values_secret, version=get_operator_version(chart_repo_name, version, operator_version), namespace=operator_namespace)
+            helm_install(release, chart=f'{chart_repo_name}/kxi-operator', values_file=values_file,
+                         values_secret=values_secret,
+                         version=get_operator_version(chart_repo_name, version, operator_version),
+                         namespace=operator_namespace)
 
     if insights_installed(release, namespace):
         click.echo('\nKX Insights already installed')
     else:
-        helm_install(release, chart=f'{chart_repo_name}/insights', values_file=values_file, values_secret=values_secret, version=version, namespace=namespace)
+        helm_install(release, chart=f'{chart_repo_name}/insights', values_file=values_file, values_secret=values_secret,
+                     version=version, namespace=namespace)
         install_complete = True
 
     return install_complete
+
 
 def delete_release_operator_and_crds(release, namespace, force):
     """Delete insights, operator and CRDs"""
@@ -800,30 +878,35 @@ def delete_release_operator_and_crds(release, namespace, force):
         else:
             return
 
-    if force or operator_installed(release) and click.confirm('\nThe kxi-operator is deployed. Do you want to uninstall?'):
+    if force or operator_installed(release) and click.confirm(
+            '\nThe kxi-operator is deployed. Do you want to uninstall?'):
         helm_uninstall(release=release, namespace=operator_namespace)
 
-    crds = common.get_existing_crds(['assemblies.insights.kx.com','assemblyresources.insights.kx.com'])
+    crds = common.get_existing_crds(['assemblies.insights.kx.com', 'assemblyresources.insights.kx.com'])
     if force or len(crds) > 0 and click.confirm(f'\nThe assemblies CRDs {crds} exist. Do you want to delete them?'):
         for i in crds:
             common.delete_crd(i)
 
+
 def helm_add_repo(chart_repo_name, url, username, password):
     """Call 'helm repo add' using subprocess.run"""
-    log.debug('Attempting to call: helm repo add --username {username} --password {len(password)*"*" {chart_repo_name} {url}')
+    log.debug(
+        'Attempting to call: helm repo add --username {username} --password {len(password)*"*" {chart_repo_name} {url}')
     try:
-        subprocess.run(['helm', 'repo', 'add', '--username', username, '--password', password, chart_repo_name, url], check=True)
+        subprocess.run(['helm', 'repo', 'add', '--username', username, '--password', password, chart_repo_name, url],
+                       check=True)
     except subprocess.CalledProcessError:
         # Pass here so that the password isn't printed in the log
         pass
+
 
 def helm_list_versions(chart_repo_name):
     """Call 'helm search repo' using subprocess.run"""
     log.debug('Attempting to call: helm search repo')
     try:
-        chart=f'{chart_repo_name}/insights'
+        chart = f'{chart_repo_name}/insights'
         click.echo(f'Listing available KX Insights versions in repo {chart_repo_name}')
-        
+
         subprocess.run(['helm', 'search', 'repo', chart], check=True)
     except subprocess.CalledProcessError as e:
         click.echo(e)
@@ -832,7 +915,7 @@ def helm_list_versions(chart_repo_name):
 def helm_install(release, chart, values_file, values_secret, version=None, namespace=None):
     """Call 'helm install' using subprocess.run"""
 
-    if values_file: 
+    if values_file:
         if values_secret:
             click.echo(f'Installing chart {chart} with values from secret and values file from {values_file}')
         else:
@@ -849,15 +932,15 @@ def helm_install(release, chart, values_file, values_secret, version=None, names
     if values_secret:
         msg = ' values from secret'
         base_command = base_command + ['-f', '-']
-        input_arg=values_secret
-        text_arg=True
+        input_arg = values_secret
+        text_arg = True
     else:
-        msg= ()
-        input_arg=None
-        text_arg=None
+        msg = ()
+        input_arg = None
+        text_arg = None
 
-    if values_file: 
-        msg = [msg , f' values file from {values_file}']
+    if values_file:
+        msg = [msg, f' values file from {values_file}']
         base_command = base_command + ['-f', values_file]
 
     base_command = base_command + [release, chart]
@@ -875,6 +958,7 @@ def helm_install(release, chart, values_file, values_secret, version=None, names
     except subprocess.CalledProcessError as e:
         click.echo(e)
         sys.exit(e.returncode)
+
 
 def helm_uninstall(release, namespace=None):
     """Call 'helm uninstall' using subprocess.run"""
@@ -896,6 +980,7 @@ def helm_uninstall(release, namespace=None):
         click.echo(e)
         sys.exit(e.returncode)
 
+
 def create_namespace(name):
     common.load_kube_config()
     api = k8s.client.CoreV1Api()
@@ -908,6 +993,7 @@ def create_namespace(name):
         if not exception.status == 409:
             log.error(f'Exception when trying to create namespace {exception}')
             sys.exit(1)
+
 
 def copy_secret(name, from_ns, to_ns):
     common.load_kube_config()
@@ -927,18 +1013,21 @@ def copy_secret(name, from_ns, to_ns):
             log.error(f'Exception when trying to create secret {exception}')
             sys.exit(1)
 
+
 def prompt_for_client_secret(client_name):
     if click.confirm(f'Do you want to set a secret for the {client_name} service account explicitly'):
         client_secret = click.prompt('Please enter the secret (input hidden)', hide_input=True)
     else:
-        click.echo(f'Randomly generating client secret for {client_name} and setting in values file, record this value for reuse during upgrade')
+        click.echo(
+            f'Randomly generating client secret for {client_name} and setting in values file, record this value for reuse during upgrade')
         client_secret = ''.join(random.SystemRandom().choice(string.ascii_letters + string.digits) for _ in range(10))
 
     return client_secret
 
+
 def insights_installed(release, namespace):
     """Check if a helm release of insights exists"""
-    base_command = ['helm', 'list', '--filter', release, '--deployed', '-o', 'json','--namespace', namespace]
+    base_command = ['helm', 'list', '--filter', release, '--deployed', '-o', 'json', '--namespace', namespace]
     try:
         log.debug(f'List command {base_command}')
         l = subprocess.check_output(base_command)
@@ -946,15 +1035,17 @@ def insights_installed(release, namespace):
     except subprocess.CalledProcessError as e:
         click.echo(e)
 
+
 def operator_installed(release, namespace: str = operator_namespace):
     """Check if a helm release of the operator exists"""
-    base_command = ['helm', 'list', '--filter', release, '--deployed', '-o', 'json','--namespace', namespace]
+    base_command = ['helm', 'list', '--filter', release, '--deployed', '-o', 'json', '--namespace', namespace]
     try:
         log.debug(f'List command {base_command}')
         l = subprocess.check_output(base_command)
         return len(l) > 3
     except subprocess.CalledProcessError as e:
         click.echo(e)
+
 
 # Check if Keycloak is being deployed with Insights
 def deploy_keycloak():

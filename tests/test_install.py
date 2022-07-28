@@ -1,13 +1,15 @@
 """This install test is meant to unit test the individual functions in the install command"""
-import pytest
+import base64
 import copy
 import io
 import os
-import base64
-import yaml
+
 import kubernetes as k8s
-from kxicli.commands import install
+import pytest
+import yaml
+
 from kxicli import common
+from kxicli.commands import install
 
 # Common test parameters
 
@@ -29,58 +31,68 @@ IPATH_KUBE_COREV1API = 'kubernetes.client.CoreV1Api'
 IPATH_INSTALL_READ_SECRET = 'kxicli.commands.install.read_secret'
 IPATH_CLICK_PROMPT = 'click.prompt'
 
-
 with open(test_val_file, 'rb') as values_file:
     test_vals = yaml.full_load(values_file)
+
 
 def raise_not_found(**kwargs):
     """Helper function to test try/except blocks"""
     raise k8s.client.rest.ApiException(status=404)
 
+
 def return_none(**kwargs):
     return None
+
 
 # This is used to mock the main function that makes calls to the control plane
 def mocked_create_secret(namespace, name, secret_type, data=None, string_data=None):
     print('Running mocked create_secret function')
     return install.get_secret_body(name, secret_type, data, string_data)
 
-# This is used to mock the k8s api function that makes calls to the control plane. Return a hard-coded secret. 
+
+# This is used to mock the k8s api function that makes calls to the control plane. Return a hard-coded secret.
 def mocked_read_namespaced_secret(namespace, name):
     return install.get_secret_body(name, 'Opaque', data={"secret_key": "secret_value"})
 
+
 def mocked_read_namespaced_secret_return_values(namespace, name):
-    return install.get_secret_body(name, 'Opaque', data=install.build_install_secret(test_vals))  
+    return install.get_secret_body(name, 'Opaque', data=install.build_install_secret(test_vals))
+
 
 def mocked_patch_namespaced_secret(name, namespace, body):
     current_secret = install.get_secret_body(name, 'Opaque', data={"secret_key": "secret_value"})
     current_secret.data.update(body.data)
     return current_secret
 
+
 # These are used to mock helm calls to list deployed releases
 # helm list --filter insights --deployed -o json
 def mocked_helm_list_returns_valid_json(base_command):
     return '[{"name":"insights","namespace":"testNamespace","revision":"1","updated":"2022-02-23 10:39:53.7668809 +0000 UTC","status":"deployed","chart":"insights-0.11.0-rc.39","app_version":"0.11.0-rc.8"}]'
 
+
 def mocked_helm_list_returns_empty_json(base_command):
     return '[]'
 
+
 def mocked_helm_search_returns_valid_json(base_command, check=True, capture_output=True, text=True):
     return install.subprocess.CompletedProcess(
-        args=base_command, 
+        args=base_command,
         returncode=0,
         stdout='[{"name":"kx-insights/kxi-operator","version":"1.1.0","app_version":"1.1.0-rc.43","description":"KX Insights Operator"}]\n'
     )
 
+
 def mocked_helm_search_returns_empty_json(base_command, check=True, capture_output=True, text=True):
     return install.subprocess.CompletedProcess(
-        args=base_command, 
+        args=base_command,
         returncode=0,
         stdout='[]\n'
     )
 
+
 def test_get_secret_body_string_data_parameter():
-    sdata = {'a':'b'}
+    sdata = {'a': 'b'}
 
     expected = k8s.client.V1Secret()
     expected.metadata = k8s.client.V1ObjectMeta(name=test_secret)
@@ -91,8 +103,9 @@ def test_get_secret_body_string_data_parameter():
 
     assert secret == expected
 
+
 def test_get_secret_body_data_parameter():
-    data = {'a':'b'}
+    data = {'a': 'b'}
 
     expected = k8s.client.V1Secret()
     expected.metadata = k8s.client.V1ObjectMeta(name=test_secret)
@@ -102,10 +115,11 @@ def test_get_secret_body_data_parameter():
 
     assert secret == expected
 
+
 def test_create_docker_config():
     test_cfg = {
         'auths': {
-            test_repo : {
+            test_repo: {
                 'username': test_user,
                 'password': test_pass,
                 'auth': base64.b64encode(f'{test_user}:{test_pass}'.encode()).decode('ascii')
@@ -115,6 +129,7 @@ def test_create_docker_config():
 
     assert install.create_docker_config(test_repo, test_user, test_pass) == test_cfg
 
+
 def test_create_docker_secret(mocker):
     mocker.patch('kxicli.commands.install.create_secret', mocked_create_secret)
     test_cfg = install.create_docker_config(test_repo, test_user, test_pass)
@@ -123,6 +138,7 @@ def test_create_docker_secret(mocker):
     assert res.type == 'kubernetes.io/dockerconfigjson'
     assert res.metadata.name == test_secret
     assert '.dockerconfigjson' in res.data
+
 
 def test_create_license_secret_encoded(mocker):
     mocker.patch('kxicli.commands.install.create_secret', mocked_create_secret)
@@ -134,6 +150,7 @@ def test_create_license_secret_encoded(mocker):
     with open(test_lic_file, 'rb') as license_file:
         assert base64.b64decode(res.string_data['license']) == license_file.read()
 
+
 def test_create_license_secret_decoded(mocker):
     mocker.patch('kxicli.commands.install.create_secret', mocked_create_secret)
     res = install.create_license_secret(test_ns, test_secret, test_lic_file, False)
@@ -144,6 +161,7 @@ def test_create_license_secret_decoded(mocker):
     with open(test_lic_file, 'rb') as license_file:
         assert base64.b64decode(res.data['license']) == license_file.read()
 
+
 def test_create_tls_secret(mocker):
     mocker.patch('kxicli.commands.install.create_secret', mocked_create_secret)
     res = install.create_tls_secret(test_ns, test_secret, test_cert, test_key)
@@ -152,6 +170,7 @@ def test_create_tls_secret(mocker):
     assert res.metadata.name == test_secret
     assert 'tls.crt' in res.data
     assert 'tls.key' in res.data
+
 
 def test_read_secret_returns_k8s_secret(mocker):
     mock = mocker.patch(IPATH_KUBE_COREV1API)
@@ -162,6 +181,7 @@ def test_read_secret_returns_k8s_secret(mocker):
     assert res.metadata.name == test_secret
     assert res.data == {"secret_key": "secret_value"}
 
+
 def test_read_secret_returns_empty_when_does_not_exist(mocker):
     mock = mocker.patch(IPATH_KUBE_COREV1API)
     mock.return_value.read_namespaced_secret.side_effect = raise_not_found
@@ -169,11 +189,13 @@ def test_read_secret_returns_empty_when_does_not_exist(mocker):
 
     assert res == None
 
+
 def test_get_install_config_secret_returns_decoded_secret(mocker):
     mocker.patch(IPATH_INSTALL_READ_SECRET, mocked_read_namespaced_secret_return_values)
     res = install.get_install_config_secret(test_ns, test_secret)
 
     assert res == yaml.dump(test_vals)
+
 
 def test_get_install_config_secret_when_does_not_exist(mocker):
     mocker.patch(IPATH_INSTALL_READ_SECRET, return_none)
@@ -181,14 +203,17 @@ def test_get_install_config_secret_when_does_not_exist(mocker):
 
     assert res == None
 
+
 def test_patch_secret_returns_updated_k8s_secret(mocker):
     mock = mocker.patch(IPATH_KUBE_COREV1API)
     mock.return_value.patch_namespaced_secret = mocked_patch_namespaced_secret
-    res = install.patch_secret(namespace=test_ns, name=test_secret, secret_type='Opaque', data={"secret_key": "new_value"})
+    res = install.patch_secret(namespace=test_ns, name=test_secret, secret_type='Opaque',
+                               data={"secret_key": "new_value"})
 
     assert res.type == 'Opaque'
     assert res.metadata.name == test_secret
     assert res.data == {"secret_key": "new_value"}
+
 
 def test_create_install_config_secret_when_does_not_exists(mocker):
     mocker.patch('kxicli.commands.install.create_secret', mocked_create_secret)
@@ -201,7 +226,8 @@ def test_create_install_config_secret_when_does_not_exists(mocker):
     assert 'values.yaml' in res.data
     assert yaml.full_load(base64.b64decode(res.data['values.yaml'])) == test_vals
 
-def test_create_install_config_secret_when_secret_exists_and_user_overwrites(mocker,monkeypatch):
+
+def test_create_install_config_secret_when_secret_exists_and_user_overwrites(mocker, monkeypatch):
     mocker.patch('kxicli.commands.install.patch_secret', mocked_create_secret)
     mocker.patch(IPATH_INSTALL_READ_SECRET, mocked_read_namespaced_secret_return_values)
 
@@ -218,7 +244,8 @@ def test_create_install_config_secret_when_secret_exists_and_user_overwrites(moc
     # assert that secret is updated with new_values
     assert yaml.full_load(base64.b64decode(res.data['values.yaml'])) == new_values
 
-def test_create_install_config_secret_when_secret_exists_and_user_declines_overwrite(mocker,monkeypatch):
+
+def test_create_install_config_secret_when_secret_exists_and_user_declines_overwrite(mocker, monkeypatch):
     mocker.patch('kxicli.commands.install.patch_secret', mocked_create_secret)
     mocker.patch(IPATH_INSTALL_READ_SECRET, mocked_read_namespaced_secret_return_values)
 
@@ -235,6 +262,7 @@ def test_create_install_config_secret_when_secret_exists_and_user_declines_overw
     # assert that secret is unchanged
     assert yaml.full_load(base64.b64decode(res.data['values.yaml'])) == test_vals
 
+
 def test_build_install_secret():
     data = {"secretName": "a_test_secret_name"}
     res = install.build_install_secret(data)
@@ -242,10 +270,12 @@ def test_build_install_secret():
     assert 'values.yaml' in res
     assert yaml.full_load(base64.b64decode(res['values.yaml'])) == data
 
+
 def test_get_install_values_returns_values_from_secret(mocker):
     mocker.patch(IPATH_INSTALL_READ_SECRET, mocked_read_namespaced_secret_return_values)
     assert install.get_install_values(namespace=test_ns, install_config_secret=test_secret) == yaml.dump(test_vals)
     assert install.get_install_values(namespace=test_ns, install_config_secret=None) == None
+
 
 def test_get_install_values_exits_when_secret_not_found(mocker):
     mock = mocker.patch(IPATH_KUBE_COREV1API)
@@ -255,6 +285,7 @@ def test_get_install_values_exits_when_secret_not_found(mocker):
     assert pytest_wrapped_e.type == SystemExit
     assert pytest_wrapped_e.value.code == 1
 
+
 def test_get_operator_version_returns_operator_version_if_passed_regardless_of_rc():
     non_rc = install.get_operator_version('kxi-insights', '1.2.3', '4.5.6')
     rc = install.get_operator_version('kxi-insights', '1.2.3-rc.1', '4.5.6')
@@ -262,32 +293,39 @@ def test_get_operator_version_returns_operator_version_if_passed_regardless_of_r
     assert non_rc == '4.5.6'
     assert rc == '4.5.6'
 
+
 def test_get_operator_version_returns_latest_minor_version(mocker):
     mocker.patch('subprocess.run', mocked_helm_search_returns_valid_json)
     assert install.get_operator_version('kxi-insights', '1.1.1', None) == '1.1.0'
+
 
 def test_get_operator_version_returns_error_when_not_found(mocker):
     mocker.patch('subprocess.run', mocked_helm_search_returns_empty_json)
     with pytest.raises(SystemExit) as pytest_wrapped_e:
         install.get_operator_version('kxi-insights', '5.6.7', None)
     assert pytest_wrapped_e.type == SystemExit
-    assert pytest_wrapped_e.value.code == 1    
+    assert pytest_wrapped_e.value.code == 1
+
 
 def test_insights_installed_returns_true_when_already_exists(mocker):
     mocker.patch('subprocess.check_output', mocked_helm_list_returns_valid_json)
     assert install.insights_installed('insights', test_ns) == True
 
+
 def test_insights_installed_returns_false_when_already_exists(mocker):
     mocker.patch('subprocess.check_output', mocked_helm_list_returns_empty_json)
     assert install.insights_installed('insights', test_ns) == False
+
 
 def test_operator_installed_returns_true_when_already_exists(mocker):
     mocker.patch('subprocess.check_output', mocked_helm_list_returns_valid_json)
     assert install.operator_installed('insights') == True
 
+
 def test_operator_installed_returns_false_when_already_exists(mocker):
     mocker.patch('subprocess.check_output', mocked_helm_list_returns_empty_json)
     assert install.operator_installed('insights') == False
+
 
 def test_sanitize_auth_url():
     https_replaced = install.sanitize_auth_url('https://keycloak.keycloak.svc.cluster.local/auth/')
@@ -299,26 +337,36 @@ def test_sanitize_auth_url():
     assert trailing_slash == expected
     assert prepend_http == expected
 
+
 def test_get_image_and_license_secret_from_values_returns_defaults():
-    assert install.get_image_and_license_secret_from_values(None, None, None, None) == ('kxi-nexus-pull-secret','kxi-license')
+    assert install.get_image_and_license_secret_from_values(None, None, None, None) == (
+    'kxi-nexus-pull-secret', 'kxi-license')
+
 
 def test_get_image_and_license_secret_from_values_returns_from_secret():
     test_vals_secret = copy.deepcopy(test_vals)
     test_vals_secret['global']['imagePullSecrets'] = [{'name': 'image-pull-from-secret'}]
     test_vals_secret['global']['license']['secretName'] = 'license-from-secret'
-    assert install.get_image_and_license_secret_from_values(str(test_vals_secret), None, None, None) == ('image-pull-from-secret', 'license-from-secret')
+    assert install.get_image_and_license_secret_from_values(str(test_vals_secret), None, None, None) == (
+    'image-pull-from-secret', 'license-from-secret')
+
 
 def test_get_image_and_license_secret_from_values_file_overrides_secret():
     test_vals_secret = copy.deepcopy(test_vals)
     test_vals_secret['global']['imagePullSecrets'] = [{'name': 'image-pull-from-secret'}]
     test_vals_secret['global']['license']['secretName'] = 'license-from-secret'
-    assert install.get_image_and_license_secret_from_values(str(test_vals_secret), test_val_file, None, None) == ('kxi-nexus-pull-secret','kxi-license')
+    assert install.get_image_and_license_secret_from_values(str(test_vals_secret), test_val_file, None, None) == (
+    'kxi-nexus-pull-secret', 'kxi-license')
+
 
 def test_get_image_and_license_secret_from_values_args_overrides_secret_and_file():
     test_vals_secret = copy.deepcopy(test_vals)
     test_vals_secret['global']['imagePullSecrets'] = [{'name': 'image-pull-from-secret'}]
     test_vals_secret['global']['license']['secretName'] = 'license-from-secret'
-    assert install.get_image_and_license_secret_from_values(str(test_vals_secret), test_val_file, 'image-pull-from-arg', 'license-from-arg') == ('image-pull-from-arg', 'license-from-arg')
+    assert install.get_image_and_license_secret_from_values(str(test_vals_secret), test_val_file, 'image-pull-from-arg',
+                                                            'license-from-arg') == (
+           'image-pull-from-arg', 'license-from-arg')
+
 
 def test_get_image_and_license_secret_returns_error_when_invalid_secret_passed():
     with pytest.raises(SystemExit) as pytest_wrapped_e:
@@ -326,21 +374,26 @@ def test_get_image_and_license_secret_returns_error_when_invalid_secret_passed()
     assert pytest_wrapped_e.type == SystemExit
     assert pytest_wrapped_e.value.code == 1
 
+
 def test_get_image_and_license_secret_returns_error_when_invalid_file_passed():
     with pytest.raises(SystemExit) as pytest_wrapped_e:
         install.get_image_and_license_secret_from_values(None, test_lic_file, None, None)
     assert pytest_wrapped_e.type == SystemExit
     assert pytest_wrapped_e.value.code == 1
 
+
 def test_get_missing_key_with_no_dict_returns_all_keys():
     keys = ('a', 'b')
     assert list(keys) == install.get_missing_keys(None, ('a', 'b'))
 
+
 def test_get_missing_key_with_key_missing():
     assert ['a'] == install.get_missing_keys({'b': 2, 'c': 3}, ('a', 'b'))
 
+
 def test_get_missing_key_with_no_key_missing():
     assert [] == install.get_missing_keys({'a': 1, 'b': 2}, ('a', 'b'))
+
 
 def test_validate_secret_when_no_secret_exists(mocker):
     # return 'None' to indicate that the secret was not found
@@ -351,32 +404,37 @@ def test_validate_secret_when_no_secret_exists(mocker):
     assert pytest_wrapped_e.type == SystemExit
     assert pytest_wrapped_e.value.code == 1
 
+
 def test_validate_secret_when_missing_a_key(mocker):
     mock = mocker.patch(IPATH_KUBE_COREV1API)
     mock.return_value.read_namespaced_secret = mocked_read_namespaced_secret
     assert (False, ['test']) == install.validate_secret(test_ns, test_secret, test_secret_type, ('test',))
+
 
 def test_validate_secret_when_incorrect_type(mocker):
     mock = mocker.patch(IPATH_KUBE_COREV1API)
     mock.return_value.read_namespaced_secret = mocked_read_namespaced_secret
     assert (False, []) == install.validate_secret(test_ns, test_secret, 'kubernetes.io/tls', ('secret_key',))
 
+
 def test_prompt_and_validate_existing_secret_when_no_validation_defined(mocker):
     mocker.patch(IPATH_CLICK_PROMPT, return_value=test_secret)
     assert test_secret == install.prompt_and_validate_existing_secret(test_ns, 'no_validation')
+
 
 def test_secret_validation_in_prompt_and_validate_existing_secret_validation_when_valid(mocker):
     # returns a secret that satisfies the validation logic
     # it has the expected type and the required keys based on the secret_use
     def gen_valid_secret(secret_use):
         req_keys = install.SECRET_VALIDATION[secret_use][1]
-        secret_data = dict(zip(req_keys, [1]*len(req_keys)))
+        secret_data = dict(zip(req_keys, [1] * len(req_keys)))
         return install.get_secret_body(test_secret, install.SECRET_VALIDATION[secret_use][0], data=secret_data)
 
     mocker.patch(IPATH_CLICK_PROMPT, return_value=test_secret)
     for secret_use in install.SECRET_VALIDATION:
         mocker.patch(IPATH_INSTALL_READ_SECRET, return_value=gen_valid_secret(secret_use))
         assert test_secret == install.prompt_and_validate_existing_secret(test_ns, secret_use)
+
 
 def test_secret_validation_in_prompt_and_validate_existing_secret_validation_when_invalid(mocker):
     # returns a secret that fails the validation logic

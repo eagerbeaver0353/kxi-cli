@@ -21,9 +21,11 @@ if __name__ == '__main__':
     logout()
 ```
 
-`@click.command()` indicates that the following function is a Click command. `@click.option` specifies that you want to be able to pass an option called `name` on the command line, this is passed by Click as a parameter to the function.
+`@click.command()` indicates that the following function is a Click command. `@click.option` specifies that you want to
+be able to pass an option called `name` on the command line, this is passed by Click as a parameter to the function.
 
-Note the use of `click.echo` in place of `print`, Click aims to be compatible between Python 2 and 3 and also adds support for ANSI colours if available.
+Note the use of `click.echo` in place of `print`, Click aims to be compatible between Python 2 and 3 and also adds
+support for ANSI colours if available.
 
 ```shell-session
 $ python cli.py
@@ -89,7 +91,8 @@ when running like this, calling the `logout` function is handled automatically b
 
 ### Prompting
 
-`Click` provides the ability to prompt for user input. This can be used to ask the user for a name if one isn't provided as an option
+`Click` provides the ability to prompt for user input. This can be used to ask the user for a name if one isn't provided
+as an option
 
 ```python
 # cli.py
@@ -116,7 +119,8 @@ Goodbye developer
 
 ### Confirmation prompts
 
-`Click` has a special type of prompt for getting user confirmation. This is useful for destructive operations like deleting files.
+`Click` has a special type of prompt for getting user confirmation. This is useful for destructive operations like
+deleting files.
 
 The example here shows how it can be used to confirm that you want to logout.
 
@@ -266,7 +270,8 @@ Kubernetes has an official Python client that provides Python classes and method
 The common pattern for using these is
 
 1. Load the Kubernetes config file to get authorization tokens for the API
-2. Create an instance of the API class that you want to use, essentially equivalent to the `apiVersion` in the yaml manifests
+2. Create an instance of the API class that you want to use, essentially equivalent to the `apiVersion` in the yaml
+   manifests
 3. Try to run the call
 4. Catch any exceptions
 
@@ -296,7 +301,8 @@ def pods(namespace):
         click.echo(f'Exception when calling CoreV1Api->list_namespace_pod: {e}')
 ```
 
-The Kubernetes package isn't in the standard library so this needs to be added to the `setup.py` to ensure it exists for the install.
+The Kubernetes package isn't in the standard library so this needs to be added to the `setup.py` to ensure it exists for
+the install.
 
 ```
 # setup.py

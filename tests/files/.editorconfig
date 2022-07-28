@@ -1,0 +1,16 @@
+# Visual Studio Code requires the following plugin:
+# https://marketplace.visualstudio.com/items?itemName=EditorConfig.EditorConfig
+
+root = true
+
+[*]
+charset = unset
+end_of_line = unset
+indent_size = unset
+indent_style = unset
+insert_final_newline = unset
+max_line_length = unset
+tab_width = unset
+# VS param
+# https://docs.microsoft.com/en-us/visualstudio/code-quality/use-roslyn-analyzers?view=vs-2022#configure-generated-code
+generated_code = true
