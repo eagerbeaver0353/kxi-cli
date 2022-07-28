@@ -48,7 +48,7 @@ To verify the existing tests work as expected and to add further test coverage, 
 as below.
 
 ```bash
-pip install -r kxicli/tests/requirements.txt
-export KUBECONFIG=$(pwd)/kxicli/tests/files/test-kube-config
+pip install -r tests/requirements.txt
+export KUBECONFIG=$(pwd)/tests/files/test-kube-config
 pytest
 ```
