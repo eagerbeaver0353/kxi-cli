@@ -2,8 +2,8 @@
 import base64
 import copy
 import io
+import json
 import os
-
 import kubernetes as k8s
 import pytest
 import yaml
@@ -30,6 +30,8 @@ common.config.load_config("default")
 IPATH_KUBE_COREV1API = 'kubernetes.client.CoreV1Api'
 IPATH_INSTALL_READ_SECRET = 'kxicli.commands.install.read_secret'
 IPATH_CLICK_PROMPT = 'click.prompt'
+fun_subprocess_check_output = 'subprocess.check_output'
+
 
 with open(test_val_file, 'rb') as values_file:
     test_vals = yaml.full_load(values_file)
@@ -307,23 +309,28 @@ def test_get_operator_version_returns_error_when_not_found(mocker):
     assert pytest_wrapped_e.value.code == 1
 
 
+def test_get_installed_charts_returns_chart_json(mocker):
+    mocker.patch(fun_subprocess_check_output, mocked_helm_list_returns_valid_json)
+    assert install.get_installed_charts('insights', test_ns) == json.loads(mocked_helm_list_returns_valid_json(''))
+
+
 def test_insights_installed_returns_true_when_already_exists(mocker):
-    mocker.patch('subprocess.check_output', mocked_helm_list_returns_valid_json)
+    mocker.patch(fun_subprocess_check_output, mocked_helm_list_returns_valid_json)
     assert install.insights_installed('insights', test_ns) == True
 
 
-def test_insights_installed_returns_false_when_already_exists(mocker):
-    mocker.patch('subprocess.check_output', mocked_helm_list_returns_empty_json)
+def test_insights_installed_returns_false_when_does_not_exist(mocker):
+    mocker.patch(fun_subprocess_check_output, mocked_helm_list_returns_empty_json)
     assert install.insights_installed('insights', test_ns) == False
 
 
 def test_operator_installed_returns_true_when_already_exists(mocker):
-    mocker.patch('subprocess.check_output', mocked_helm_list_returns_valid_json)
+    mocker.patch(fun_subprocess_check_output, mocked_helm_list_returns_valid_json)
     assert install.operator_installed('insights') == True
 
 
-def test_operator_installed_returns_false_when_already_exists(mocker):
-    mocker.patch('subprocess.check_output', mocked_helm_list_returns_empty_json)
+def test_operator_installed_returns_false_when_does_not_exist(mocker):
+    mocker.patch(fun_subprocess_check_output, mocked_helm_list_returns_empty_json)
     assert install.operator_installed('insights') == False
 
 
