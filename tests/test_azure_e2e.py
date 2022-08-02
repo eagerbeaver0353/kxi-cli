@@ -11,7 +11,7 @@ from kxicli.commands.azure import default_insights_namespace
 from kxicli.common import get_default_val
 from test_azure import fun_assembly_create_assemblies_from_file, _create_assemblies_from_file, \
     fun_assembly_delete_running_assemblies, _delete_running_assemblies, \
-    fun_assembly_backup_assemblies, _backup_assemblies, fake_version, fake_values_str, fun_install_read_secret, \
+    fun_assembly_backup_assemblies, _backup_assemblies, fake_version, fake_values_yaml, fun_install_read_secret, \
     read_secret, fun_subprocess_run, subprocess_run_helm_success, \
     install_create_namespace, fun_assembly_get_assemblies_list, _get_assemblies_list, helm_version_checked, \
     fun_install_operator_installed, install_operator_installed, fun_common_get_existing_crds, \
@@ -118,7 +118,7 @@ def test_install(mocker: MockerFixture):
             f.write(a_test_asm_str)
         with temp_file(file_name='values.yaml') as values_file:
             with open(values_file, mode='w') as vf:
-                vf.write(fake_values_str)
+                vf.write(fake_values_yaml)
             result = runner.invoke(
                 typing.cast(BaseCommand, main.cli),
                 args=[
@@ -186,7 +186,7 @@ def test_upgrade(mocker: MockerFixture):
             f.write(a_test_asm_str)
         with temp_file(file_name='values.yaml') as values_file:
             with open(values_file, mode='w') as vf:
-                vf.write(fake_values_str)
+                vf.write(fake_values_yaml)
             result = runner.invoke(
                 typing.cast(BaseCommand, main.cli),
                 args=[

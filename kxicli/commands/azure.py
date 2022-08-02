@@ -29,7 +29,11 @@ default_kxi_operator_namespace: str = 'kxi-operator'
 default_insights_release: str = 'insights'
 default_kxi_operator_release: str = 'kxi-operator'
 
-docker_config_secret_name: str = 'kxi-acr-pull-secret'
+default_values_secret_name: str = 'kxi-config'
+default_values_secret_data_name: str = 'kxi-config.yaml'
+
+default_docker_config_secret_name: str = 'kxi-acr-pull-secret'
+default_docker_config_secret_data_name: str = '.dockerconfigjson'
 
 
 class RequiredHelmVersion(Version):
@@ -104,7 +108,7 @@ def upgrade(
 
     is_interactive_exec: bool = not force
 
-    values: str = get_values(values_file=filepath, values_url=values_url)
+    values: str = get_values(values_file=filepath, values_url=values_url, insights_namespace=namespace)
 
     chart_repo_url: str = get_repo_url(values)
 
@@ -265,7 +269,7 @@ def install(
 
     is_interactive_exec: bool = not force
 
-    values: str = get_values(values_file=filepath, values_url=values_url)
+    values: str = get_values(values_file=filepath, values_url=values_url, insights_namespace=namespace)
 
     chart_repo_url: str = get_repo_url(values)
 
@@ -385,7 +389,21 @@ def get_helm_version_checked() -> HelmVersionChecked:
     )
 
 
-def get_values(values_file: Optional[str], values_url: Optional[str]) -> str:
+def get_secret(namespace: str, secret_name: str, secret_data_name: str, msg: str) -> str:
+    secret: V1Secret = install_lib.read_secret(namespace, secret_name)
+    if secret is not None:
+        return base64.b64decode(secret.data[secret_data_name]).decode('ascii')
+    else:
+        raise ClickException(msg)
+
+
+def get_values(
+        values_file: Optional[str],
+        values_url: Optional[str],
+        insights_namespace: str = default_insights_namespace,
+        secret_name: str = default_values_secret_name,
+        secret_data_name: str = default_values_secret_data_name
+) -> str:
     if values_file is not None:
         with open(values_file) as f:
             try:
@@ -395,7 +413,12 @@ def get_values(values_file: Optional[str], values_url: Optional[str]) -> str:
     elif values_url is not None:
         return requests.get(values_url, allow_redirects=True).text
     else:
-        raise click.ClickException('Either --values-file or --values-url must be provided')
+        return get_secret(
+            namespace=insights_namespace,
+            secret_name=secret_name,
+            secret_data_name=secret_data_name,
+            msg='Values not found stored in the deployment. Either --values-file or --values-url must be provided'
+        )
 
 
 def get_repo_url(values: str) -> str:
@@ -406,12 +429,17 @@ def get_repo_url(values: str) -> str:
     return f'oci://{global_image_repository.split("/")[0]}'
 
 
-def get_docker_config(kxi_operator_namespace: str) -> str:
-    docker_config_secret: V1Secret = install_lib.read_secret(kxi_operator_namespace, docker_config_secret_name)
-    if docker_config_secret is not None:
-        return base64.b64decode(docker_config_secret.data['.dockerconfigjson']).decode('ascii')
-    else:
-        raise ClickException('Docker config secret not found in Cluster')
+def get_docker_config(
+        kxi_operator_namespace: str = default_kxi_operator_namespace,
+        secret_name: str = default_docker_config_secret_name,
+        secret_data_name: str = default_docker_config_secret_data_name
+) -> str:
+    return get_secret(
+        namespace=kxi_operator_namespace,
+        secret_name=secret_name,
+        secret_data_name=secret_data_name,
+        msg='Docker config secret not found in Cluster'
+    )
 
 
 def get_assemblies(insights_namespace: str) -> List:
