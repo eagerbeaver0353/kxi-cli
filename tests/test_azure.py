@@ -17,7 +17,8 @@ from kxicli.commands.azure import LocalHelmVersion, minimum_helm_version, _get_h
     restore_assemblies, default_insights_namespace, install_insights, install_kxi_operator, \
     default_kxi_operator_release, default_kxi_operator_namespace, delete_crds, uninstall_kxi_operator, \
     uninstall_insights, delete_assemblies, backup_assemblies, get_assemblies, get_docker_config, get_repo_url, \
-    get_values, get_helm_version_checked
+    get_values, get_helm_version_checked, default_docker_config_secret_data_name, default_values_secret_data_name, \
+    default_docker_config_secret_name, default_values_secret_name
 from kxicli.common import get_default_val as default_val
 from utils import temp_file
 
@@ -57,7 +58,12 @@ fake_values: dict = {
         }
     }
 }
-fake_values_str: str = yaml.dump(fake_values)
+fake_values_yaml: str = yaml.dump(fake_values)
+fake_values_secret: V1Secret = V1Secret(
+    data={
+        default_values_secret_data_name: base64.b64encode(fake_values_yaml.encode('ascii'))
+    }
+)
 
 fake_helm_version_checked: HelmVersionChecked = HelmVersionChecked(
     req_helm_version=required_helm_version,
@@ -67,7 +73,7 @@ fake_assemblies: List[str] = ['asdf']
 
 fake_docker_config_secret: V1Secret = V1Secret(
     data={
-        '.dockerconfigjson': base64.b64encode(fake_docker_config_yaml.encode('ascii'))
+        default_docker_config_secret_data_name: base64.b64encode(fake_docker_config_yaml.encode('ascii'))
     }
 )
 config_json_file_name: str = 'config.json'
@@ -201,7 +207,11 @@ def _get_assemblies_list_raise_apiexception_other(namespace: str) -> FakeK8SCust
 
 
 def read_secret(namespace: str, name: str) -> Optional[V1Secret]:
-    return fake_docker_config_secret
+    if namespace == default_insights_namespace and name == default_values_secret_name:
+        return fake_values_secret
+    elif namespace == default_kxi_operator_namespace and name == default_docker_config_secret_name:
+        return fake_docker_config_secret
+    return None
 
 
 def read_secret_fail(namespace: str, name: str) -> Optional[V1Secret]:
@@ -376,7 +386,7 @@ def test_install_insights_helm_success(mocker: MockerFixture):
         namespace=default_insights_namespace,
         version=fake_version,
         chart_repo_url=fake_chart_repo_url,
-        values=fake_values_str,
+        values=fake_values_yaml,
         docker_config=fake_docker_config_yaml,
         helm_version_checked=helm_version_checked
     )
@@ -408,7 +418,7 @@ def test_install_kxi_operator(mocker: MockerFixture):
         namespace=default_kxi_operator_namespace,
         version=fake_version,
         chart_repo_url=fake_chart_repo_url,
-        values=fake_values_str,
+        values=fake_values_yaml,
         docker_config=fake_docker_config_yaml,
         helm_version_checked=helm_version_checked
     )
@@ -573,10 +583,11 @@ def test_get_docker_config_fail(mocker: MockerFixture):
 
 
 def test_get_repo_url():
-    assert get_repo_url(fake_values_str) == fake_chart_repo_url
+    assert get_repo_url(fake_values_yaml) == fake_chart_repo_url
 
 
-def test_get_values_both_none():
+def test_get_values_both_none_no_secret(mocker: MockerFixture):
+    mocker.patch(fun_install_read_secret, read_secret_fail)
     with pytest.raises(click.ClickException):
         get_values(
             values_file=None,
@@ -584,24 +595,32 @@ def test_get_values_both_none():
         )
 
 
+def test_get_values_both_none_but_secret(mocker: MockerFixture):
+    mocker.patch(fun_install_read_secret, read_secret)
+    assert get_values(
+            values_file=None,
+            values_url=None
+    ) == fake_values_yaml
+
+
 def test_get_values_url_only():
     fake_values_url: str = "https://my-values-url.com/values.yaml"
     with requests_mock.Mocker() as m:
-        m.get(fake_values_url, text=fake_values_str)
+        m.get(fake_values_url, text=fake_values_yaml)
         assert get_values(
             values_file=None,
             values_url=fake_values_url
-        ) == fake_values_str
+        ) == fake_values_yaml
 
 
 def test_get_values_file_only():
     with temp_file(file_name='values.yaml') as values_file:
         with open(values_file, mode='w') as vf:
-            vf.write(fake_values_str)
+            vf.write(fake_values_yaml)
         assert get_values(
             values_file=values_file,
             values_url=None
-        ) == fake_values_str
+        ) == fake_values_yaml
 
 
 def test_get_values_file_not_exists():
