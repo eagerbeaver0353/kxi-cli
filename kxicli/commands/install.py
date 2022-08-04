@@ -99,6 +99,7 @@ def setup(namespace, chart_repo_name, license_secret, license_as_env_var, client
         password = click.prompt('Please enter the password for the chart repository (input hidden)', hide_input=True)
         helm_add_repo(chart_repo_name, chart_repo_url, username, password)
 
+    license_on_demand = None
     if '--license-secret' not in sys.argv:
         click.secho('\nLicense details', bold=True)
         license_secret, license_on_demand = prompt_for_license(namespace, license_secret, license_as_env_var)
