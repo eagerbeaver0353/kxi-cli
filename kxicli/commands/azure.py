@@ -23,6 +23,7 @@ from kxicli.commands import install as install_lib
 from kxicli.commands.common import arg_force, arg_filepath, arg_operator_version as arg_common_operator_version, \
     arg_version, arg_release as arg_common_release, arg_namespace as arg_common_namespace, arg_assembly_backup_filepath
 from kxicli.common import get_help_text as help_text
+from kxicli.resources import secret
 
 default_insights_namespace: str = 'insights'
 default_kxi_operator_namespace: str = 'kxi-operator'
@@ -390,9 +391,9 @@ def get_helm_version_checked() -> HelmVersionChecked:
 
 
 def get_secret(namespace: str, secret_name: str, secret_data_name: str, msg: str) -> str:
-    secret: V1Secret = install_lib.read_secret(namespace, secret_name)
-    if secret is not None:
-        return base64.b64decode(secret.data[secret_data_name]).decode('ascii')
+    s: V1Secret = secret.Secret(namespace, secret_name).read()
+    if s is not None:
+        return base64.b64decode(s.data[secret_data_name]).decode('ascii')
     else:
         raise ClickException(msg)
 

@@ -4,6 +4,8 @@ from pathlib import Path
 
 import click
 
+from kxicli import phrases
+
 config_dir_path = Path.home() / '.insights'
 config_dir = str(config_dir_path)
 config_file = str(config_dir_path / 'cli-config')
@@ -22,7 +24,7 @@ def load_config(profile):
 
 def append_config(profile, name, value):
     """Append an option to the configuration for a specific profile"""
-    click.echo(f'Persisting option {name} to file {config_file}')
+    click.echo(phrases.persist_config.format(name=name, file=config_file))
 
     global config
 

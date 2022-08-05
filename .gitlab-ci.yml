@@ -62,6 +62,7 @@ build dist:
     - coverage report
     - coverage html
     - coverage xml
+  coverage: /^TOTAL.*\s+(\d+%)$/
   artifacts:
     paths:
       - htmlcov
