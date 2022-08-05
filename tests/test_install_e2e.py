@@ -7,44 +7,38 @@ from contextlib import contextmanager
 from pathlib import Path
 from tempfile import mkdtemp
 
-import kubernetes as k8s
 import yaml
 from click.testing import CliRunner
 
 from kxicli import common
 from kxicli import main
+from kxicli import phrases
+from kxicli.resources import secret
+from utils import mock_kube_secret_api, return_none, raise_not_found, \
+    test_val_file, mock_validate_secret
+from cli_io import cli_input, cli_output
+from const import test_namespace,  test_chart_repo_name, test_chart_repo_url, \
+    test_user, test_pass, test_docker_config_json
 
 common.config.config_file = os.path.dirname(__file__) + '/files/test-cli-config'
 common.config.load_config("default")
 
-test_host = 'test.internal-insights.kx.com'
-test_chart_repo_name = 'internal-nexus-dev'
-test_chart_repo_url = 'https://nexus.internal-insights.kx.com/repository/kx-helm-charts-dev'
-test_image_repo = 'test-repo.internal-insights.kx.com'
-test_user = 'user'
-test_pass = 'password'
 test_auth_url = 'http://keycloak.keycloak.svc.cluster.local/auth/'
 test_chart = 'kx-insights/insights'
 test_operator_chart = 'kx-insights/kxi-operator'
 test_install_secret = 'test-install-secret'
 
-test_val_file = os.path.dirname(__file__) + '/files/test-values.yaml'
-test_val_file_shared_keycloak = os.path.dirname(__file__) + '/files/test-values-shared-keycloak.yaml'
+test_val_file_shared_keycloak = str(Path(__file__).parent / 'files' / 'test-values-shared-keycloak.yaml')
 test_k8s_config = str(Path(__file__).parent / 'files' / 'test-kube-config')
-test_cli_config_static = os.path.dirname(__file__) + '/files/test-cli-config'
-test_lic_file = os.path.dirname(__file__) + '/files/test-license'
+test_cli_config_static = str(Path(__file__).parent / 'files' / 'test-cli-config')
 expected_test_output_file = str(Path(__file__).parent / 'files' / 'output-values.yaml')
-test_output_file_lic_env_var = os.path.dirname(__file__) + '/files/output-values-license-as-env-var.yaml'
-test_output_file_lic_on_demand = os.path.dirname(__file__) + '/files/output-values-license-on-demand.yaml'
-test_docker_config_json = os.path.dirname(__file__) + '/files/test-docker-config-json'
-test_asm_file = os.path.dirname(__file__) + '/files/assembly-v1.yaml'
+test_output_file_lic_env_var = str(Path(__file__).parent / 'files' / 'output-values-license-as-env-var.yaml')
+test_output_file_lic_on_demand = str(Path(__file__).parent / 'files' / 'output-values-license-on-demand.yaml')
+test_output_file_manual_ingress = str(Path(__file__).parent / 'files' / 'output-values-manual-ingress-secret.yaml')
+test_asm_file = str(Path(__file__).parent / 'files' / 'assembly-v1.yaml')
 test_asm_name = 'basic-assembly'  # As per contents of test_asm_file
-test_asm_backup = os.path.dirname(__file__) + '/files/test-assembly-backup.yaml'
+test_asm_backup =  str(Path(__file__).parent / 'files' / 'test-assembly-backup.yaml')
 test_crds = ['assemblies.insights.kx.com', 'assemblyresources.insights.kx.com']
-
-_, active_context = k8s.config.list_kube_config_contexts()
-test_namespace = active_context['context']['namespace']
-test_cluster = active_context['context']['cluster']
 
 with open(test_val_file, 'rb') as values_file:
     test_vals = yaml.full_load(values_file)
@@ -58,8 +52,7 @@ copy_secret_params = []
 
 # override where the command looks for the docker config json
 # by default this is $HOME/.docker/config.json
-main.install.docker_config_file_path = test_docker_config_json
-
+main.install.DOCKER_CONFIG_FILE_PATH = test_docker_config_json
 
 @contextmanager
 def temp_test_output_file(prefix: str = 'kxicli-e2e-', file_name='output-values.yaml'):
@@ -104,43 +97,10 @@ def compare_files(file1: str, file2: str):
         return filecmp.cmp(file1, file2, shallow=False)
 
 
-def mocked_create_secret(namespace, name, secret_type, data=None, string_data=None):
-    print(f'Secret {name} successfully created')
-
-
-def mock_validate_secret(mocker):
-    # Returns that the secret is valid and there are no missing keys
-    mocker.patch('kxicli.commands.install.validate_secret', return_value=(True, []))
-
-
-def mocked_patch_secret(namespace, name, secret_type, data=None, string_data=None):
-    print(f'Secret {name} successfully updated')
-
-
-def raise_not_found(**kwargs):
-    """Helper function to test try/except blocks"""
-    raise k8s.client.rest.ApiException(status=404)
-
-
-def return_none(**kwargs):
-    return None
-
-
-def mock_read_create_patch_secret(mocker):
-    # mock Kubernetes get API to raise a not found exception
-    mock = mocker.patch('kubernetes.client.CoreV1Api')
-    mock.return_value.read_namespaced_secret.side_effect = raise_not_found
-    mocker.patch('kxicli.commands.install.create_secret', mocked_create_secret)
-    mocker.patch('kxicli.commands.install.patch_secret', mocked_patch_secret)
-
-
-def mocked_read_secret(namespace, name):
-    install_secret = main.install.build_install_secret(test_vals)
-    return main.install.get_secret_body(name, 'Opaque', data=install_secret)
-
-
-def mock_read_secret(mocker):
-    mocker.patch('kxicli.commands.install.read_secret', mocked_read_secret)
+def mocked_read_namespaced_secret_return_values(namespace, name):
+    res = secret.Secret(namespace, name, main.install.SECRET_TYPE_OPAQUE)
+    res = main.install.populate_install_secret(res, {'values': test_vals})
+    return res.get_body()
 
 
 def mocked_helm_add_repo(repo, url, username, password):
@@ -170,7 +130,6 @@ def mocked_delete_crd(name):
 def mocked_copy_secret(name, from_ns, to_ns):
     global copy_secret_params
     copy_secret_params.append((name, from_ns, to_ns))
-    pass
 
 
 def mock_copy_secret(mocker):
@@ -265,7 +224,7 @@ def mocked_crd_exists(name):
 
 
 def mock_secret_helm_add(mocker):
-    mock_read_create_patch_secret(mocker)
+    mock_kube_secret_api(mocker, read=raise_not_found)
     mocker.patch('kxicli.commands.install.helm_add_repo', mocked_helm_add_repo)
 
 
@@ -302,7 +261,7 @@ def mock_create_assembly(namespace, body, wait=None):
 def upgrades_mocks(mocker):
     mock_subprocess_run(mocker)
     mock_create_namespace(mocker)
-    mock_read_secret(mocker)
+    mock_kube_secret_api(mocker, read=mocked_read_namespaced_secret_return_values)
     mock_copy_secret(mocker)
     mock_delete_crd(mocker)
     mock_delete_assembly(mocker)
@@ -310,181 +269,74 @@ def upgrades_mocks(mocker):
     mocker.patch('kxicli.commands.assembly._create_assembly', mock_create_assembly)
 
 
-def test_install_setup_when_creating_secrets(mocker):
+def install_setup_output_check(mocker, test_cfg, expected_exit_code):
     mock_secret_helm_add(mocker)
     mock_create_namespace(mocker)
     with temp_test_output_file() as test_output_file, temp_config_file() as test_cli_config:
-        runner = CliRunner()
-        with runner.isolated_filesystem():
-            # these are responses to the various prompts
-            user_input = f"""{test_host}
-{test_chart_repo_name}
-{test_chart_repo_url}
-{test_user}
-{test_pass}
-n
-{test_lic_file}
-{test_image_repo}
-n
-n
-{test_user}
-{test_pass}
-n
-n
-{test_pass}
-{test_pass}
-n
-{test_pass}
-{test_pass}
-n
-n
-n
-"""
-            result = runner.invoke(main.cli, ['install', 'setup', '--output-file', test_output_file], input=user_input)
-
-            # Transcript here is not intended because multi line strings are
-            # interpreted directly including indentation
-            expected_output = f"""KX Insights Install Setup
-
-Running in namespace {test_namespace} on the cluster {test_cluster}
-
-Please enter the hostname for the installation: {test_host}
-
-Chart details
-Please enter a name for the chart repository to set locally [{common.get_default_val('chart.repo.name')}]: {test_chart_repo_name}
-Please enter the chart repository URL to pull charts from [{common.get_default_val('chart.repo.url')}]: {test_chart_repo_url}
-Please enter the username for the chart repository: {test_user}
-Please enter the password for the chart repository (input hidden): 
-
-License details
-Do you have an existing license secret [y/N]: n
-Please enter the path to your kdb license: {test_lic_file}
-Secret kxi-license successfully created
-
-Image repository
-Please enter the image repository to pull images from [registry.dl.kx.com]: {test_image_repo}
-Do you have an existing image pull secret for {test_image_repo} [y/N]: n
-Credentials {test_user}@{test_image_repo} exist in {test_docker_config_json}, do you want to use these [y/N]: n
-Please enter the username for {test_image_repo}: {test_user}
-Please enter the password for {test_user} (input hidden): 
-Secret kxi-nexus-pull-secret successfully created
-
-Client certificate issuer
-Do you have an existing client certificate issuer [y/N]: n
-Secret kxi-certificate successfully created
-
-Keycloak
-Do you have an existing keycloak secret [y/N]: n
-Please enter the Keycloak Admin password (input hidden): 
-Please enter the Keycloak WildFly Management password (input hidden): 
-Secret kxi-keycloak successfully created
-Do you have an existing keycloak postgresql secret [y/N]: n
-Please enter the Postgresql postgres password (input hidden): 
-Please enter the Postgresql user password (input hidden): 
-Secret kxi-postgresql successfully created
-Do you want to set a secret for the gui service account explicitly [y/N]: n
-Randomly generating client secret for gui and setting in values file, record this value for reuse during upgrade
-Persisting option guiClientSecret to file {test_cli_config}
-Do you want to set a secret for the operator service account explicitly [y/N]: n
-Randomly generating client secret for operator and setting in values file, record this value for reuse during upgrade
-Persisting option operatorClientSecret to file {test_cli_config}
-
-Ingress
-Do you want to provide a self-managed cert for the ingress [y/N]: n
-Secret {common.get_default_val('install.configSecret')} successfully created
-
-KX Insights installation setup complete
-
-Helm values file for installation saved in {test_output_file}
-
-"""
-
-        assert result.exit_code == 0
-        assert result.output == expected_output
+        cmd = ['install', 'setup', '--output-file', test_output_file]
+        run_cli(cmd, test_cfg, test_cli_config, test_output_file, expected_exit_code)
 
 
-def test_install_setup_when_providing_secrets(mocker):
+def run_cli(cmd, test_cfg, cli_config = None, output_file = None, expected_exit_code = 0):
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        verb = cmd[1]
+        user_input = cli_input(verb, **test_cfg)
+        result = runner.invoke(main.cli, cmd, input=user_input)
+        expected_output = cli_output(verb, cli_config, output_file, **test_cfg)
+    assert result.exit_code == expected_exit_code
+    assert result.output == expected_output
+
+
+def test_install_setup_when_creating_secrets(mocker):
+    install_setup_output_check(mocker, {}, 0)
+
+
+def test_install_setup_when_using_existing_docker_creds(mocker):
+    test_cfg = {
+        'use_existing_creds': 'y'
+    }
+    install_setup_output_check(mocker, test_cfg, 0)
+
+def test_install_setup_when_generating_random_passwords(mocker):
+    test_cfg = {
+        'provide_gui_secret': 'n',
+        'provide_operator_secret': 'n'
+    }
+    install_setup_output_check(mocker, test_cfg, 0)
+
+def test_install_setup_when_secret_exists_but_is_invalid(mocker):
+    test_cfg = {
+        'lic_sec_exists': True,
+        'lic_sec_is_valid': False,
+        'image_sec_exists': True,
+        'image_sec_is_valid': False,
+        'client_sec_exists': True,
+        'client_sec_is_valid': False,
+        'kc_secret_exists': True,
+        'kc_secret_is_valid': False,
+        'pg_secret_exists': True,
+        'pg_secret_is_valid': False
+    }
+    mock_validate_secret(mocker, is_valid=False)
+    install_setup_output_check(mocker, test_cfg, 0)
+
+
+def test_install_setup_when_secrets_exist_and_are_valid(mocker):
     mock_secret_helm_add(mocker)
     mock_create_namespace(mocker)
     mock_validate_secret(mocker)
     with temp_test_output_file() as test_output_file, temp_config_file() as test_cli_config:
-        runner = CliRunner()
-        with runner.isolated_filesystem():
-            # these are responses to the various prompts
-            user_input = f"""{test_host}
-{test_chart_repo_name}
-{test_chart_repo_url}
-{test_user}
-{test_pass}
-y
-{common.get_default_val('license.secret')}
-{test_image_repo}
-y
-{common.get_default_val('image.pullSecret')}
-y
-{common.get_default_val('client.cert.secret')}
-y
-{common.get_default_val('keycloak.secret')}
-y
-{common.get_default_val('keycloak.postgresqlSecret')}
-y
-gui-secret
-y
-operator-secret
-n
-"""
-            result = runner.invoke(main.cli, ['install', 'setup', '--output-file', test_output_file], input=user_input)
+        cmd = ['install', 'setup', '--output-file', test_output_file]
+        test_cfg = {
+            'lic_sec_exists': True,
+            'image_sec_exists': True,
+            'client_sec_exists': True,
+            'kc_secret_exists': True,
+            'pg_secret_exists': True
+        }
+        run_cli(cmd, test_cfg, test_cli_config, test_output_file, 0)
 
-            # Transcript here is not intended because multi line strings are
-            # interpreted directly including indentation
-            expected_output = f"""KX Insights Install Setup
-
-Running in namespace {test_namespace} on the cluster {test_cluster}
-
-Please enter the hostname for the installation: {test_host}
-
-Chart details
-Please enter a name for the chart repository to set locally [{common.get_default_val('chart.repo.name')}]: {test_chart_repo_name}
-Please enter the chart repository URL to pull charts from [{common.get_default_val('chart.repo.url')}]: {test_chart_repo_url}
-Please enter the username for the chart repository: {test_user}
-Please enter the password for the chart repository (input hidden): 
-
-License details
-Do you have an existing license secret [y/N]: y
-Please enter the name of the existing secret: {common.get_default_val('license.secret')}
-
-Image repository
-Please enter the image repository to pull images from [registry.dl.kx.com]: {test_image_repo}
-Do you have an existing image pull secret for {test_image_repo} [y/N]: y
-Please enter the name of the existing secret: {common.get_default_val('image.pullSecret')}
-
-Client certificate issuer
-Do you have an existing client certificate issuer [y/N]: y
-Please enter the name of the existing secret: {common.get_default_val('client.cert.secret')}
-
-Keycloak
-Do you have an existing keycloak secret [y/N]: y
-Please enter the name of the existing secret: {common.get_default_val('keycloak.secret')}
-Do you have an existing keycloak postgresql secret [y/N]: y
-Please enter the name of the existing secret: {common.get_default_val('keycloak.postgresqlSecret')}
-Do you want to set a secret for the gui service account explicitly [y/N]: y
-Please enter the secret (input hidden): 
-Persisting option guiClientSecret to file {test_cli_config}
-Do you want to set a secret for the operator service account explicitly [y/N]: y
-Please enter the secret (input hidden): 
-Persisting option operatorClientSecret to file {test_cli_config}
-
-Ingress
-Do you want to provide a self-managed cert for the ingress [y/N]: n
-Secret {common.get_default_val('install.configSecret')} successfully created
-
-KX Insights installation setup complete
-
-Helm values file for installation saved in {test_output_file}
-
-"""
-        assert result.exit_code == 0
-        assert result.output == expected_output
         assert compare_files(test_output_file, test_val_file)
         with open(test_cli_config, "r") as f:
             assert f.read() == """[default]
@@ -498,181 +350,49 @@ operatorClientSecret = operator-secret
 """
 
 
+def test_install_setup_when_ingress_cert_provided(mocker):
+    mock_secret_helm_add(mocker)
+    mock_create_namespace(mocker)
+    with temp_test_output_file() as test_output_file, temp_config_file() as test_cli_config:
+        cmd = ['install', 'setup', '--output-file', test_output_file, '--license-as-env-var', 'True'] 
+        test_cfg = {
+            'provide_ingress_cert': 'y'
+        }
+        run_cli(cmd, test_cfg, test_cli_config, test_output_file, 0)
+        assert compare_files(test_output_file, test_output_file_manual_ingress)
+
+
 def test_install_setup_when_passed_license_env_var_in_command_line(mocker):
     mock_secret_helm_add(mocker)
     mock_create_namespace(mocker)
     mock_validate_secret(mocker)
     with temp_test_output_file() as test_output_file, temp_config_file() as test_cli_config:
-        runner = CliRunner()
-        with runner.isolated_filesystem():
-            # these are responses to the various prompts
-            user_input = f"""{test_host}
-{test_chart_repo_name}
-{test_chart_repo_url}
-{test_user}
-{test_pass}
-y
-{common.get_default_val('license.secret')}
-{test_image_repo}
-y
-{common.get_default_val('image.pullSecret')}
-y
-{common.get_default_val('client.cert.secret')}
-y
-{common.get_default_val('keycloak.secret')}
-y
-{common.get_default_val('keycloak.postgresqlSecret')}
-y
-gui-secret
-y
-operator-secret
-n
-"""
-            result = runner.invoke(main.cli,
-                                   ['install', 'setup', '--output-file', test_output_file, '--license-as-env-var',
-                                    'True'], input=user_input)
+        cmd = ['install', 'setup', '--output-file', test_output_file, '--license-as-env-var', 'True']
+        test_cfg = {
+            'lic_sec_exists': True,
+            'image_sec_exists': True,
+            'client_sec_exists': True,
+            'kc_secret_exists': True,
+            'pg_secret_exists': True
+        }
+        run_cli(cmd, test_cfg, test_cli_config, test_output_file, 0)
 
-            # Transcript here is not intended because multi line strings are
-            # interpreted directly including indentation
-            expected_output = f"""KX Insights Install Setup
-
-Running in namespace {test_namespace} on the cluster {test_cluster}
-
-Please enter the hostname for the installation: {test_host}
-
-Chart details
-Please enter a name for the chart repository to set locally [{common.get_default_val('chart.repo.name')}]: {test_chart_repo_name}
-Please enter the chart repository URL to pull charts from [{common.get_default_val('chart.repo.url')}]: {test_chart_repo_url}
-Please enter the username for the chart repository: {test_user}
-Please enter the password for the chart repository (input hidden): 
-
-License details
-Do you have an existing license secret [y/N]: y
-Please enter the name of the existing secret: {common.get_default_val('license.secret')}
-
-Image repository
-Please enter the image repository to pull images from [registry.dl.kx.com]: {test_image_repo}
-Do you have an existing image pull secret for {test_image_repo} [y/N]: y
-Please enter the name of the existing secret: {common.get_default_val('image.pullSecret')}
-
-Client certificate issuer
-Do you have an existing client certificate issuer [y/N]: y
-Please enter the name of the existing secret: {common.get_default_val('client.cert.secret')}
-
-Keycloak
-Do you have an existing keycloak secret [y/N]: y
-Please enter the name of the existing secret: {common.get_default_val('keycloak.secret')}
-Do you have an existing keycloak postgresql secret [y/N]: y
-Please enter the name of the existing secret: {common.get_default_val('keycloak.postgresqlSecret')}
-Do you want to set a secret for the gui service account explicitly [y/N]: y
-Please enter the secret (input hidden): 
-Persisting option guiClientSecret to file {test_cli_config}
-Do you want to set a secret for the operator service account explicitly [y/N]: y
-Please enter the secret (input hidden): 
-Persisting option operatorClientSecret to file {test_cli_config}
-
-Ingress
-Do you want to provide a self-managed cert for the ingress [y/N]: n
-Secret {common.get_default_val('install.configSecret')} successfully created
-
-KX Insights installation setup complete
-
-Helm values file for installation saved in {test_output_file}
-
-"""
-
-        assert result.exit_code == 0
-        assert result.output == expected_output
         assert compare_files(test_output_file, test_output_file_lic_env_var)
 
 
 def test_install_setup_when_passed_kc_license_filename(mocker):
     mock_secret_helm_add(mocker)
     mock_create_namespace(mocker)
-    mock_validate_secret(mocker)
     with temp_test_output_file() as test_output_file, temp_config_file() as test_cli_config, temp_test_output_file(
             file_name='kc.lic') as test_kc_lic:
         with open(test_kc_lic, 'w') as f:
             f.write('This is a test kc license')
-        runner = CliRunner()
-        with runner.isolated_filesystem():
-            # these are responses to the various prompts
-            user_input = f"""{test_host}
-{test_chart_repo_name}
-{test_chart_repo_url}
-{test_user}
-{test_pass}
-n
-{test_kc_lic}
-{test_image_repo}
-y
-{common.get_default_val('image.pullSecret')}
-y
-{common.get_default_val('client.cert.secret')}
-y
-{common.get_default_val('keycloak.secret')}
-y
-{common.get_default_val('keycloak.postgresqlSecret')}
-y
-gui-secret
-y
-operator-secret
-n
-"""
-            result = runner.invoke(main.cli, ['install', 'setup', '--output-file', test_output_file], input=user_input)
+        cmd = ['install', 'setup', '--output-file', test_output_file]
+        test_cfg = {
+            'lic': test_kc_lic
+        }
+        run_cli(cmd, test_cfg, test_cli_config, test_output_file, 0)
 
-            # Transcript here is not intended because multi line strings are
-            # interpreted directly including indentation
-            expected_output = f"""KX Insights Install Setup
-
-Running in namespace {test_namespace} on the cluster {test_cluster}
-
-Please enter the hostname for the installation: {test_host}
-
-Chart details
-Please enter a name for the chart repository to set locally [{common.get_default_val('chart.repo.name')}]: {test_chart_repo_name}
-Please enter the chart repository URL to pull charts from [{common.get_default_val('chart.repo.url')}]: {test_chart_repo_url}
-Please enter the username for the chart repository: {test_user}
-Please enter the password for the chart repository (input hidden): 
-
-License details
-Do you have an existing license secret [y/N]: n
-Please enter the path to your kdb license: {test_kc_lic}
-Secret kxi-license successfully created
-
-Image repository
-Please enter the image repository to pull images from [registry.dl.kx.com]: {test_image_repo}
-Do you have an existing image pull secret for {test_image_repo} [y/N]: y
-Please enter the name of the existing secret: {common.get_default_val('image.pullSecret')}
-
-Client certificate issuer
-Do you have an existing client certificate issuer [y/N]: y
-Please enter the name of the existing secret: {common.get_default_val('client.cert.secret')}
-
-Keycloak
-Do you have an existing keycloak secret [y/N]: y
-Please enter the name of the existing secret: {common.get_default_val('keycloak.secret')}
-Do you have an existing keycloak postgresql secret [y/N]: y
-Please enter the name of the existing secret: {common.get_default_val('keycloak.postgresqlSecret')}
-Do you want to set a secret for the gui service account explicitly [y/N]: y
-Please enter the secret (input hidden): 
-Persisting option guiClientSecret to file {test_cli_config}
-Do you want to set a secret for the operator service account explicitly [y/N]: y
-Please enter the secret (input hidden): 
-Persisting option operatorClientSecret to file {test_cli_config}
-
-Ingress
-Do you want to provide a self-managed cert for the ingress [y/N]: n
-Secret {common.get_default_val('install.configSecret')} successfully created
-
-KX Insights installation setup complete
-
-Helm values file for installation saved in {test_output_file}
-
-"""
-
-        assert result.exit_code == 0
-        assert result.output == expected_output
         assert compare_files(test_output_file, test_output_file_lic_on_demand)
 
 
@@ -681,263 +401,56 @@ def test_install_setup_when_providing_license_secret(mocker):
     mock_create_namespace(mocker)
     mock_validate_secret(mocker)
     with temp_test_output_file() as test_output_file, temp_config_file() as test_cli_config:
-        test_options = ['install', 'setup', '--output-file', test_output_file, '--license-secret', common.get_default_val('license.secret')]
-        mocker.patch('sys.argv', test_options)
-        runner = CliRunner()
-        with runner.isolated_filesystem():
-            # these are responses to the various prompts
-            user_input = f"""{test_host}
-{test_chart_repo_name}
-{test_chart_repo_url}
-{test_user}
-{test_pass}
-{test_image_repo}
-y
-{common.get_default_val('image.pullSecret')}
-y
-{common.get_default_val('client.cert.secret')}
-y
-{common.get_default_val('keycloak.secret')}
-y
-{common.get_default_val('keycloak.postgresqlSecret')}
-y
-gui-secret
-y
-operator-secret
-n
-"""
-            result = runner.invoke(main.cli, test_options, input=user_input)
-
-            # Transcript here is not intended because multi line strings are
-            # interpreted directly including indentation
-            expected_output = f"""KX Insights Install Setup
-
-Running in namespace {test_namespace} on the cluster {test_cluster}
-
-Please enter the hostname for the installation: {test_host}
-
-Chart details
-Please enter a name for the chart repository to set locally [{common.get_default_val('chart.repo.name')}]: {test_chart_repo_name}
-Please enter the chart repository URL to pull charts from [{common.get_default_val('chart.repo.url')}]: {test_chart_repo_url}
-Please enter the username for the chart repository: {test_user}
-Please enter the password for the chart repository (input hidden): 
-
-Image repository
-Please enter the image repository to pull images from [registry.dl.kx.com]: {test_image_repo}
-Do you have an existing image pull secret for {test_image_repo} [y/N]: y
-Please enter the name of the existing secret: {common.get_default_val('image.pullSecret')}
-
-Client certificate issuer
-Do you have an existing client certificate issuer [y/N]: y
-Please enter the name of the existing secret: {common.get_default_val('client.cert.secret')}
-
-Keycloak
-Do you have an existing keycloak secret [y/N]: y
-Please enter the name of the existing secret: {common.get_default_val('keycloak.secret')}
-Do you have an existing keycloak postgresql secret [y/N]: y
-Please enter the name of the existing secret: {common.get_default_val('keycloak.postgresqlSecret')}
-Do you want to set a secret for the gui service account explicitly [y/N]: y
-Please enter the secret (input hidden): 
-Persisting option guiClientSecret to file {test_cli_config}
-Do you want to set a secret for the operator service account explicitly [y/N]: y
-Please enter the secret (input hidden): 
-Persisting option operatorClientSecret to file {test_cli_config}
-
-Ingress
-Do you want to provide a self-managed cert for the ingress [y/N]: n
-Secret {common.get_default_val('install.configSecret')} successfully created
-
-KX Insights installation setup complete
-
-Helm values file for installation saved in {test_output_file}
-
-"""
-        assert result.exit_code == 0
-        assert result.output == expected_output
+        cmd = ['install', 'setup', '--output-file', test_output_file, '--license-secret', common.get_default_val('license.secret')]
+        test_cfg = {
+            'lic_sec_exists': True,
+            'image_sec_exists': True,
+            'client_sec_exists': True,
+            'kc_secret_exists': True,
+            'pg_secret_exists': True
+        }
+        mocker.patch('sys.argv', cmd)
+        run_cli(cmd, test_cfg, test_cli_config, test_output_file, 0)
         assert compare_files(test_output_file, test_val_file)
 
 
 def test_install_setup_overwrites_when_values_file_exists(mocker):
     mock_secret_helm_add(mocker)
     mock_create_namespace(mocker)
-    mock_validate_secret(mocker)
     with temp_test_output_file() as test_output_file, temp_config_file() as test_cli_config:
-        f = open(test_output_file, 'w')
-        f.write('a test values file')
-        f.close()
+        with open(test_output_file, 'w') as f:
+            f.write('a test values file')
 
-        runner = CliRunner()
-        with runner.isolated_filesystem():
-            # these are responses to the various prompts
-            user_input = f"""{test_host}
-{test_chart_repo_name}
-{test_chart_repo_url}
-{test_user}
-{test_pass}
-y
-{common.get_default_val('license.secret')}
-{test_image_repo}
-y
-{common.get_default_val('image.pullSecret')}
-y
-{common.get_default_val('client.cert.secret')}
-y
-{common.get_default_val('keycloak.secret')}
-y
-{common.get_default_val('keycloak.postgresqlSecret')}
-y
-gui-secret
-y
-operator-secret
-n
-y
-"""
-            result = runner.invoke(main.cli, ['install', 'setup', '--output-file', test_output_file], input=user_input)
+        cmd = ['install', 'setup', '--output-file', test_output_file]
+        test_cfg = {
+            'values_exist': True,
+            'overwrite_values': 'y'
+        }
+        run_cli(cmd, test_cfg, test_cli_config, test_output_file, 0)
 
-            # Transcript here is not intended because multi line strings are
-            # interpreted directly including indentation
-            expected_output = f"""KX Insights Install Setup
-
-Running in namespace {test_namespace} on the cluster {test_cluster}
-
-Please enter the hostname for the installation: {test_host}
-
-Chart details
-Please enter a name for the chart repository to set locally [{common.get_default_val('chart.repo.name')}]: {test_chart_repo_name}
-Please enter the chart repository URL to pull charts from [{common.get_default_val('chart.repo.url')}]: {test_chart_repo_url}
-Please enter the username for the chart repository: {test_user}
-Please enter the password for the chart repository (input hidden): 
-
-License details
-Do you have an existing license secret [y/N]: y
-Please enter the name of the existing secret: {common.get_default_val('license.secret')}
-
-Image repository
-Please enter the image repository to pull images from [registry.dl.kx.com]: {test_image_repo}
-Do you have an existing image pull secret for {test_image_repo} [y/N]: y
-Please enter the name of the existing secret: {common.get_default_val('image.pullSecret')}
-
-Client certificate issuer
-Do you have an existing client certificate issuer [y/N]: y
-Please enter the name of the existing secret: {common.get_default_val('client.cert.secret')}
-
-Keycloak
-Do you have an existing keycloak secret [y/N]: y
-Please enter the name of the existing secret: {common.get_default_val('keycloak.secret')}
-Do you have an existing keycloak postgresql secret [y/N]: y
-Please enter the name of the existing secret: {common.get_default_val('keycloak.postgresqlSecret')}
-Do you want to set a secret for the gui service account explicitly [y/N]: y
-Please enter the secret (input hidden): 
-Persisting option guiClientSecret to file {test_cli_config}
-Do you want to set a secret for the operator service account explicitly [y/N]: y
-Please enter the secret (input hidden): 
-Persisting option operatorClientSecret to file {test_cli_config}
-
-Ingress
-Do you want to provide a self-managed cert for the ingress [y/N]: n
-
-{test_output_file} file exists. Do you want to overwrite it with a new values file? [y/N]: y
-Secret {common.get_default_val('install.configSecret')} successfully created
-
-KX Insights installation setup complete
-
-Helm values file for installation saved in {test_output_file}
-
-"""
-        assert result.exit_code == 0
-        assert result.output == expected_output
         assert compare_files(test_output_file, test_val_file)
 
 
 def test_install_setup_creates_new_when_values_file_exists(mocker):
     mock_secret_helm_add(mocker)
     mock_create_namespace(mocker)
-    mock_validate_secret(mocker)
     with temp_test_output_file() as test_output_file, temp_config_file() as test_cli_config:
-        f = open(test_output_file, 'w')
-        f.write("a test values file")
-        f.close()
+        with open(test_output_file, 'w') as f:
+            f.write("a test values file")
+
+        cmd = ['install', 'setup', '--output-file', test_output_file]
+        test_cfg = {
+            'values_exist': True,
+            'overwrite_values': 'n',
+            'output_file': test_output_file
+        }
 
         runner = CliRunner()
         with runner.isolated_filesystem():
-            # these are responses to the various prompts
-            user_input = f"""{test_host}
-{test_chart_repo_name}
-{test_chart_repo_url}
-{test_user}
-{test_pass}
-y
-{common.get_default_val('license.secret')}
-{test_image_repo}
-y
-{common.get_default_val('image.pullSecret')}
-y
-{common.get_default_val('client.cert.secret')}
-y
-{common.get_default_val('keycloak.secret')}
-y
-{common.get_default_val('keycloak.postgresqlSecret')}
-y
-gui-secret
-y
-operator-secret
-n
-n
-{test_output_file}_new
-"""
-            result = runner.invoke(main.cli, ['install', 'setup', '--output-file', test_output_file], input=user_input)
-
-            # Transcript here is not intended because multi line strings are
-            # interpreted directly including indentation
-            expected_output = f"""KX Insights Install Setup
-
-Running in namespace {test_namespace} on the cluster {test_cluster}
-
-Please enter the hostname for the installation: {test_host}
-
-Chart details
-Please enter a name for the chart repository to set locally [{common.get_default_val('chart.repo.name')}]: {test_chart_repo_name}
-Please enter the chart repository URL to pull charts from [{common.get_default_val('chart.repo.url')}]: {test_chart_repo_url}
-Please enter the username for the chart repository: {test_user}
-Please enter the password for the chart repository (input hidden): 
-
-License details
-Do you have an existing license secret [y/N]: y
-Please enter the name of the existing secret: {common.get_default_val('license.secret')}
-
-Image repository
-Please enter the image repository to pull images from [registry.dl.kx.com]: {test_image_repo}
-Do you have an existing image pull secret for {test_image_repo} [y/N]: y
-Please enter the name of the existing secret: {common.get_default_val('image.pullSecret')}
-
-Client certificate issuer
-Do you have an existing client certificate issuer [y/N]: y
-Please enter the name of the existing secret: {common.get_default_val('client.cert.secret')}
-
-Keycloak
-Do you have an existing keycloak secret [y/N]: y
-Please enter the name of the existing secret: {common.get_default_val('keycloak.secret')}
-Do you have an existing keycloak postgresql secret [y/N]: y
-Please enter the name of the existing secret: {common.get_default_val('keycloak.postgresqlSecret')}
-Do you want to set a secret for the gui service account explicitly [y/N]: y
-Please enter the secret (input hidden): 
-Persisting option guiClientSecret to file {test_cli_config}
-Do you want to set a secret for the operator service account explicitly [y/N]: y
-Please enter the secret (input hidden): 
-Persisting option operatorClientSecret to file {test_cli_config}
-
-Ingress
-Do you want to provide a self-managed cert for the ingress [y/N]: n
-
-{test_output_file} file exists. Do you want to overwrite it with a new values file? [y/N]: n
-Please enter the path to write the values file for the install: {test_output_file}_new
-Secret {common.get_default_val('install.configSecret')} successfully created
-
-KX Insights installation setup complete
-
-Helm values file for installation saved in {test_output_file}_new
-
-"""
+            user_input = cli_input(cmd[1], **test_cfg)
+            result = runner.invoke(main.cli, cmd, input=user_input)
+            expected_output = cli_output(cmd[1], test_cli_config, **test_cfg)
+        
         assert result.exit_code == 0
         assert result.output == expected_output
         assert compare_files(f'{test_output_file}_new', test_val_file)
@@ -950,15 +463,17 @@ def test_install_run_when_provided_file(mocker):
     mock_set_insights_operator_and_crd_installed_state(mocker, False, True, True)
     mock_create_namespace(mocker)
     mock_get_operator_version(mocker)
+    mock_validate_secret(mocker)
 
     runner = CliRunner()
     with runner.isolated_filesystem():
         # these are responses to the various prompts
         result = runner.invoke(main.cli, ['install', 'run', '--version', '1.2.3', '--filepath', test_val_file])
-        expected_output = f"""
+        expected_output = f"""{phrases.values_validating}
+
 kxi-operator already installed with version kxi-operator-1.2.0
 Installing chart kx-insights/insights version 1.2.3 with values file from {test_val_file}
-"""    
+"""
     assert result.exit_code == 0
     assert result.output == expected_output
     assert subprocess_run_command == [
@@ -969,7 +484,7 @@ Installing chart kx-insights/insights version 1.2.3 with values file from {test_
 
 
 def test_install_run_when_no_file_provided(mocker):
-    mock_read_create_patch_secret(mocker)
+    mock_kube_secret_api(mocker, read=mocked_read_namespaced_secret_return_values)
     mock_subprocess_run(mocker)
     mocker.patch('subprocess.check_output', mocked_helm_list_returns_empty_json)
     mock_set_insights_operator_and_crd_installed_state(mocker, False, False, False)
@@ -977,91 +492,30 @@ def test_install_run_when_no_file_provided(mocker):
     mock_get_operator_version(mocker)
     mock_validate_secret(mocker)
     with temp_test_output_file() as test_output_file, temp_config_file() as test_cli_config:
-        f = open(test_output_file, 'w')
-        f.write("a test values file")
-        f.close()
+        with open(test_output_file, 'w') as f:
+            f.write("a test values file")
 
         runner = CliRunner()
         with runner.isolated_filesystem():
-            # these are responses to the various prompts
-            # these are responses to the various prompts
-            user_input = f"""{test_host}
-{test_chart_repo_name}
-{test_chart_repo_url}
-{test_user}
-{test_pass}
-y
-{common.get_default_val('license.secret')}
-{test_image_repo}
-y
-{common.get_default_val('image.pullSecret')}
-y
-{common.get_default_val('client.cert.secret')}
-y
-{common.get_default_val('keycloak.secret')}
-y
-{common.get_default_val('keycloak.postgresqlSecret')}
-y
-gui-secret
-y
-operator-secret
-n
-n
-"""
+            test_cfg = {
+                'lic_sec_exists': True,
+                'image_sec_exists': True,
+                'client_sec_exists': True,
+                'kc_secret_exists': True,
+                'pg_secret_exists': True,
+                'install_config_exists': True
+            }
+            user_input = f'{cli_input("setup", **test_cfg)}\nn'
             result = runner.invoke(main.cli, ['install', 'run', '--version', '1.2.3'], input=user_input)
 
-            expected_output = f"""No values file provided, invoking "kxi install setup"
-
-KX Insights Install Setup
-
-Running in namespace {test_namespace} on the cluster {test_cluster}
-
-Please enter the hostname for the installation: {test_host}
-
-Chart details
-Please enter a name for the chart repository to set locally [kx-insights]: {test_chart_repo_name}
-Please enter the chart repository URL to pull charts from [https://nexus.dl.kx.com/repository/kx-insights-charts]: {test_chart_repo_url}
-Please enter the username for the chart repository: {test_user}
-Please enter the password for the chart repository (input hidden): 
-
-License details
-Do you have an existing license secret [y/N]: y
-Please enter the name of the existing secret: {common.get_default_val('license.secret')}
-
-Image repository
-Please enter the image repository to pull images from [registry.dl.kx.com]: {test_image_repo}
-Do you have an existing image pull secret for {test_image_repo} [y/N]: y
-Please enter the name of the existing secret: {common.get_default_val('image.pullSecret')}
-
-Client certificate issuer
-Do you have an existing client certificate issuer [y/N]: y
-Please enter the name of the existing secret: {common.get_default_val('client.cert.secret')}
-
-Keycloak
-Do you have an existing keycloak secret [y/N]: y
-Please enter the name of the existing secret: {common.get_default_val('keycloak.secret')}
-Do you have an existing keycloak postgresql secret [y/N]: y
-Please enter the name of the existing secret: {common.get_default_val('keycloak.postgresqlSecret')}
-Do you want to set a secret for the gui service account explicitly [y/N]: y
-Please enter the secret (input hidden): 
-Persisting option guiClientSecret to file {test_cli_config}
-Do you want to set a secret for the operator service account explicitly [y/N]: y
-Please enter the secret (input hidden): 
-Persisting option operatorClientSecret to file {test_cli_config}
-
-Ingress
-Do you want to provide a self-managed cert for the ingress [y/N]: n
-Secret {common.get_default_val('install.configSecret')} successfully created
-
-KX Insights installation setup complete
-
-Helm values file for installation saved in values.yaml
-
+            expected_output = f"""{phrases.header_run}
+{cli_output('setup', test_cli_config, 'values.yaml', **test_cfg)}{phrases.values_validating}
 
 kxi-operator not found
 Do you want to install kxi-operator version 1.2.3? [Y/n]: n
 Installing chart internal-nexus-dev/insights version 1.2.3 with values file from values.yaml
-"""    
+"""
+
         assert result.exit_code == 0
         assert result.output == expected_output
         assert subprocess_run_command == [
@@ -1077,15 +531,16 @@ def test_install_run_when_provided_secret(mocker):
     mock_subprocess_run(mocker)
     mock_set_insights_operator_and_crd_installed_state(mocker, False, True, True)
     mock_create_namespace(mocker)
-    mock_read_secret(mocker)
+    mock_kube_secret_api(mocker, read=mocked_read_namespaced_secret_return_values)
     mock_get_operator_version(mocker)
-
+    mock_validate_secret(mocker)
     runner = CliRunner()
     with runner.isolated_filesystem():
         # these are responses to the various prompts
         result = runner.invoke(main.cli,
                                ['install', 'run', '--version', '1.2.3', '--install-config-secret', test_install_secret])
-        expected_output = f"""
+        expected_output = f"""{phrases.values_validating}
+
 kxi-operator already installed with version kxi-operator-1.2.0
 Installing chart kx-insights/insights version 1.2.3 with values from secret
 """
@@ -1104,15 +559,16 @@ def test_install_run_when_provided_file_and_secret(mocker):
     mock_subprocess_run(mocker)
     mock_set_insights_operator_and_crd_installed_state(mocker, False, True, True)
     mock_create_namespace(mocker)
-    mock_read_secret(mocker)
+    mock_kube_secret_api(mocker, read=mocked_read_namespaced_secret_return_values)
     mock_get_operator_version(mocker)
-
+    mock_validate_secret(mocker)
     runner = CliRunner()
     with runner.isolated_filesystem():
         # these are responses to the various prompts
         result = runner.invoke(main.cli, ['install', 'run', '--version', '1.2.3', '--filepath', test_val_file,
                                           '--install-config-secret', test_install_secret])
-        expected_output = f"""
+        expected_output = f"""{phrases.values_validating}
+
 kxi-operator already installed with version kxi-operator-1.2.0
 Installing chart kx-insights/insights version 1.2.3 with values from secret and values file from {test_val_file}
 """
@@ -1134,6 +590,7 @@ def test_install_run_installs_operator(mocker):
     mock_copy_secret(mocker)
     mock_set_insights_operator_and_crd_installed_state(mocker, False, False, False)
     mock_get_operator_version(mocker)
+    mock_validate_secret(mocker)
     global copy_secret_params
     copy_secret_params = []
 
@@ -1144,7 +601,8 @@ def test_install_run_installs_operator(mocker):
 """
         result = runner.invoke(main.cli, ['install', 'run', '--version', '1.2.3', '--filepath', test_val_file],
                                input=user_input)
-        expected_output = f"""
+        expected_output = f"""{phrases.values_validating}
+
 kxi-operator not found
 Do you want to install kxi-operator version 1.2.3? [Y/n]: y
 Installing chart kx-insights/kxi-operator version 1.2.3 with values file from {test_val_file}
@@ -1169,6 +627,7 @@ def test_install_run_force_installs_operator(mocker):
     mock_copy_secret(mocker)
     mock_set_insights_operator_and_crd_installed_state(mocker, False, False, False)
     mock_get_operator_version(mocker)
+    mock_validate_secret(mocker)
     global copy_secret_params
     copy_secret_params = []
 
@@ -1176,7 +635,8 @@ def test_install_run_force_installs_operator(mocker):
     with runner.isolated_filesystem():
         result = runner.invoke(main.cli,
                                ['install', 'run', '--version', '1.2.3', '--filepath', test_val_file, '--force'])
-        expected_output = f"""
+        expected_output = f"""{phrases.values_validating}
+
 kxi-operator not found
 Installing chart kx-insights/kxi-operator version 1.2.3 with values file from {test_val_file}
 Installing chart kx-insights/insights version 1.2.3 with values file from {test_val_file}
@@ -1193,13 +653,15 @@ Installing chart kx-insights/insights version 1.2.3 with values file from {test_
          test_namespace]
     ]
 
+
 def test_install_run_installs_operator_with_modified_secrets(mocker):
     mock_subprocess_run(mocker)
     mock_create_namespace(mocker)
-    mock_read_secret(mocker)
+    mock_kube_secret_api(mocker, read=mocked_read_namespaced_secret_return_values)
     mock_copy_secret(mocker)
     mock_set_insights_operator_and_crd_installed_state(mocker, False, False, False)
     mock_get_operator_version(mocker)
+    mock_validate_secret(mocker)
     global test_vals
     global copy_secret_params
     copy_secret_params = []
@@ -1215,7 +677,8 @@ def test_install_run_installs_operator_with_modified_secrets(mocker):
         result = runner.invoke(main.cli,
                                ['install', 'run', '--version', '1.2.3', '--install-config-secret', test_install_secret],
                                input=user_input)
-        expected_output = f"""
+        expected_output = f"""{phrases.values_validating}
+
 kxi-operator not found
 Do you want to install kxi-operator version 1.2.3? [Y/n]: y
 Installing chart kx-insights/kxi-operator version 1.2.3 with values from secret
@@ -1241,6 +704,7 @@ def test_install_run_when_no_context_set(mocker):
     mock_create_namespace(mocker)
     mock_get_operator_version(mocker)
     mocker.patch('kubernetes.config.list_kube_config_contexts', mocked_k8s_list_empty_config)
+    mock_validate_secret(mocker)
 
     runner = CliRunner()
     with runner.isolated_filesystem():
@@ -1248,6 +712,7 @@ def test_install_run_when_no_context_set(mocker):
         result = runner.invoke(main.cli, ['install', 'run', '--version', '1.2.3', '--filepath', test_val_file])
         expected_output = f"""
 Please enter a namespace to run in [test]: 
+{phrases.values_validating}
 
 kxi-operator already installed with version kxi-operator-1.2.0
 Installing chart kx-insights/insights version 1.2.3 with values file from {test_val_file}
@@ -1259,20 +724,24 @@ Installing chart kx-insights/insights version 1.2.3 with values file from {test_
         ['helm', 'upgrade', '--install', '-f', test_val_file, 'insights', test_chart, '--version', '1.2.3', '--namespace', 'test']
     ]
 
+
 def test_install_run_exits_when_already_installed(mocker):
     mock_subprocess_run(mocker)
     mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
     mock_create_namespace(mocker)
     mock_get_operator_version(mocker)
+    mock_validate_secret(mocker)
 
     runner = CliRunner()
     with runner.isolated_filesystem():
         result = runner.invoke(main.cli, ['install', 'run', '--version', '1.2.3', '--filepath', test_val_file], input ='n\n')
-        expected_output = """KX Insights is already installed with version insights-1.2.1. Would you like to upgrade to version 1.2.3? [y/N]: n
+        expected_output = f"""{phrases.values_validating}
+KX Insights is already installed with version insights-1.2.1. Would you like to upgrade to version 1.2.3? [y/N]: n
 """
 
     assert result.exit_code == 0
     assert result.output == expected_output
+
 
 def test_delete(mocker):
     mock_subprocess_run(mocker)
@@ -1531,102 +1000,32 @@ def test_install_when_not_deploying_keycloak(mocker):
         # Ideally would patch sys.argv with args but can't find a way to get this to stick
         #   'mocker.patch('sys.argv', args)'
         # doesn't seem to be persist into the runner.invoke
-        args = ['install', 'setup', '--keycloak-auth-url', test_auth_url, '--output-file', test_output_file]
         mocker.patch('kxicli.commands.install.deploy_keycloak', lambda: False)
 
-        runner = CliRunner()
-        with runner.isolated_filesystem():
-            # these are responses to the various prompts
-            user_input = f"""{test_host}
-{test_chart_repo_name}
-{test_chart_repo_url}
-{test_user}
-{test_pass}
-n
-{test_lic_file}
-{test_image_repo}
-n
-n
-{test_user}
-{test_pass}
-n
-y
-gui-secret
-y
-operator-secret
-n
-y
-"""
-            result = runner.invoke(main.cli, args, input=user_input)
-
-            # Transcript here is not intended because multi line strings are
-            # interpreted directly including indentation
-            expected_output = f"""KX Insights Install Setup
-
-Running in namespace {test_namespace} on the cluster {test_cluster}
-
-Please enter the hostname for the installation: {test_host}
-
-Chart details
-Please enter a name for the chart repository to set locally [{common.get_default_val('chart.repo.name')}]: {test_chart_repo_name}
-Please enter the chart repository URL to pull charts from [{common.get_default_val('chart.repo.url')}]: {test_chart_repo_url}
-Please enter the username for the chart repository: {test_user}
-Please enter the password for the chart repository (input hidden): 
-
-License details
-Do you have an existing license secret [y/N]: n
-Please enter the path to your kdb license: {test_lic_file}
-Secret kxi-license successfully created
-
-Image repository
-Please enter the image repository to pull images from [registry.dl.kx.com]: {test_image_repo}
-Do you have an existing image pull secret for {test_image_repo} [y/N]: n
-Credentials {test_user}@{test_image_repo} exist in {test_docker_config_json}, do you want to use these [y/N]: n
-Please enter the username for {test_image_repo}: {test_user}
-Please enter the password for {test_user} (input hidden): 
-Secret kxi-nexus-pull-secret successfully created
-
-Client certificate issuer
-Do you have an existing client certificate issuer [y/N]: n
-Secret kxi-certificate successfully created
-
-Keycloak
-Do you want to set a secret for the gui service account explicitly [y/N]: y
-Please enter the secret (input hidden): 
-Persisting option guiClientSecret to file {test_cli_config}
-Do you want to set a secret for the operator service account explicitly [y/N]: y
-Please enter the secret (input hidden): 
-Persisting option operatorClientSecret to file {test_cli_config}
-
-Ingress
-Do you want to provide a self-managed cert for the ingress [y/N]: n
-
-{test_output_file} file exists. Do you want to overwrite it with a new values file? [y/N]: y
-Secret {common.get_default_val('install.configSecret')} successfully created
-
-KX Insights installation setup complete
-
-Helm values file for installation saved in {test_output_file}
-
-"""
-
-        assert result.exit_code == 0
-        assert result.output == expected_output
+        cmd = ['install', 'setup', '--keycloak-auth-url', test_auth_url, '--output-file', test_output_file]
+        test_cfg = {
+            'values_exist': True,
+            'overwrite_values': 'y',
+            'deploy_keycloak': False
+        }
+        run_cli(cmd, test_cfg, test_cli_config, test_output_file, 0)
         assert compare_files(test_output_file, test_val_file_shared_keycloak)
 
 
 def test_get_values_returns_error_when_does_not_exist(mocker):
-    mocker.patch('kxicli.commands.install.read_secret', return_none)
+    mock = mocker.patch('kubernetes.client.CoreV1Api')
+    mock.return_value.read_namespaced_secret = return_none
+
     runner = CliRunner()
     with runner.isolated_filesystem():
         result = runner.invoke(main.cli, ['install', 'get-values'])
 
     assert result.exit_code == 0
-    assert result.output == f"""error=Cannot find values secret {common.get_default_val('install.configSecret')}\n\n"""
+    assert result.output == f"""Cannot find values secret {common.get_default_val('install.configSecret')}\n\n"""
 
 
 def test_get_values_returns_decoded_secret(mocker):
-    mock_read_secret(mocker)
+    mock_kube_secret_api(mocker, read=mocked_read_namespaced_secret_return_values)
     runner = CliRunner()
     with runner.isolated_filesystem():
         result = runner.invoke(main.cli, ['install', 'get-values'])
@@ -1640,6 +1039,7 @@ def test_upgrade(mocker):
     upgrades_mocks(mocker)
     mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
     mock_get_operator_version(mocker)
+    mock_validate_secret(mocker)
     if os.path.exists(test_asm_backup):
         os.remove(test_asm_backup)
     with open(test_asm_file) as f:
@@ -1659,6 +1059,7 @@ y
                                           test_install_secret, '--assembly-backup-filepath', test_asm_backup],
                                input=user_input)
         expected_output = f"""Upgrading KX Insights
+{phrases.values_validating}
 
 Backing up assemblies
 Persisted assembly definitions for ['{test_asm_name}'] to {test_asm_backup}
@@ -1708,6 +1109,7 @@ def test_upgrade_skips_to_install_when_not_running(mocker):
     upgrades_mocks(mocker)
     mock_set_insights_operator_and_crd_installed_state(mocker, False, False, False)
     mock_get_operator_version(mocker)
+    mock_validate_secret(mocker)
     runner = CliRunner()
     user_input = f"""y
 """
@@ -1715,6 +1117,7 @@ def test_upgrade_skips_to_install_when_not_running(mocker):
         result = runner.invoke(main.cli, ['install', 'upgrade', '--version', '1.2.3', '--install-config-secret',
                                           test_install_secret], input=user_input)
     expected_output = f"""Upgrading KX Insights
+{phrases.values_validating}
 KX Insights is not deployed. Skipping to install
 
 kxi-operator not found
@@ -1738,6 +1141,7 @@ def test_upgrade_when_user_declines_to_teardown_assembly(mocker):
     upgrades_mocks(mocker)
     mocker.patch('kxicli.commands.assembly._get_assemblies_list', mock_list_assembly_multiple)
     mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
+    mock_validate_secret(mocker)
     if os.path.exists(test_asm_backup):
         os.remove(test_asm_backup)
     with open(test_asm_file) as f:
@@ -1749,6 +1153,7 @@ def test_upgrade_when_user_declines_to_teardown_assembly(mocker):
         result = runner.invoke(main.cli, ['install', 'upgrade', '--version', '1.2.3', '--filepath', test_val_file,
                                           '--assembly-backup-filepath', test_asm_backup], input='y\nn\n')
     expected_output = f"""Upgrading KX Insights
+{phrases.values_validating}
 
 Backing up assemblies
 Persisted assembly definitions for ['{test_asm_name}', '{test_asm_name + '_2'}'] to {test_asm_backup}
@@ -1793,6 +1198,7 @@ def test_install_run_upgrades_when_already_installed(mocker):
     mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
     mock_create_namespace(mocker)
     mock_get_operator_version(mocker)
+    mock_validate_secret(mocker)
     test_asm_backup = common.get_default_val('assembly.backup.file')
 
     runner = CliRunner()
@@ -1802,8 +1208,10 @@ y
 """
     with runner.isolated_filesystem():
         result = runner.invoke(main.cli, ['install', 'run', '--version', '1.2.3', '--filepath', test_val_file], input =user_input)
-        expected_output = f"""KX Insights is already installed with version insights-1.2.1. Would you like to upgrade to version 1.2.3? [y/N]: y
+        expected_output = f"""{phrases.values_validating}
+KX Insights is already installed with version insights-1.2.1. Would you like to upgrade to version 1.2.3? [y/N]: y
 Upgrading KX Insights
+{phrases.values_validating}
 
 Backing up assemblies
 Persisted assembly definitions for ['{test_asm_name}'] to {test_asm_backup}
@@ -1840,3 +1248,31 @@ Upgrade to version 1.2.3 complete
     assert insights_installed_flag == True
     assert operator_installed_flag ==True
     assert crd_exists_flag == True
+
+
+def test_install_values_validated_on_run_and_upgrade(mocker):
+    test_cfg = {
+        'lic_sec_exists': False,
+        'lic_sec_is_valid': False,
+        'image_sec_exists': True,
+        'image_sec_is_valid': False,
+        'client_sec_exists': True,
+        'client_sec_is_valid': False,
+        'kc_secret_exists': True,
+        'kc_secret_is_valid': False,
+        'pg_secret_exists': True,
+        'pg_secret_is_valid': False
+    }
+    mock_validate_secret(mocker, exists=False)
+    cmd = ['install', 'upgrade', '--version', '1.2.3', '--filepath', test_val_file]
+    run_cli(cmd, test_cfg, expected_exit_code = 1)
+    cmd = ['install', 'run', '--version', '1.2.3', '--filepath', test_val_file]
+    run_cli(cmd, test_cfg, expected_exit_code = 1)
+
+    mock_validate_secret(mocker, is_valid=False)
+    test_cfg['lic_sec_exists'] = True
+    cmd = ['install', 'upgrade', '--version', '1.2.3', '--filepath', test_val_file]
+    run_cli(cmd, test_cfg, expected_exit_code = 1)
+    cmd = ['install', 'run', '--version', '1.2.3', '--filepath', test_val_file]
+    run_cli(cmd, test_cfg, expected_exit_code = 1)
+

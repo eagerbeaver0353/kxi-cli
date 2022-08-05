@@ -20,7 +20,7 @@ from kxicli.commands.azure import LocalHelmVersion, minimum_helm_version, _get_h
     get_values, get_helm_version_checked, default_docker_config_secret_data_name, default_values_secret_data_name, \
     default_docker_config_secret_name, default_values_secret_name
 from kxicli.common import get_default_val as default_val
-from utils import temp_file
+from utils import temp_file, mock_kube_secret_api
 
 # fun names
 
@@ -36,7 +36,6 @@ fun_install_insights_installed: str = 'kxicli.commands.install.insights_installe
 fun_assembly_delete_running_assemblies: str = 'kxicli.commands.assembly._delete_running_assemblies'
 fun_assembly_backup_assemblies: str = 'kxicli.commands.assembly._backup_assemblies'
 fun_assembly_get_assemblies_list: str = 'kxicli.commands.assembly._get_assemblies_list'
-fun_install_read_secret: str = 'kxicli.commands.install.read_secret'
 
 fake_docker_config: dict = {
     'asdf': 'asdf'
@@ -568,14 +567,14 @@ def test_get_assemblies_raise_exception(mocker: MockerFixture):
 
 
 def test_get_docker_config(mocker: MockerFixture):
-    mocker.patch(fun_install_read_secret, read_secret)
+    mock_kube_secret_api(mocker, read=read_secret)
     assert get_docker_config(
         kxi_operator_namespace=default_kxi_operator_namespace
     ) == fake_docker_config_yaml
 
 
 def test_get_docker_config_fail(mocker: MockerFixture):
-    mocker.patch(fun_install_read_secret, read_secret_fail)
+    mock_kube_secret_api(mocker, read=read_secret_fail)
     with pytest.raises(click.ClickException):
         get_docker_config(
             kxi_operator_namespace=default_kxi_operator_namespace
@@ -587,7 +586,7 @@ def test_get_repo_url():
 
 
 def test_get_values_both_none_no_secret(mocker: MockerFixture):
-    mocker.patch(fun_install_read_secret, read_secret_fail)
+    mock_kube_secret_api(mocker, read=read_secret_fail)
     with pytest.raises(click.ClickException):
         get_values(
             values_file=None,
@@ -596,7 +595,7 @@ def test_get_values_both_none_no_secret(mocker: MockerFixture):
 
 
 def test_get_values_both_none_but_secret(mocker: MockerFixture):
-    mocker.patch(fun_install_read_secret, read_secret)
+    mock_kube_secret_api(mocker, read=read_secret)
     assert get_values(
             values_file=None,
             values_url=None

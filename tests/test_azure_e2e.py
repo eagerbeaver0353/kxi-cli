@@ -11,13 +11,13 @@ from kxicli.commands.azure import default_insights_namespace
 from kxicli.common import get_default_val
 from test_azure import fun_assembly_create_assemblies_from_file, _create_assemblies_from_file, \
     fun_assembly_delete_running_assemblies, _delete_running_assemblies, \
-    fun_assembly_backup_assemblies, _backup_assemblies, fake_version, fake_values_yaml, fun_install_read_secret, \
+    fun_assembly_backup_assemblies, _backup_assemblies, fake_version, fake_values_yaml, \
     read_secret, fun_subprocess_run, subprocess_run_helm_success, \
     install_create_namespace, fun_assembly_get_assemblies_list, _get_assemblies_list, helm_version_checked, \
     fun_install_operator_installed, install_operator_installed, fun_common_get_existing_crds, \
     common_get_existing_crds, fun_common_delete_crd, fun_install_insights_installed, install_insights_installed, \
     fun_install_create_namespace
-from utils import temp_file
+from utils import temp_file, mock_kube_secret_api
 
 a_test_asm_str: str = 'a test asm file'
 default_config_file = str(Path(__file__).parent / 'files' / 'test-cli-config')
@@ -106,7 +106,7 @@ def test_assembly_backup(mocker: MockerFixture):
 
 
 def test_install(mocker: MockerFixture):
-    mocker.patch(fun_install_read_secret, read_secret)
+    mock_kube_secret_api(mocker, read=read_secret)
     mocker.patch(fun_subprocess_run, subprocess_run_helm_success)
     mocker.patch(fun_install_create_namespace, install_create_namespace)
     mocker.patch(fun_get_helm_version_checked, get_helm_version_checked)
@@ -165,7 +165,7 @@ def test_uninstall(mocker: MockerFixture):
 
 
 def test_upgrade(mocker: MockerFixture):
-    mocker.patch(fun_install_read_secret, read_secret)
+    mock_kube_secret_api(mocker, read=read_secret)
     mocker.patch(fun_subprocess_run, subprocess_run_helm_success)
     mocker.patch(fun_install_create_namespace, install_create_namespace)
     mocker.patch(fun_get_helm_version_checked, get_helm_version_checked)

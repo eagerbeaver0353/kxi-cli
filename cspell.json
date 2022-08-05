@@ -15,6 +15,7 @@
         "certmanager",
         "clientcontroller",
         "crds",
+        "creds",
         "dockerconfigjson",
         "dockerconfigjson",
         "filecmp",
