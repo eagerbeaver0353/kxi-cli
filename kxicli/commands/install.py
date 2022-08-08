@@ -337,6 +337,7 @@ def perform_upgrade(namespace, release, chart_repo_name, assembly_backup_filepat
 @arg_force()
 def delete(release, namespace, force):
     """Uninstall KX Insights"""
+    _, namespace = common.get_namespace(namespace)
     delete_release_operator_and_crds(release=release, namespace=namespace, force=force)
 
 

@@ -950,13 +950,15 @@ def test_delete_from_given_namespace(mocker):
     mock_set_insights_operator_and_crd_installed_state(mocker, True, False, False)
     global delete_crd_params
     delete_crd_params = []
+    cmd = ['install', 'delete', '--namespace', 'a_test_namespace']
+    mocker.patch('sys.argv', cmd)
 
     runner = CliRunner()
     with runner.isolated_filesystem():
         # these are responses to the various prompts
         user_input = f"""y
 """
-        result = runner.invoke(main.cli, ['install', 'delete', '--namespace', 'a_test_namespace'], input=user_input)
+        result = runner.invoke(main.cli, cmd, input=user_input)
         expected_output = f"""
 KX Insights is deployed. Do you want to uninstall? [y/N]: y
 Uninstalling release insights in namespace a_test_namespace
