@@ -154,7 +154,6 @@ sonarqube-check:
   extends: .sonar-template
   needs:
     - run tests 3.8
-  allow_failure: true
   rules:
     - !reference [ .default-rules, rules ]
 
