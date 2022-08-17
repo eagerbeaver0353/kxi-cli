@@ -2,7 +2,9 @@ import sys
 
 import click
 import kubernetes as k8s
+from pathlib import Path
 import requests
+import tarfile
 
 from kxicli import config
 from kxicli import log
@@ -128,20 +130,20 @@ def load_kube_config():
         k8s.config.load_config()
         CONFIG_ALREADY_LOADED = True
 
-
-def crd_exists(name):
+def read_crd(name):
     load_kube_config()
     api = k8s.client.ApiextensionsV1Api()
 
     try:
-        api.read_custom_resource_definition(name)
-        return True
+        return api.read_custom_resource_definition(name)
     except k8s.client.rest.ApiException as exception:
         if exception.status == 404:
-            return False
+            return None
         else:
-            click.echo(f'Exception when calling ApiextensionsV1Api->list_custom_resource_definition: {exception}')
+            click.echo(f'Exception when calling ApiextensionsV1Api->read_custom_resource_definition: {exception}')
 
+def crd_exists(name):
+    return isinstance(read_crd(name), k8s.client.V1CustomResourceDefinition)
 
 def get_existing_crds(names):
     crds = []
@@ -150,6 +152,26 @@ def get_existing_crds(names):
             crds.append(n)
     return crds
 
+def create_or_replace_crd(name, body):
+    load_kube_config()
+    api = k8s.client.ApiextensionsV1Api()
+    existing_crd = read_crd(name)
+    if isinstance(existing_crd, k8s.client.V1CustomResourceDefinition):
+        body['metadata']['resourceVersion'] = existing_crd.metadata.resource_version
+        api.replace_custom_resource_definition(name, body)
+    else:
+        api.create_custom_resource_definition(body)
+
+def replace_crd(name, body):
+    click.echo(f'Replacing CRD {name}')
+    try:
+        create_or_replace_crd(name, body)
+    except k8s.client.rest.ApiException as exception:
+        # can occur if metadata.resourceVersion is out of date so try and reapply
+        if exception.status == 409:
+            create_or_replace_crd(name, body)
+        else:
+            click.echo(f'Exception when trying to replace custom resource definition: {exception}')
 
 def delete_crd(name):
     load_kube_config()
@@ -170,3 +192,24 @@ def get_namespace(namespace):
         else:
             namespace = click.prompt('\nPlease enter a namespace to run in', default=get_default_val('namespace'))
     return active_context, namespace
+
+def extract_files_from_tar(tar: Path, files: list, max_read_size: int = 2000000):
+    data = []
+    if tar.exists() and tarfile.is_tarfile(tar):
+        log.debug(f'Opening tar file {tar} to extract files')
+        with tarfile.open(tar) as tf:
+            for file in files:
+                log.debug(f'Attempting to extract {file} from {tar}')
+                try:
+                    f = tf.extractfile(file)
+                    raw = f.read(max_read_size)
+                    f.close()
+                    if len(raw) < max_read_size:
+                        data.append(raw)
+                    else:
+                        raise click.ClickException(f'Refused to load more than {max_read_size} bytes from {file}')
+                except KeyError:
+                    raise click.ClickException(f'File {file} not found in {tar}')
+    else:
+        raise click.ClickException(f'{tar} does not exist or is not a valid tar archive')
+    return data

@@ -15,7 +15,8 @@ from kxicli import main
 from kxicli import phrases
 from kxicli.resources import secret
 from utils import mock_kube_secret_api, return_none, raise_not_found, \
-    test_val_file, mock_validate_secret
+    test_val_file, mock_validate_secret, mock_kube_crd_api, mock_helm_env, mock_helm_fetch, \
+    test_helm_repo_cache
 from cli_io import cli_input, cli_output
 from const import test_namespace,  test_chart_repo_name, test_chart_repo_url, \
     test_user, test_pass, test_docker_config_json
@@ -126,6 +127,12 @@ def mocked_delete_crd(name):
     global crd_exists_flag
     crd_exists_flag = False
 
+def mock_delete_crd(mocker):
+    global delete_crd_params
+    delete_crd_params = []
+    global crd_exists_flag
+    crd_exists_flag = True
+    mocker.patch('kxicli.common.delete_crd', mocked_delete_crd)
 
 def mocked_copy_secret(name, from_ns, to_ns):
     global copy_secret_params
@@ -468,10 +475,14 @@ def test_install_run_when_provided_file(mocker):
     runner = CliRunner()
     with runner.isolated_filesystem():
         # these are responses to the various prompts
-        result = runner.invoke(main.cli, ['install', 'run', '--version', '1.2.3', '--filepath', test_val_file])
+        result = runner.invoke(main.cli,
+            ['install', 'run', '--version', '1.2.3', '--filepath', test_val_file],
+            input='n'
+        )
         expected_output = f"""{phrases.values_validating}
 
 kxi-operator already installed with version kxi-operator-1.2.0
+Do you want to install kxi-operator version 1.2.3? [Y/n]: n
 Installing chart kx-insights/insights version 1.2.3 with values file from {test_val_file}
 """
     assert result.exit_code == 0
@@ -538,10 +549,13 @@ def test_install_run_when_provided_secret(mocker):
     with runner.isolated_filesystem():
         # these are responses to the various prompts
         result = runner.invoke(main.cli,
-                               ['install', 'run', '--version', '1.2.3', '--install-config-secret', test_install_secret])
+            ['install', 'run', '--version', '1.2.3', '--install-config-secret', test_install_secret],
+            input='n'
+        )
         expected_output = f"""{phrases.values_validating}
 
 kxi-operator already installed with version kxi-operator-1.2.0
+Do you want to install kxi-operator version 1.2.3? [Y/n]: n
 Installing chart kx-insights/insights version 1.2.3 with values from secret
 """
     with open(test_val_file, 'r') as values_file:
@@ -565,11 +579,15 @@ def test_install_run_when_provided_file_and_secret(mocker):
     runner = CliRunner()
     with runner.isolated_filesystem():
         # these are responses to the various prompts
-        result = runner.invoke(main.cli, ['install', 'run', '--version', '1.2.3', '--filepath', test_val_file,
-                                          '--install-config-secret', test_install_secret])
+        result = runner.invoke(main.cli,
+            ['install', 'run', '--version', '1.2.3', '--filepath', test_val_file,
+                                          '--install-config-secret', test_install_secret],
+            input='n'
+        )
         expected_output = f"""{phrases.values_validating}
 
 kxi-operator already installed with version kxi-operator-1.2.0
+Do you want to install kxi-operator version 1.2.3? [Y/n]: n
 Installing chart kx-insights/insights version 1.2.3 with values from secret and values file from {test_val_file}
 """
     with open(test_val_file, 'r') as values_file:
@@ -709,12 +727,16 @@ def test_install_run_when_no_context_set(mocker):
     runner = CliRunner()
     with runner.isolated_filesystem():
         # these are responses to the various prompts
-        result = runner.invoke(main.cli, ['install', 'run', '--version', '1.2.3', '--filepath', test_val_file])
+        result = runner.invoke(main.cli,
+            ['install', 'run', '--version', '1.2.3', '--filepath', test_val_file],
+            input='\nn'
+        )
         expected_output = f"""
 Please enter a namespace to run in [test]: 
 {phrases.values_validating}
 
 kxi-operator already installed with version kxi-operator-1.2.0
+Do you want to install kxi-operator version 1.2.3? [Y/n]: n
 Installing chart kx-insights/insights version 1.2.3 with values file from {test_val_file}
 """
     assert result.exit_code == 0
@@ -1042,6 +1064,9 @@ def test_upgrade(mocker):
     mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
     mock_get_operator_version(mocker)
     mock_validate_secret(mocker)
+    mock_helm_env(mocker)
+    mock_helm_fetch(mocker)
+    mock_kube_crd_api(mocker)
     if os.path.exists(test_asm_backup):
         os.remove(test_asm_backup)
     with open(test_asm_file) as f:
@@ -1057,11 +1082,17 @@ y
 y
 y
 """
-        result = runner.invoke(main.cli, ['install', 'upgrade', '--version', '1.2.3', '--install-config-secret',
-                                          test_install_secret, '--assembly-backup-filepath', test_asm_backup],
-                               input=user_input)
+        result = runner.invoke(main.cli,
+            ['install', 'upgrade', '--version', '1.2.3', '--install-config-secret',
+                    test_install_secret, '--assembly-backup-filepath', test_asm_backup],
+            input=user_input
+        )
         expected_output = f"""Upgrading KX Insights
 {phrases.values_validating}
+
+kxi-operator already installed with version kxi-operator-1.2.0
+Do you want to install kxi-operator version 1.2.3? [Y/n]: y
+Reading CRD data from {test_helm_repo_cache}/kxi-operator-1.2.3.tgz
 
 Backing up assemblies
 Persisted assembly definitions for ['{test_asm_name}'] to {test_asm_backup}
@@ -1073,10 +1104,9 @@ Are you sure you want to teardown {test_asm_name} [y/N]: y
 Waiting for assembly to be torn down
 
 Upgrading insights and operator
-
-kxi-operator already installed with version kxi-operator-1.2.0
-Do you want to install kxi-operator version 1.2.3? [Y/n]: y
 Installing chart kx-insights/kxi-operator version 1.2.3 with values from secret
+Replacing CRD assemblies.insights.kx.com
+Replacing CRD assemblyresources.insights.kx.com
 
 KX Insights already installed with version insights-1.2.1
 Installing chart kx-insights/insights version 1.2.3 with values from secret
@@ -1116,14 +1146,16 @@ def test_upgrade_skips_to_install_when_not_running(mocker):
     user_input = f"""y
 """
     with runner.isolated_filesystem():
-        result = runner.invoke(main.cli, ['install', 'upgrade', '--version', '1.2.3', '--install-config-secret',
-                                          test_install_secret], input=user_input)
+        result = runner.invoke(main.cli,
+            ['install', 'upgrade', '--version', '1.2.3', '--install-config-secret', test_install_secret],
+            input=user_input
+        )
     expected_output = f"""Upgrading KX Insights
 {phrases.values_validating}
-KX Insights is not deployed. Skipping to install
 
 kxi-operator not found
 Do you want to install kxi-operator version 1.2.3? [Y/n]: y
+KX Insights is not deployed. Skipping to install
 Installing chart kx-insights/kxi-operator version 1.2.3 with values from secret
 Installing chart kx-insights/insights version 1.2.3 with values from secret
 
@@ -1144,6 +1176,10 @@ def test_upgrade_when_user_declines_to_teardown_assembly(mocker):
     mocker.patch('kxicli.commands.assembly._get_assemblies_list', mock_list_assembly_multiple)
     mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
     mock_validate_secret(mocker)
+    mock_get_operator_version(mocker)
+    mock_helm_env(mocker)
+    mock_helm_fetch(mocker)
+
     if os.path.exists(test_asm_backup):
         os.remove(test_asm_backup)
     with open(test_asm_file) as f:
@@ -1152,10 +1188,17 @@ def test_upgrade_when_user_declines_to_teardown_assembly(mocker):
     test_asm_file_contents_2['metadata']['name'] = test_asm_name + '_2'
     runner = CliRunner()
     with runner.isolated_filesystem():
-        result = runner.invoke(main.cli, ['install', 'upgrade', '--version', '1.2.3', '--filepath', test_val_file,
-                                          '--assembly-backup-filepath', test_asm_backup], input='y\nn\n')
+        result = runner.invoke(main.cli,
+            ['install', 'upgrade', '--version', '1.2.3', '--filepath', test_val_file,
+                '--assembly-backup-filepath', test_asm_backup],
+            input='y\ny\nn\n'
+        )
     expected_output = f"""Upgrading KX Insights
 {phrases.values_validating}
+
+kxi-operator already installed with version kxi-operator-1.2.0
+Do you want to install kxi-operator version 1.2.3? [Y/n]: y
+Reading CRD data from {test_helm_repo_cache}/kxi-operator-1.2.3.tgz
 
 Backing up assemblies
 Persisted assembly definitions for ['{test_asm_name}', '{test_asm_name + '_2'}'] to {test_asm_backup}
@@ -1201,6 +1244,9 @@ def test_install_run_upgrades_when_already_installed(mocker):
     mock_create_namespace(mocker)
     mock_get_operator_version(mocker)
     mock_validate_secret(mocker)
+    mock_kube_crd_api(mocker)
+    mock_helm_env(mocker)
+    mock_helm_fetch(mocker)
     test_asm_backup = common.get_default_val('assembly.backup.file')
 
     runner = CliRunner()
@@ -1215,6 +1261,10 @@ KX Insights is already installed with version insights-1.2.1. Would you like to 
 Upgrading KX Insights
 {phrases.values_validating}
 
+kxi-operator already installed with version kxi-operator-1.2.0
+Do you want to install kxi-operator version 1.2.3? [Y/n]: y
+Reading CRD data from {test_helm_repo_cache}/kxi-operator-1.2.3.tgz
+
 Backing up assemblies
 Persisted assembly definitions for ['{test_asm_name}'] to {test_asm_backup}
 
@@ -1225,10 +1275,9 @@ Are you sure you want to teardown {test_asm_name} [y/N]: y
 Waiting for assembly to be torn down
 
 Upgrading insights and operator
-
-kxi-operator already installed with version kxi-operator-1.2.0
-Do you want to install kxi-operator version 1.2.3? [Y/n]: y
 Installing chart kx-insights/kxi-operator version 1.2.3 with values file from {test_val_file}
+Replacing CRD assemblies.insights.kx.com
+Replacing CRD assemblyresources.insights.kx.com
 
 KX Insights already installed with version insights-1.2.1
 Installing chart kx-insights/insights version 1.2.3 with values file from {test_val_file}
