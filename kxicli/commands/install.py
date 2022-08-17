@@ -24,7 +24,7 @@ from kxicli.commands.common import arg_force, arg_filepath, arg_version, arg_ope
     arg_release, arg_namespace, arg_assembly_backup_filepath
 from kxicli.common import get_default_val as default_val
 from kxicli.common import get_help_text as help_text
-from kxicli.resources import secret
+from kxicli.resources import secret, helm
 
 DOCKER_CONFIG_FILE_PATH = str(Path.home() / '.docker' / 'config.json')
 operator_namespace = 'kxi-operator'
@@ -46,6 +46,11 @@ IMAGE_PULL_KEYS =  ('.dockerconfigjson',)
 INGRESS_CERT_KEYS = (TLS_CRT, TLS_KEY)
 CLIENT_CERT_KEYS = (TLS_CRT, TLS_KEY)
 INSTALL_CONFIG_KEYS = (VALUES_YAML,)
+
+CRD_FILES = [
+    'insights.kx.com_assemblies.yaml',
+    'insights.kx.com_assemblyresources.yaml'
+]
 
 license_key = 'license.secret'
 image_pull_key = 'image.pullSecret'
@@ -247,6 +252,7 @@ def run(ctx, namespace, filepath, release, chart_repo_name, version, operator_ve
                                                                                  image_pull_secret, license_secret)
 
     validate_values(namespace, values_secret, filepath)
+
     insights_installed_charts = get_installed_charts(release, namespace)
     if len(insights_installed_charts) > 0:
         if click.confirm(f'KX Insights is already installed with version {insights_installed_charts[0]["chart"]}. Would you like to upgrade to version {version}?'):
@@ -256,10 +262,12 @@ def run(ctx, namespace, filepath, release, chart_repo_name, version, operator_ve
         else:
             sys.exit(0)
 
-    install_operator_and_release(release=release, namespace=namespace, version=version,
-                                 operator_version=operator_version, values_file=filepath, values_secret=values_secret,
-                                 image_pull_secret=image_pull_secret, license_secret=license_secret,
-                                 chart_repo_name=chart_repo_name, force=force, prompt_to_install_operator=False)
+    install_operator, is_op_upgrade, operator_version, crd_data = check_for_operator_install(release,
+        chart_repo_name, version, operator_version, force)
+
+    install_operator_and_release(release, namespace, version, operator_version, filepath, values_secret,
+                                 image_pull_secret, license_secret, chart_repo_name,
+                                 install_operator, is_op_upgrade, crd_data)
 
 @install.command()
 @arg_namespace()
@@ -299,36 +307,36 @@ def perform_upgrade(namespace, release, chart_repo_name, assembly_backup_filepat
                                                                                  image_pull_secret, license_secret)
 
     validate_values(namespace, values_secret, filepath)
+
+    install_operator, is_op_upgrade, operator_version, crd_data = check_for_operator_install(release,
+        chart_repo_name, version, operator_version, force)
+
     if not insights_installed(release, namespace):
-        click.echo('KX Insights is not deployed. Skipping to install')
-        install_operator_and_release(release=release, namespace=namespace, version=version,
-                                     operator_version=operator_version, values_file=filepath,
-                                     values_secret=values_secret, image_pull_secret=image_pull_secret,
-                                     license_secret=license_secret, chart_repo_name=chart_repo_name,
-                                     force=force, prompt_to_install_operator=False)
-        click.secho(f'\nUpgrade to version {version} complete', bold=True)
+        click.echo(phrases.upgrade_skip_to_install)
+        install_operator_and_release(release, namespace, version, operator_version, filepath, values_secret,
+                                 image_pull_secret, license_secret, chart_repo_name,
+                                 install_operator, is_op_upgrade, crd_data)
+        click.secho(str.format(phrases.upgrade_complete, version=version), bold=True)
         sys.exit(0)
 
-    click.secho('\nBacking up assemblies', bold=True)
+    click.secho(phrases.upgrade_asm_backup, bold=True)
     assembly_backup_filepath = assembly._backup_assemblies(namespace, assembly_backup_filepath, force)
 
-    click.secho('\nTearing down assemblies', bold=True)
-    click.secho('Assembly data will be persisted and state will be recovered post-upgrade')
+    click.secho(phrases.upgrade_asm_teardown, bold=True)
+    click.secho(phrases.upgrade_asm_persist)
     deleted = assembly._delete_running_assemblies(namespace=namespace, wait=True, force=force)
 
     if all(deleted):
-        click.secho('\nUpgrading insights and operator', bold=True)
-        upgraded = install_operator_and_release(release=release, namespace=namespace, version=version,
-                                                operator_version=operator_version, values_file=filepath,
-                                                values_secret=values_secret, image_pull_secret=image_pull_secret,
-                                                license_secret=license_secret, chart_repo_name=chart_repo_name,
-                                                force=force, prompt_to_install_operator=True)
+        click.secho(phrases.upgrade_insights_and_op, bold=True)
+        upgraded =  install_operator_and_release(release, namespace, version, operator_version, filepath, values_secret,
+                                                image_pull_secret, license_secret, chart_repo_name,
+                                                install_operator, is_op_upgrade, crd_data)
 
-    click.secho('\nReapplying assemblies', bold=True)
+    click.secho(phrases.upgrade_asm_reapply, bold=True)
     assembly._create_assemblies_from_file(namespace=namespace, filepath=assembly_backup_filepath)
 
     if upgraded:
-        click.secho(f'\nUpgrade to version {version} complete', bold=True)
+        click.secho(str.format(phrases.upgrade_complete, version=version), bold=True)
 
 
 @install.command()
@@ -740,33 +748,68 @@ def gen_cert(private_key):
     return builder.sign(private_key, hashes.SHA256(), default_backend())
 
 
-def install_operator_and_release(release, namespace, version, operator_version, values_file, values_secret,
-                                 image_pull_secret, license_secret, chart_repo_name, force, prompt_to_install_operator=True):
+def check_for_operator_install(release, chart_repo_name, insights_ver, op_ver, force):
+    """
+    Determine if the operator needs to be install or upgraded
+    Fetch the CRD data if it's an upgrade
+    This all happens prior to install / upgrade so we can exit cleanly in the event of an exception
+    """
+    operator_installed_charts = get_installed_charts(release, operator_namespace)
+    is_upgrade = len(operator_installed_charts) > 0
+
+    if is_upgrade:
+        click.echo(f'\nkxi-operator already installed with version {operator_installed_charts[0]["chart"]}')
+    else:
+        click.echo(f'\nkxi-operator not found')
+
+    operator_version_to_install = get_operator_version(chart_repo_name, insights_ver, op_ver)
+    install_operator = force or click.confirm(f'Do you want to install kxi-operator version {operator_version_to_install}?', default=True)
+
+    crd_data = []
+    if install_operator and is_upgrade:
+        cache = helm.get_repository_cache()
+        helm.fetch(chart_repo_name, 'kxi-operator', cache, operator_version_to_install)
+        crd_data = read_cached_crd_files(operator_version_to_install)
+
+    return install_operator, is_upgrade, operator_version_to_install, crd_data
+
+
+def install_operator_and_release(
+    release,
+    namespace,
+    version,
+    operator_version,
+    values_file,
+    values_secret,
+    image_pull_secret,
+    license_secret,
+    chart_repo_name,
+    install_operator = True,
+    is_operator_upgrade = False,
+    crd_data = []
+):
     """Install operator and insights"""
 
     subprocess.run(['helm', 'repo', 'update'], check=True)
 
-    operator_installed_charts = get_installed_charts(release, operator_namespace)
-    if len(operator_installed_charts) > 0:
-        click.echo(f'\nkxi-operator already installed with version {operator_installed_charts[0]["chart"]}')
-    else:
-        click.echo(f'\nkxi-operator not found')
-        prompt_to_install_operator = True
-
-    operator_version_to_install = get_operator_version(chart_repo_name, version, operator_version)
-    if force or prompt_to_install_operator and click.confirm(f'Do you want to install kxi-operator version {operator_version_to_install}?', default=True):
+    if install_operator:
         create_namespace(operator_namespace)
 
         copy_secret(image_pull_secret, namespace, operator_namespace)
         copy_secret(license_secret, namespace, operator_namespace)
 
-        helm_install(release, chart=f'{chart_repo_name}/kxi-operator', values_file=values_file, values_secret=values_secret, version=operator_version_to_install, namespace=operator_namespace)
+        helm_install(release, chart=f'{chart_repo_name}/kxi-operator', values_file=values_file, values_secret=values_secret,
+            version=operator_version, namespace=operator_namespace)
+
+        if is_operator_upgrade:
+            replace_chart_crds(crd_data)
 
     insights_installed_charts = get_installed_charts(release, namespace)
     if len(insights_installed_charts) > 0:
         click.echo(f'\nKX Insights already installed with version {insights_installed_charts[0]["chart"]}')
 
-    helm_install(release, chart=f'{chart_repo_name}/insights', values_file=values_file, values_secret=values_secret, version=version, namespace=namespace)
+    helm_install(release, chart=f'{chart_repo_name}/insights', values_file=values_file, values_secret=values_secret,
+            version=version, namespace=namespace)
 
     return True
 
@@ -838,7 +881,7 @@ def helm_install(release, chart, values_file, values_secret, version=None, names
         version_msg = ' version ' + version
         base_command = base_command + ['--version', version]
 
-    if values_file: 
+    if values_file:
         if values_secret:
             click.echo(f'Installing chart {chart}{version_msg} with values from secret and values file from {values_file}')
         else:
@@ -933,7 +976,7 @@ def insights_installed(release, namespace):
 
 def operator_installed(release, namespace: str = operator_namespace):
     """Check if a helm release of the operator exists"""
-    return len(get_installed_charts(release, operator_namespace)) > 0
+    return len(get_installed_charts(release, namespace)) > 0
 
 def get_installed_charts(release, namespace):
     """Retrieve running helm charts"""
@@ -1010,3 +1053,29 @@ def create_install_config(install_config_secret: secret.Secret, data):
         install_config_secret.create()
 
     return install_config_secret
+
+def read_cached_crd_files(
+    version: str, 
+    chart_name: str = 'kxi-operator', 
+    crds: list = CRD_FILES
+):
+    crd_data = []
+
+    cache = helm.get_repository_cache()
+    tar_path = Path(cache) / f'{chart_name}-{version}.tgz'
+
+    click.echo(f'Reading CRD data from {tar_path}')
+    # expect the files to exist in the chart tgz inside the crds folder
+    files = [f'{chart_name}/crds/{crd}' for crd in crds]
+    raw_data = common.extract_files_from_tar(tar_path, files)
+    for blob in raw_data:
+        try:
+            crd_data.append(yaml.safe_load(blob))
+        except yaml.YAMLError as e:
+            raise click.ClickException(f'Failed to parse custom resource definition file: {e}')
+
+    return crd_data
+
+def replace_chart_crds(crd_data):
+    for body in crd_data:
+        common.replace_crd(body['metadata']['name'], body)

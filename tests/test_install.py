@@ -6,12 +6,13 @@ import json
 import kubernetes as k8s
 import pytest
 import yaml
+import click
 
 from kxicli import common
 from kxicli.commands import install
 from kxicli.resources import secret
 from utils import IPATH_KUBE_COREV1API, test_secret_data, test_secret_type, test_secret_key, \
-    mock_kube_secret_api, mocked_read_namespaced_secret, raise_not_found, test_val_file, mock_validate_secret
+    mock_kube_secret_api, mocked_read_namespaced_secret, raise_not_found, test_val_file, mock_validate_secret, mock_helm_env
 from test_install_e2e import mocked_read_namespaced_secret_return_values, test_vals
 from const import test_user, test_pass, test_lic_file
 
@@ -510,3 +511,18 @@ def test_exists_returns_false_when_does_not_exist(mocker):
     s = secret.Secret(test_ns, test_secret, test_secret_type, data=test_secret_data)
     assert s.exists() == False
 
+
+def test_read_cache_crd_from_file_throws_yaml_error(mocker):
+    mock_helm_env(mocker)
+
+    # mock data returned from tar extraction
+    mocker.patch('kxicli.common.extract_files_from_tar', return_value=['abc: 123\n    def: 456'])
+    with pytest.raises(Exception) as e:
+        install.read_cached_crd_files(
+            '1.2.3',
+            'kxi-operator',
+            [install.CRD_FILES[0]]
+            )
+
+    assert isinstance(e.value, click.ClickException)
+    assert 'Failed to parse custom resource definition file' in e.value.message

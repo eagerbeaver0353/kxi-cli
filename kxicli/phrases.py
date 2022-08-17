@@ -70,3 +70,12 @@ values_validation_fail = 'Validation failed, run "kxi install setup" to fix'
 
 # Footers
 footer_setup = '\nConfiguration saved, KX Insights is now ready for install'
+
+# Upgrade
+upgrade_skip_to_install = 'KX Insights is not deployed. Skipping to install'
+upgrade_asm_backup = '\nBacking up assemblies'
+upgrade_asm_teardown = '\nTearing down assemblies'
+upgrade_asm_reapply = '\nReapplying assemblies'
+upgrade_asm_persist = 'Assembly data will be persisted and state will be recovered post-upgrade'
+upgrade_insights_and_op = '\nUpgrading insights and operator'
+upgrade_complete = '\nUpgrade to version {version} complete'
