@@ -14,6 +14,7 @@ test_helm_repo_cache = str(Path(__file__).parent / 'files' / 'helm')
 
 IPATH_KUBE_COREV1API = 'kubernetes.client.CoreV1Api'
 IPATH_KUBE_APIEXTENSTIONSV1API = 'kubernetes.client.ApiextensionsV1Api'
+IPATH_CLICK_PROMPT = 'click.prompt'
 
 @contextmanager
 def temp_file(file_name: str, prefix: str = 'kxicli-'):

@@ -7,6 +7,7 @@ from click.testing import CliRunner
 
 from kxicli import config
 from kxicli import main
+from kxicli import phrases
 
 config.config_file = str(Path(__file__).parent / 'files' / 'test-cli-config')
 
@@ -82,6 +83,7 @@ def test_configure_output_is_correct():
                 'test\n'
                 'client\n'
                 'secret\n'
+                'secret\n'
             )
 
             result = runner.invoke(main.cli, ['configure'], input=user_input)
@@ -90,7 +92,7 @@ def test_configure_output_is_correct():
                 'Hostname [https://test.kx.com]: https://test.kx.com\n'
                 'Namespace [test]: test\n'
                 'Client ID [client]: client\n'
-                'Client Secret (input hidden): \n'
+                f'Client Secret (input hidden): \n{phrases.password_reenter}: \n'
                 'CLI successfully configured, configuration stored in ' + config.config_file + '\n'
         )
 

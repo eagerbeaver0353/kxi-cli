@@ -8,6 +8,7 @@ import tarfile
 
 from kxicli import config
 from kxicli import log
+from kxicli import phrases
 
 # Help text dictionary for commands
 HELP_TEXT = {
@@ -213,3 +214,14 @@ def extract_files_from_tar(tar: Path, files: list, max_read_size: int = 2000000)
     else:
         raise click.ClickException(f'{tar} does not exist or is not a valid tar archive')
     return data
+
+
+def enter_password(msg: str):
+    password = click.prompt(msg, type=click.STRING, hide_input=True).strip()
+    confirm_password = click.prompt(phrases.password_reenter, type=click.STRING, hide_input=True).strip()
+
+    if password != confirm_password:
+        log.error(phrases.password_no_match)
+        password = enter_password(msg)
+
+    return password

@@ -5,6 +5,7 @@ from pathlib import Path
 import click
 
 from kxicli import phrases
+from kxicli import common
 
 config_dir_path = Path.home() / '.insights'
 config_dir = str(config_dir_path)
@@ -45,26 +46,22 @@ def set_config(profile):
         config[profile] = {}
 
     os.makedirs(config_dir, exist_ok=True)
+    config[profile]['hostname'] = click.prompt(
+        'Hostname',
+        type=str,
+        default=config.get(profile, 'hostname', fallback=''))
+
+    config[profile]['namespace'] = click.prompt(
+        'Namespace',
+        type=str,
+        default=config.get(profile, 'namespace', fallback=''))
+
+    config[profile]['client.id'] = click.prompt(
+        'Client ID',
+        type=str,
+        default=config.get(profile, 'client.id', fallback=''))
+
+    config[profile]['client.secret'] = common.enter_password('Client Secret (input hidden)')
+
     with open(config_file, 'w+') as f:
-        config[profile]['hostname'] = click.prompt(
-            'Hostname',
-            type=str,
-            default=config.get(profile, 'hostname', fallback=''))
-
-        config[profile]['namespace'] = click.prompt(
-            'Namespace',
-            type=str,
-            default=config.get(profile, 'namespace', fallback=''))
-
-        config[profile]['client.id'] = click.prompt(
-            'Client ID',
-            type=str,
-            default=config.get(profile, 'client.id', fallback=''))
-
-        config[profile]['client.secret'] = click.prompt(
-            'Client Secret (input hidden)',
-            type=str,
-            hide_input=True
-        )
-
         config.write(f)

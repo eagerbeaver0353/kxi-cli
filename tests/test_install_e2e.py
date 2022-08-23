@@ -289,8 +289,9 @@ def run_cli(cmd, test_cfg, cli_config = None, output_file = None, expected_exit_
     with runner.isolated_filesystem():
         verb = cmd[1]
         user_input = cli_input(verb, **test_cfg)
-        result = runner.invoke(main.cli, cmd, input=user_input)
         expected_output = cli_output(verb, cli_config, output_file, **test_cfg)
+        result = runner.invoke(main.cli, cmd, input=user_input)
+
     assert result.exit_code == expected_exit_code
     assert result.output == expected_output
 
