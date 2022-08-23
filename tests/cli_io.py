@@ -46,7 +46,7 @@ def cli_input(
         inp = f'{inp}\n{test_cert}\n{test_key}'
 
     # Chart
-    inp = f'{inp}\n{test_chart_repo_name}\n{test_chart_repo_url}\n{test_user}\n{test_pass}'
+    inp = f'{inp}\n{test_chart_repo_name}\n{test_chart_repo_url}\n{test_user}\n{test_pass}\n{test_pass}'
 
     # License
     inp = input_secret(inp, lic_sec_exists, lic_sec_is_valid, lic_overwrite, lic)
@@ -62,12 +62,12 @@ def cli_input(
 
     # Keycloak passwords
     if deploy_keycloak:
-        inp = input_secret(inp, kc_secret_exists, kc_secret_is_valid, kc_secret_overwrite, f'{test_pass}\n{test_pass}')
-        inp = input_secret(inp, pg_secret_exists, pg_secret_is_valid, pg_secret_overwrite, f'{test_pass}\n{test_pass}')
+        inp = input_secret(inp, kc_secret_exists, kc_secret_is_valid, kc_secret_overwrite, f'{test_pass}\n{test_pass}\n{test_pass}\n{test_pass}')
+        inp = input_secret(inp, pg_secret_exists, pg_secret_is_valid, pg_secret_overwrite, f'{test_pass}\n{test_pass}\n{test_pass}\n{test_pass}')
 
     # Keycloak clients
-    inp = input_provide_data(inp, provide_gui_secret, 'gui-secret')
-    inp = input_provide_data(inp, provide_operator_secret, 'operator-secret')
+    inp = input_provide_data(inp, provide_gui_secret, 'gui-secret\ngui-secret')
+    inp = input_provide_data(inp, provide_operator_secret, 'operator-secret\noperator-secret')
 
     # values
     if values_exist and overwrite_values == 'y':
@@ -182,7 +182,8 @@ def output_chart():
 {phrases.chart_repo} [{common.get_default_val('chart.repo.name')}]: {test_chart_repo_name}
 {phrases.chart_repo_url} [{common.get_default_val('chart.repo.url')}]: {test_chart_repo_url}
 {phrases.chart_user}: {test_user}
-{phrases.chart_password}: """
+{phrases.chart_password}: 
+{phrases.password_reenter}: """
 
 
 def output_license(license, exists, is_valid, overwrite):
@@ -204,13 +205,13 @@ def output_client(exists, is_valid, overwrite):
 
 def output_keycloak_secret(exists, is_valid, overwrite):
     secret_name = common.get_default_val('keycloak.secret')
-    prompt = f'{phrases.keycloak_admin}: \n{phrases.keycloak_manage}: '
+    prompt = f'{phrases.keycloak_admin}: \n{phrases.password_reenter}: \n{phrases.keycloak_manage}: \n{phrases.password_reenter}: '
     return f'{output_secret(secret_name, exists, is_valid, prompt, overwrite)}'
 
 
 def output_postgresql_secret(exists, is_valid, overwrite):
     secret_name = common.get_default_val('keycloak.postgresqlSecret')
-    prompt = f'{phrases.postgresql_postgres}: \n{phrases.postgresql_user}: '
+    prompt = f'{phrases.postgresql_postgres}: \n{phrases.password_reenter}: \n{phrases.postgresql_user}: \n{phrases.password_reenter}: '
     return f'{output_secret(secret_name, exists, is_valid, prompt, overwrite)}'
 
 
@@ -224,7 +225,7 @@ def output_image(repo, user, exists, is_valid, use_existing_creds, overwrite):
     else:
         enter_user = f'{phrases.image_user.format(repo=repo)}: {user}'
         password = f'{phrases.image_password.format(user=user)}: '
-        prompt = f'{creds}\n{enter_user}\n{password}'
+        prompt = f'{creds}\n{enter_user}\n{password}\n{phrases.password_reenter}: '
 
     return f"""{header}
 {post_header}
@@ -267,7 +268,7 @@ def output_client_prompt(cli_config, client_name, secret_name, provide_secret):
     prompt = f'{phrases.service_account_secret.format(name=client_name)} [y/N]: {provide_secret}'
     save = phrases.persist_config.format(name=secret_name, file=cli_config)
     if provide_secret == 'y':
-        get_secret = f'{phrases.secret_entry.format(name=client_name)}: '
+        get_secret = f'{phrases.secret_entry}: \n{phrases.password_reenter}: '
     else:
         get_secret = phrases.service_account_random.format(name=client_name)
 
@@ -330,7 +331,7 @@ def input_provide_data(inp, prompt_answer, data):
 def input_image(user, use_existing_creds):
     str = use_existing_creds
     if use_existing_creds == 'n':
-        str = f'{str}\n{user}\n{test_pass}'
+        str = f'{str}\n{user}\n{test_pass}\n{test_pass}'
     return str
 
 

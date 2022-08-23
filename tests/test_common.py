@@ -7,11 +7,21 @@ import click
 
 from kxicli import common
 from kxicli import config
-from utils import mock_kube_crd_api, get_crd_body, raise_not_found, raise_conflict, return_none
+from kxicli import phrases
+from utils import mock_kube_crd_api, get_crd_body, raise_not_found, raise_conflict, return_none, IPATH_CLICK_PROMPT
 
 config.load_config('default')
 
 test_kube_config = os.path.dirname(__file__) + '/files/test-kube-config'
+
+PASSWORD = 's3cr3t'
+
+PASSWORD_LIST = [
+    'test',
+    'Test',
+    PASSWORD,
+    PASSWORD
+]
 
 with open(test_kube_config, 'r') as f:
     k8s_config = yaml.full_load(f)
@@ -151,3 +161,22 @@ def test_extract_files_from_tar_when_file_too_big():
         common.extract_files_from_tar(path, file, max_size)
     assert isinstance(e.value, click.ClickException)
     assert e.value.message == f'Refused to load more than {max_size} bytes from {file[0]}'
+
+def test_enter_password_when_they_match(mocker):
+    mock = mocker.patch(IPATH_CLICK_PROMPT, return_value=PASSWORD)
+
+    # click.prompt should only be called twice when it's valid
+    assert PASSWORD == common.enter_password('Enter password')
+    assert mock.call_count == 2
+
+def test_enter_password_prompts_again_if_they_dont_match(mocker, capsys):
+    def get_password(*args, **kwargs):
+        return PASSWORD_LIST.pop(0)
+
+    mocker.patch(IPATH_CLICK_PROMPT, get_password)
+    res = common.enter_password('Enter password')
+    captured = capsys.readouterr()
+
+    # the captured output should show that the passwords didn't match
+    assert PASSWORD == res
+    assert phrases.password_no_match in captured.out

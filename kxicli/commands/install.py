@@ -123,7 +123,7 @@ def setup(namespace, chart_repo_name, license_secret, license_as_env_var, client
         chart_repo_url = click.prompt(phrases.chart_repo_url,
                                       default=default_val('chart.repo.url'))
         username = click.prompt(phrases.chart_user)
-        password = click.prompt(phrases.chart_password, hide_input=True)
+        password = common.enter_password(phrases.chart_password)
         helm_add_repo(chart_repo_name, chart_repo_url, username, password)
 
     click.secho(phrases.header_license, bold=True)
@@ -495,7 +495,7 @@ def populate_image_pull_secret(secret: secret.Secret, **kwargs):
             return secret
 
     user = click.prompt(phrases.image_user.format(repo=image_repo))
-    password = click.prompt(phrases.image_password.format(user=user), hide_input=True)
+    password = common.enter_password(phrases.image_password.format(user=user))
     docker_config = create_docker_config(image_repo, user, password)
     secret = populate_docker_config_secret(secret, docker_config)
 
@@ -503,9 +503,9 @@ def populate_image_pull_secret(secret: secret.Secret, **kwargs):
 
 
 def populate_keycloak_secret(secret: secret.Secret, **kwargs):
-    admin_password = click.prompt(phrases.keycloak_admin, hide_input=True)
-    management_password = click.prompt(phrases.keycloak_manage,
-                                           hide_input=True)
+    admin_password = common.enter_password(phrases.keycloak_admin)
+    management_password = common.enter_password(phrases.keycloak_manage)
+
     secret.data = {
             'admin-password': base64.b64encode(admin_password.encode()).decode('ascii'),
             'management-password': base64.b64encode(management_password.encode()).decode('ascii')
@@ -515,9 +515,8 @@ def populate_keycloak_secret(secret: secret.Secret, **kwargs):
 
 
 def populate_postgresql_secret(secret: secret.Secret, **kwargs):
-    postgresql_postgres_password = click.prompt(phrases.postgresql_postgres,
-                                                    hide_input=True)
-    postgresql_password = click.prompt(phrases.postgresql_user, hide_input=True)
+    postgresql_postgres_password = common.enter_password(phrases.postgresql_postgres)
+    postgresql_password = common.enter_password(phrases.postgresql_user)
 
     secret.data = {
             'postgresql-postgres-password': base64.b64encode(postgresql_postgres_password.encode()).decode('ascii'),
@@ -961,7 +960,7 @@ def copy_secret(name, from_ns, to_ns):
 
 def prompt_for_client_secret(client_name):
     if click.confirm(phrases.service_account_secret.format(name=client_name)):
-        client_secret = click.prompt(phrases.secret_entry, hide_input=True)
+        client_secret = common.enter_password(phrases.secret_entry)
     else:
         click.echo(phrases.service_account_random.format(name=client_name))
         client_secret = ''.join(random.SystemRandom().choice(string.ascii_letters + string.digits) for _ in range(10))

@@ -26,7 +26,6 @@ test_cert = install.gen_cert(test_key)
 common.config.load_config("default")
 
 # Constants for common import paths
-IPATH_CLICK_PROMPT = 'click.prompt'
 SYS_STDIN = 'sys.stdin'
 
 fun_subprocess_check_output = 'subprocess.check_output'

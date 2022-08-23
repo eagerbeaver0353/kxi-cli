@@ -79,3 +79,7 @@ upgrade_asm_reapply = '\nReapplying assemblies'
 upgrade_asm_persist = 'Assembly data will be persisted and state will be recovered post-upgrade'
 upgrade_insights_and_op = '\nUpgrading insights and operator'
 upgrade_complete = '\nUpgrade to version {version} complete'
+
+# Passwords
+password_reenter = 'Re-enter to confirm (input hidden)'
+password_no_match = 'Entered values did not match'
