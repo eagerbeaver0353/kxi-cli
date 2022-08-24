@@ -13,7 +13,11 @@ setup(
         "pyyaml>=6.0",
         "cryptography>=2.8",
         "pakxcli==1.0.0rc1",
-        "packaging>=21.3"
+        "packaging>=21.3",
+        "python-keycloak>=2.3.0",
+        "azure-identity>=1.10.0",
+        "msgraph-core>=0.2.2",
+        "dataclasses_json>=0.5.7"
     ],
     python_requires=">=3.7",
     entry_points={
