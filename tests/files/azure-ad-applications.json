@@ -1,0 +1,85 @@
+{
+    "@odata.context": "https://graph.microsoft.com/v1.0/$metadata#applications",
+    "@odata.count": 1,
+    "value": [
+        {
+            "id": "id",
+            "deletedDateTime": null,
+            "appId": "appId",
+            "applicationTemplateId": null,
+            "disabledByMicrosoftStatus": null,
+            "createdDateTime": "2021-10-01T00:00:00Z",
+            "displayName": "test-app",
+            "description": null,
+            "groupMembershipClaims": "SecurityGroup",
+            "identifierUris": [],
+            "isDeviceOnlyAuthSupported": null,
+            "isFallbackPublicClient": null,
+            "notes": null,
+            "publisherDomain": "firstderivatives.com",
+            "serviceManagementReference": null,
+            "signInAudience": "AzureADMyOrg",
+            "tags": [],
+            "tokenEncryptionKeyId": null,
+            "samlMetadataUrl": null,
+            "defaultRedirectUri": null,
+            "certification": null,
+            "optionalClaims": null,
+            "addIns": [],
+            "api": {
+                "acceptMappedClaims": null,
+                "knownClientApplications": [],
+                "requestedAccessTokenVersion": null,
+                "oauth2PermissionScopes": [],
+                "preAuthorizedApplications": []
+            },
+            "appRoles": [],
+            "info": {
+                "logoUrl": null,
+                "marketingUrl": null,
+                "privacyStatementUrl": null,
+                "supportUrl": null,
+                "termsOfServiceUrl": null
+            },
+            "keyCredentials": [],
+            "parentalControlSettings": {
+                "countriesBlockedForMinors": [],
+                "legalAgeGroupRule": "Allow"
+            },
+            "passwordCredentials": [],
+            "publicClient": {
+                "redirectUris": []
+            },
+            "requiredResourceAccess": [
+                {
+                    "resourceAppId": "00000003-0000-0000-c000-000000000000",
+                    "resourceAccess": [
+                        {
+                            "id": "resourceaccess-id",
+                            "type": "Scope"
+                        }
+                    ]
+                }
+            ],
+            "verifiedPublisher": {
+                "displayName": null,
+                "verifiedPublisherId": null,
+                "addedDateTime": null
+            },
+            "web": {
+                "homePageUrl": null,
+                "logoutUrl": null,
+                "redirectUris": [
+                    "http://fake-redirect.com"
+                ],
+                "implicitGrantSettings": {
+                    "enableAccessTokenIssuance": false,
+                    "enableIdTokenIssuance": false
+                }
+            },
+            "spa": {
+                "redirectUris": []
+            }
+        }
+    ]
+}

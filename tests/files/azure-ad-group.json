@@ -1,0 +1,40 @@
+{
+    "@odata.context": "https://graph.microsoft.com/v1.0/$metadata#groups",
+    "@odata.count": 1,
+    "value": [
+        {
+            "id": "id",
+            "deletedDateTime": null,
+            "classification": null,
+            "createdDateTime": "2017-08-24T16:15:00Z",
+            "creationOptions": [],
+            "description": "description",
+            "displayName": "groupname",
+            "expirationDateTime": null,
+            "groupTypes": [],
+            "isAssignableToRole": null,
+            "mail": null,
+            "mailEnabled": false,
+            "mailNickname": "00000000-0000-0000-0000-000000000000",
+            "membershipRule": null,
+            "membershipRuleProcessingState": null,
+            "onPremisesDomainName": null,
+            "onPremisesLastSyncDateTime": null,
+            "onPremisesNetBiosName": null,
+            "onPremisesSamAccountName": null,
+            "onPremisesSecurityIdentifier": null,
+            "onPremisesSyncEnabled": null,
+            "preferredDataLocation": null,
+            "preferredLanguage": null,
+            "proxyAddresses": [],
+            "renewedDateTime": "2017-08-24T16:15:00Z",
+            "resourceBehaviorOptions": [],
+            "resourceProvisioningOptions": [],
+            "securityEnabled": true,
+            "securityIdentifier": "security identifier",
+            "theme": null,
+            "visibility": null,
+            "onPremisesProvisioningErrors": []
+        }
+    ]
+}
