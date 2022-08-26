@@ -210,6 +210,15 @@ def test_get_assemblies_list(mocker):
     assert assembly._get_assemblies_list(namespace='test_ns') == ASSEMBLY_LIST
 
 
+def test_get_assemblies_list_uses_label_selector(mocker):
+    mock = mocker.patch.object(k8s.client.CustomObjectsApi, 'list_namespaced_custom_object')
+    mock.side_effect = lambda *args, **kwargs: ASSEMBLY_LIST
+    res = assembly._get_assemblies_list(namespace='test_ns')
+
+    assert mock.call_args_list[0][1]['label_selector'] == assembly.ASM_LABEL_SELECTOR
+    assert res == ASSEMBLY_LIST
+
+
 def test_backup_assemblies(mocker):
     mock_list_assemblies(mocker.patch(CUSTOM_OBJECT_API).return_value)
     with temp_asm_file() as test_asm_list_file:

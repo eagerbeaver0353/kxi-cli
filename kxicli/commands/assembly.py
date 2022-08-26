@@ -20,6 +20,7 @@ API_GROUP = 'insights.kx.com'
 API_VERSION = 'v1'
 API_PLURAL = 'assemblies'
 CONFIG_ANNOTATION = 'kubectl.kubernetes.io/last-applied-configuration'
+ASM_LABEL_SELECTOR = 'insights.kx.com/queryEnvironment!=true'
 
 arg_namespace = partial(
     arg_common_namespace, default=lambda: default_val('namespace')
@@ -89,7 +90,7 @@ def _assembly_status(namespace, name, print_status=False):
     return assembly_status['AssemblyReady']['status'] == 'True'
 
 
-def _get_assemblies_list(namespace):
+def _get_assemblies_list(namespace, label_selector=ASM_LABEL_SELECTOR):
     """List assemblies"""
     common.load_kube_config()
     api = k8s.client.CustomObjectsApi()
@@ -98,6 +99,7 @@ def _get_assemblies_list(namespace):
         version=API_VERSION,
         namespace=namespace,
         plural=API_PLURAL,
+        label_selector=label_selector,
     )
     return res
 
