@@ -7,13 +7,14 @@ from contextlib import contextmanager
 from pathlib import Path
 from tempfile import mkdtemp
 
-import yaml
+import yaml, json
 from click.testing import CliRunner
 
 from kxicli import common
 from kxicli import main
 from kxicli import phrases
 from kxicli.resources import secret
+from kxicli.commands.assembly import CONFIG_ANNOTATION
 from utils import mock_kube_secret_api, return_none, raise_not_found, \
     test_val_file, mock_validate_secret, mock_kube_crd_api, mock_helm_env, mock_helm_fetch, \
     test_helm_repo_cache
@@ -37,7 +38,9 @@ test_output_file_lic_env_var = str(Path(__file__).parent / 'files' / 'output-val
 test_output_file_lic_on_demand = str(Path(__file__).parent / 'files' / 'output-values-license-on-demand.yaml')
 test_output_file_manual_ingress = str(Path(__file__).parent / 'files' / 'output-values-manual-ingress-secret.yaml')
 test_asm_file = str(Path(__file__).parent / 'files' / 'assembly-v1.yaml')
+test_asm_file2 = str(Path(__file__).parent / 'files' / 'assembly2-v1.yaml')
 test_asm_name = 'basic-assembly'  # As per contents of test_asm_file
+test_asm_name2 = 'basic-assembly2'  # As per contents of test_asm_file2
 test_asm_backup =  str(Path(__file__).parent / 'files' / 'test-assembly-backup.yaml')
 test_crds = ['assemblies.insights.kx.com', 'assemblyresources.insights.kx.com']
 
@@ -244,9 +247,10 @@ def mock_list_assembly(namespace):
 def mock_list_assembly_multiple(namespace):
     with open(test_asm_file) as f:
         test_asm = yaml.safe_load(f)
-    test_asm_2 = copy.deepcopy(test_asm)
-    test_asm_2['metadata']['name'] = test_asm_name + '_2'
-    return {'items': [test_asm, test_asm_2]}
+    with open(test_asm_file2) as f:
+        test_asm2 = yaml.safe_load(f)
+    
+    return {'items': [test_asm, test_asm2]}
 
 
 def mock_delete_assembly(mocker):
@@ -1071,7 +1075,9 @@ def test_upgrade(mocker):
     if os.path.exists(test_asm_backup):
         os.remove(test_asm_backup)
     with open(test_asm_file) as f:
-        test_asm_file_contents = yaml.safe_load(f)
+        file = yaml.safe_load(f)
+        last_applied = file['metadata']['annotations'][CONFIG_ANNOTATION]
+        test_asm_file_contents = json.loads(last_applied)
     with open(test_val_file, 'r') as values_file:
         values = str(values_file.read())
     runner = CliRunner()
@@ -1122,7 +1128,8 @@ Upgrade to version 1.2.3 complete
     assert result.exit_code == 0
     assert result.output == expected_output
     with open(test_asm_backup) as f:
-        assert yaml.safe_load(f) == {'items': [test_asm_file_contents]}
+        expect = yaml.safe_load(f)
+        assert expect == {'items': [test_asm_file_contents]}
     assert subprocess_run_command == [
         ['helm', 'repo', 'update'],
         ['helm', 'upgrade', '--install', '-f', '-', 'insights', test_operator_chart, '--version', '1.2.3', '--namespace',
@@ -1184,9 +1191,15 @@ def test_upgrade_when_user_declines_to_teardown_assembly(mocker):
     if os.path.exists(test_asm_backup):
         os.remove(test_asm_backup)
     with open(test_asm_file) as f:
-        test_asm_file_contents = yaml.safe_load(f)
-    test_asm_file_contents_2 = copy.deepcopy(test_asm_file_contents)
-    test_asm_file_contents_2['metadata']['name'] = test_asm_name + '_2'
+        file = yaml.safe_load(f)
+        last_applied = file['metadata']['annotations'][CONFIG_ANNOTATION]
+        test_asm_file_contents = json.loads(last_applied)
+    
+    with open(test_asm_file2) as f:
+        file = yaml.safe_load(f)
+        last_applied = file['metadata']['annotations'][CONFIG_ANNOTATION]
+        test_asm_file_contents2 = json.loads(last_applied)
+
     runner = CliRunner()
     with runner.isolated_filesystem():
         result = runner.invoke(main.cli,
@@ -1202,30 +1215,31 @@ Do you want to install kxi-operator version 1.2.3? [Y/n]: y
 Reading CRD data from {test_helm_repo_cache}/kxi-operator-1.2.3.tgz
 
 Backing up assemblies
-Persisted assembly definitions for ['{test_asm_name}', '{test_asm_name + '_2'}'] to {test_asm_backup}
+Persisted assembly definitions for ['{test_asm_name}', '{test_asm_name + '2'}'] to {test_asm_backup}
 
 Tearing down assemblies
 Assembly data will be persisted and state will be recovered post-upgrade
 Tearing down assembly {test_asm_name}
 Are you sure you want to teardown {test_asm_name} [y/N]: y
 Waiting for assembly to be torn down
-Tearing down assembly {test_asm_name + '_2'}
-Are you sure you want to teardown {test_asm_name + '_2'} [y/N]: n
-Not tearing down assembly {test_asm_name + '_2'}
+Tearing down assembly {test_asm_name2}
+Are you sure you want to teardown {test_asm_name2} [y/N]: n
+Not tearing down assembly {test_asm_name2}
 
 Reapplying assemblies
 Submitting assembly from {test_asm_backup}
 Submitting assembly {test_asm_name}
 Custom assembly resource {test_asm_name} created!
-Submitting assembly {test_asm_name + '_2'}
-Custom assembly resource {test_asm_name + '_2'} created!
+Submitting assembly {test_asm_name2}
+Custom assembly resource {test_asm_name2} created!
 """
     assert result.exit_code == 0
     with open(test_asm_backup) as f:
-        assert yaml.safe_load(f) == {'items':
+        expect = yaml.safe_load(f)
+        assert expect == {'items':
             [
                 test_asm_file_contents,
-                test_asm_file_contents_2
+                test_asm_file_contents2
             ]
         }
     assert subprocess_run_command == []
@@ -1234,7 +1248,7 @@ Custom assembly resource {test_asm_name + '_2'} created!
     assert operator_installed_flag == True
     assert crd_exists_flag == True
     assert running_assembly[test_asm_name] == True
-    assert running_assembly[test_asm_name + '_2'] == True
+    assert running_assembly[test_asm_name2] == True
     assert result.output == expected_output
     os.remove(test_asm_backup)
 

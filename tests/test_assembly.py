@@ -17,6 +17,7 @@ from kxicli.commands import assembly
 
 ASM_NAME = 'test_asm'
 ASM_NAME2 = 'test_asm2'
+ASM_NAME3 = 'test_asm3'
 TEST_CLI = CliRunner()
 CUSTOM_OBJECT_API = 'kubernetes.client.CustomObjectsApi'
 PREFERRED_VERSION_FUNC = 'kxicli.commands.assembly.get_preferred_api_version'
@@ -41,41 +42,38 @@ def temp_asm_file(prefix: str = 'kxicli-assembly-', file_name='test_assembly_lis
         if inited:
             shutil.rmtree(dir_name)
 
+def build_assembly_object(name, response=False):
+    """
+    Create an assembly object
+    Optionally add the status & last-applied-configuration annotation
+    """
 
-TEST_ASSEMBLY = {
-    'apiVersion': 'insights.kx.com/v1',
-    'metadata': {
-        'name': ASM_NAME,
-        'namespace': TEST_NS
-    },
-    'status': {
-        'conditions': [
-            {
-                'status': 'True',
-                'type': 'AssemblyReady'
-
-            }
-        ]
+    object = {
+        'apiVersion': 'insights.kx.com/v1',
+        'metadata': {
+            'name': name,
+            'namespace': TEST_NS,
+        }
     }
-}
+    
+    if response:
+        object['metadata']['annotations'] = {
+            assembly.CONFIG_ANNOTATION: json.dumps(object)
+        }
+        object['status'] = {
+            'conditions': [
+                {
+                    'status': 'True',
+                    'type': 'AssemblyReady'
+                }
+            ]
+        }
 
-TEST_ASSEMBLY2 = {
-    'apiVersion': 'insights.kx.com/v1',
-    'metadata': {
-        'name': ASM_NAME2,
-        'namespace': TEST_NS
-    },
-    'status': {
-        'conditions': [
-            {
-                'status': 'True',
-                'type': 'AssemblyReady'
-            }
-        ]
-    }
-}
+    return object
 
-ASSEMBLY_LIST = {'items': [TEST_ASSEMBLY, TEST_ASSEMBLY2]}
+
+ASSEMBLY_LIST = {'items': [build_assembly_object(ASM_NAME, True), build_assembly_object(ASM_NAME2, True), build_assembly_object(ASM_NAME3)]}
+ASSEMBLY_BACKUP_LIST = {'items': [build_assembly_object(ASM_NAME), build_assembly_object(ASM_NAME2)]}
 
 TRUE_STATUS = {
     'AssemblyReady': {
@@ -153,11 +151,11 @@ def test_format_assembly_status_without_message_and_reason():
             'status': 'True'
         }
     }
-    assert assembly._format_assembly_status(TEST_ASSEMBLY) == formatted_status
+    assert assembly._format_assembly_status(build_assembly_object(ASM_NAME, True)) == formatted_status
 
 
 def test_format_assembly_status_with_message_and_reason():
-    asm = copy.deepcopy(TEST_ASSEMBLY)
+    asm = build_assembly_object(ASM_NAME, True)
     asm['status']['conditions'][0]['status'] = 'False'
     asm['status']['conditions'][0]['message'] = 'type'
     asm['status']['conditions'][0]['reason'] = 'StorageManager not ready'
@@ -175,13 +173,13 @@ def test_format_assembly_status_with_message_and_reason():
 def test_status_with_true_status(mocker):
     mock = mocker.patch(CUSTOM_OBJECT_API)
     instance = mock.return_value
-    instance.get_namespaced_custom_object.return_value = TEST_ASSEMBLY
+    instance.get_namespaced_custom_object.return_value = build_assembly_object(ASM_NAME, True)
     assert assembly._assembly_status(namespace='test_ns', name='test_asm')
 
 
 def test_status_with_false_status(mocker):
     # set False status
-    asm = copy.deepcopy(TEST_ASSEMBLY)
+    asm = build_assembly_object(ASM_NAME, True)
     asm['status']['conditions'][0]['status'] = 'False'
 
     # mock the Kubernetes function to return asm above
@@ -194,7 +192,7 @@ def test_status_with_false_status(mocker):
 
 def test_create_with_false_status(mocker):
     # set False status
-    asm = copy.deepcopy(TEST_ASSEMBLY)
+    asm = build_assembly_object(ASM_NAME, True)
     asm['status']['conditions'][0]['status'] = 'False'
 
     # mock the Kubernetes function to return asm above
@@ -225,7 +223,8 @@ def test_backup_assemblies(mocker):
         assert test_asm_list_file == assembly._backup_assemblies(namespace='test_ns', filepath=test_asm_list_file,
                                                                  force=False)
         with open(test_asm_list_file, 'rb') as f:
-            assert yaml.full_load(f) == ASSEMBLY_LIST
+            expect = yaml.full_load(f)
+            assert expect == ASSEMBLY_BACKUP_LIST
 
 
 def test_backup_assemblies_when_no_assemblies_running(mocker):
@@ -234,12 +233,6 @@ def test_backup_assemblies_when_no_assemblies_running(mocker):
     with temp_asm_file() as test_asm_list_file:
         assert assembly._backup_assemblies(namespace='test_ns', filepath=test_asm_list_file, force=False) == None
         assert not os.path.exists(test_asm_list_file)
-
-
-def test_add_last_applied_configuration_annotation():
-    res = assembly._add_last_applied_configuration_annotation(TEST_ASSEMBLY)
-    assert assembly.CONFIG_ANNOTATION in res['metadata']['annotations']
-    assert res['metadata']['annotations'][assembly.CONFIG_ANNOTATION] == '\n' + json.dumps(TEST_ASSEMBLY)
 
 
 def test_create_assembly_submits_to_k8s_api(mocker):
@@ -252,23 +245,6 @@ def test_create_assembly_submits_to_k8s_api(mocker):
     assert appended_args == [
         {'group': assembly.API_GROUP, 'version': PREFERRED_VERSION, 'namespace': 'test_ns', 'plural': 'assemblies',
          'body': assembly._add_last_applied_configuration_annotation(test_asm)}]
-
-
-def test_create_assembly_submits_last_applied_configuration_to_k8s_api(mocker):
-    mock_create_assemblies(mocker.patch(CUSTOM_OBJECT_API).return_value)
-    with open(test_asm_file) as f:
-        test_asm = yaml.safe_load(f)
-
-    deployed_asm = copy.deepcopy(test_asm)
-    deployed_asm['metadata']['name'] = deployed_asm['metadata']['name'] + '-v1'
-    test_asm['metadata']['annotations'] = {}
-    test_asm['metadata']['annotations'][assembly.CONFIG_ANNOTATION] = "\n" + json.dumps(deployed_asm)
-
-    assembly._create_assembly(namespace='test_ns', body=test_asm)
-
-    assert appended_args == [
-        {'group': assembly.API_GROUP, 'version': PREFERRED_VERSION, 'namespace': 'test_ns', 'plural': 'assemblies',
-         'body': assembly._add_last_applied_configuration_annotation(deployed_asm)}]
 
 
 def test_create_assemblies_from_file_creates_one_assembly(mocker):
@@ -294,17 +270,17 @@ def test_create_assemblies_from_file_creates_two_assemblies(mocker):
         assembly._create_assemblies_from_file(namespace='test_ns', filepath=test_asm_list_file)
 
         with open(test_asm_list_file, 'rb') as f:
-            assert yaml.full_load(f) == ASSEMBLY_LIST
+            assert yaml.full_load(f) == ASSEMBLY_BACKUP_LIST
         assert appended_args == [
             {'group': assembly.API_GROUP, 'version': PREFERRED_VERSION, 'namespace': 'test_ns', 'plural': 'assemblies',
-             'body': assembly._add_last_applied_configuration_annotation(TEST_ASSEMBLY)},
+             'body': assembly._add_last_applied_configuration_annotation(build_assembly_object(ASM_NAME, False))},
             {'group': assembly.API_GROUP, 'version': PREFERRED_VERSION, 'namespace': 'test_ns', 'plural': 'assemblies',
-             'body': assembly._add_last_applied_configuration_annotation(TEST_ASSEMBLY2)}
+             'body': assembly._add_last_applied_configuration_annotation(build_assembly_object(ASM_NAME2, False))}
         ]
 
 
 def test_create_assemblies_from_file_removes_resourceVersion(mocker):
-    TEST_ASSEMBLY_WITH_resourceVersion = copy.deepcopy(TEST_ASSEMBLY)
+    TEST_ASSEMBLY_WITH_resourceVersion = build_assembly_object(ASM_NAME, True)
     TEST_ASSEMBLY_WITH_resourceVersion['metadata']['resourceVersion'] = '01234'
 
     assembly_list = {'items': [TEST_ASSEMBLY_WITH_resourceVersion]}
@@ -319,7 +295,7 @@ def test_create_assemblies_from_file_removes_resourceVersion(mocker):
 
         assert appended_args == [
             {'group': assembly.API_GROUP, 'version': PREFERRED_VERSION, 'namespace': 'test_ns', 'plural': 'assemblies',
-             'body': assembly._add_last_applied_configuration_annotation(TEST_ASSEMBLY)}]
+             'body': assembly._add_last_applied_configuration_annotation(build_assembly_object(ASM_NAME, False))}]
 
 
 def test_create_assemblies_from_file_creates_when_one_already_exists(mocker):
@@ -337,10 +313,10 @@ def test_create_assemblies_from_file_creates_when_one_already_exists(mocker):
         assembly._create_assemblies_from_file(namespace='test_ns', filepath=test_asm_list_file)
 
         with open(test_asm_list_file, 'rb') as f:
-            assert yaml.full_load(f) == ASSEMBLY_LIST
+            assert yaml.full_load(f) == ASSEMBLY_BACKUP_LIST
         assert appended_args == [
             {'group': assembly.API_GROUP, 'version': PREFERRED_VERSION, 'namespace': 'test_ns', 'plural': 'assemblies',
-             'body': assembly._add_last_applied_configuration_annotation(TEST_ASSEMBLY2)}
+             'body': assembly._add_last_applied_configuration_annotation(build_assembly_object(ASM_NAME2))}
         ]
 
 
@@ -367,13 +343,15 @@ def test_delete_running_assemblies(mocker):
     mocker.patch(PREFERRED_VERSION_FUNC, return_value=PREFERRED_VERSION)
     mock_delete_assemblies(mock_instance)
 
-    assert assembly._delete_running_assemblies(namespace='test_ns', wait=False, force=True) == [True, True]
+    assert assembly._delete_running_assemblies(namespace='test_ns', wait=False, force=True) == [True, True, True]
 
     assert appended_args == [
         {'group': assembly.API_GROUP, 'version': PREFERRED_VERSION, 'namespace': 'test_ns', 'plural': 'assemblies',
          'name': ASM_NAME},
         {'group': assembly.API_GROUP, 'version': PREFERRED_VERSION, 'namespace': 'test_ns', 'plural': 'assemblies',
-         'name': ASM_NAME2}
+         'name': ASM_NAME2},
+        {'group': assembly.API_GROUP, 'version': PREFERRED_VERSION, 'namespace': 'test_ns', 'plural': 'assemblies',
+         'name': ASM_NAME3}
     ]
 
 
@@ -417,7 +395,7 @@ def test_cli_assembly_status_if_assembly_deployed(mocker):
     # mock the Kubernetes function to return TEST_ASSEMBLY
     mock = mocker.patch(CUSTOM_OBJECT_API)
     instance = mock.return_value
-    instance.get_namespaced_custom_object.return_value = TEST_ASSEMBLY
+    instance.get_namespaced_custom_object.return_value = build_assembly_object(ASM_NAME, True)
 
     result = TEST_CLI.invoke(main.cli, ['assembly', 'status', '--name', 'test_asm'])
 
@@ -427,7 +405,7 @@ def test_cli_assembly_status_if_assembly_deployed(mocker):
 
 def test_cli_assembly_status_with_false_status(mocker):
     # set False status
-    asm = copy.deepcopy(TEST_ASSEMBLY)
+    asm = build_assembly_object(ASM_NAME, True)
     asm['status']['conditions'][0]['status'] = 'False'
 
     # mock the Kubernetes function to return asm above
@@ -456,7 +434,7 @@ def test_cli_assembly_status_with_not_found_exception(mocker):
 def test_cli_assembly_status_with_wait_for_ready(mocker):
     mock = mocker.patch(CUSTOM_OBJECT_API)
     instance = mock.return_value
-    instance.get_namespaced_custom_object.return_value = TEST_ASSEMBLY
+    instance.get_namespaced_custom_object.return_value = build_assembly_object(ASM_NAME, True)
 
     # answer 'y' to the prompt asking to confirm you want to delete the assembly
     result = TEST_CLI.invoke(main.cli, ['assembly', 'status', '--name', ASM_NAME, '--wait-for-ready'])
@@ -553,7 +531,7 @@ def test_cli_assembly_list_if_assembly_deployed(mocker):
     # mock the Kubernetes function to return TEST_ASSEMBLY
     mock = mocker.patch(CUSTOM_OBJECT_API)
     instance = mock.return_value
-    instance.list_namespaced_custom_object.return_value = {'items': [TEST_ASSEMBLY]}
+    instance.list_namespaced_custom_object.return_value = {'items': [build_assembly_object(ASM_NAME, True)]}
 
     result = TEST_CLI.invoke(main.cli, ['assembly', 'list'])
 
@@ -611,7 +589,7 @@ def test_cli_assembly_create_and_wait(mocker):
         test_asm = yaml.safe_load(f)
     mock_instance = mocker.patch(CUSTOM_OBJECT_API).return_value
     mock_create_assemblies(mock_instance)
-    mock_instance.get_namespaced_custom_object.return_value = TEST_ASSEMBLY
+    mock_instance.get_namespaced_custom_object.return_value = build_assembly_object(ASM_NAME, True)
 
     result = TEST_CLI.invoke(main.cli, ['assembly', 'create', '--filepath', test_asm_file, '--wait'])
 
@@ -632,10 +610,12 @@ def test_cli_assembly_backup_assemblies(mocker):
         result = TEST_CLI.invoke(main.cli, ['assembly', 'backup', '--filepath', test_asm_list_file])
 
         assert result.exit_code == 0
-        assert result.output == f"""Persisted assembly definitions for ['{ASM_NAME}', '{ASM_NAME2}'] to {test_asm_list_file}
+        assert result.output == f"""warn=Refusing to backup assemblies: ['{ASM_NAME3}']. These assemblies are missing 'kubectl.kubernetes.io/last-applied-configuration' annotation. Please restart these assemblies manually.
+Persisted assembly definitions for ['{ASM_NAME}', '{ASM_NAME2}'] to {test_asm_list_file}
 """
         with open(test_asm_list_file, 'rb') as f:
-            assert yaml.full_load(f) == ASSEMBLY_LIST
+            expect = yaml.full_load(f)
+            assert expect == ASSEMBLY_BACKUP_LIST
 
 
 def test_cli_assembly_backup_assemblies_overwrites_when_file_already_exists(mocker):
@@ -650,10 +630,11 @@ def test_cli_assembly_backup_assemblies_overwrites_when_file_already_exists(mock
         assert result.exit_code == 0
         assert result.output == f"""
 {test_asm_list_file} file exists. Do you want to overwrite it with a new assembly backup file? [y/N]: y
+warn=Refusing to backup assemblies: ['{ASM_NAME3}']. These assemblies are missing 'kubectl.kubernetes.io/last-applied-configuration' annotation. Please restart these assemblies manually.
 Persisted assembly definitions for ['{ASM_NAME}', '{ASM_NAME2}'] to {test_asm_list_file}
 """
         with open(test_asm_list_file, 'rb') as f:
-            assert yaml.full_load(f) == ASSEMBLY_LIST
+            assert yaml.full_load(f) == ASSEMBLY_BACKUP_LIST
 
 
 def test_cli_assembly_backup_assemblies_creates_new_when_file_already_exists(mocker):
@@ -672,10 +653,11 @@ def test_cli_assembly_backup_assemblies_creates_new_when_file_already_exists(moc
         assert result.output == f"""
 {test_asm_list_file} file exists. Do you want to overwrite it with a new assembly backup file? [y/N]: n
 Please enter the path to write the assembly backup file: {new_file}
+warn=Refusing to backup assemblies: ['{ASM_NAME3}']. These assemblies are missing 'kubectl.kubernetes.io/last-applied-configuration' annotation. Please restart these assemblies manually.
 Persisted assembly definitions for ['{ASM_NAME}', '{ASM_NAME2}'] to {new_file}
 """
         with open(new_file, 'rb') as f:
-            assert yaml.full_load(f) == ASSEMBLY_LIST
+            assert yaml.full_load(f) == ASSEMBLY_BACKUP_LIST
 
 
 def test_cli_assembly_backup_assemblies_forces_overwrite_when_file_already_exists(mocker):
@@ -687,7 +669,8 @@ def test_cli_assembly_backup_assemblies_forces_overwrite_when_file_already_exist
         result = TEST_CLI.invoke(main.cli, ['assembly', 'backup', '--filepath', test_asm_list_file, '--force'])
 
         assert result.exit_code == 0
-        assert result.output == f"""Persisted assembly definitions for ['{ASM_NAME}', '{ASM_NAME2}'] to {test_asm_list_file}
+        assert result.output == f"""warn=Refusing to backup assemblies: ['{ASM_NAME3}']. These assemblies are missing 'kubectl.kubernetes.io/last-applied-configuration' annotation. Please restart these assemblies manually.
+Persisted assembly definitions for ['{ASM_NAME}', '{ASM_NAME2}'] to {test_asm_list_file}
 """
         with open(test_asm_list_file, 'rb') as f:
-            assert yaml.full_load(f) == ASSEMBLY_LIST
+            assert yaml.full_load(f) == ASSEMBLY_BACKUP_LIST
