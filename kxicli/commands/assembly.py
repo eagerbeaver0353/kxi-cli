@@ -136,24 +136,37 @@ def _print_2d_list(data, headers):
 def _backup_assemblies(namespace, filepath, force):
     """Get assemblies' definitions"""
     res = _get_assemblies_list(namespace)
+    backup = copy.deepcopy(res)
+    backup['items'] = []
 
     asm_list = []
+    asm_backup_list = []
+
     if 'items' in res:
         for asm in res['items']:
             if 'metadata' in asm and 'name' in asm['metadata']:
                 asm_list.append(asm['metadata']['name'])
+                if 'annotations' in asm['metadata'] and CONFIG_ANNOTATION in asm['metadata']['annotations']:
+                    asm_backup_list.append(asm['metadata']['name'])
+                    last_applied = json.loads(asm['metadata']['annotations'][CONFIG_ANNOTATION])
+                    backup['items'].append(last_applied)
 
     if len(asm_list) == 0:
         click.echo('No assemblies to back up')
         return None
 
+    asm_exclude_list = [x for x in asm_list if x not in asm_backup_list]
+
     if not force and os.path.exists(filepath):
         if not click.confirm(f'\n{filepath} file exists. Do you want to overwrite it with a new assembly backup file?'):
             filepath = click.prompt('Please enter the path to write the assembly backup file')
     with open(filepath, 'w') as f:
-        yaml.dump(res, f)
+        yaml.dump(backup, f)
 
-    click.echo(f'Persisted assembly definitions for {asm_list} to {filepath}')
+    if len(asm_exclude_list) > 0:
+        log.warn(f"Refusing to backup assemblies: {asm_exclude_list}. These assemblies are missing 'kubectl.kubernetes.io/last-applied-configuration' annotation. Please restart these assemblies manually.")
+
+    click.echo(f'Persisted assembly definitions for {asm_backup_list} to {filepath}')
 
     return filepath
 
@@ -194,13 +207,15 @@ def _create_assemblies_from_file(namespace, filepath, wait=None):
     else:
         _create_assembly(namespace, asm_list, wait)
 
-
 def _add_last_applied_configuration_annotation(body):
     annotated_body = copy.deepcopy(body)
+
+    # ensure annotations exist
     if 'annotations' not in annotated_body['metadata']:
         annotated_body['metadata']['annotations'] = {}
-    if CONFIG_ANNOTATION not in annotated_body['metadata']['annotations']:
-        annotated_body['metadata']['annotations'][CONFIG_ANNOTATION] = "\n" + json.dumps(body)
+
+    annotated_body['metadata']['annotations'][CONFIG_ANNOTATION] = "\n" + json.dumps(annotated_body)
+
     return annotated_body
 
 
@@ -209,14 +224,10 @@ def _create_assembly(namespace, body, wait=None):
     common.load_kube_config()
     api = k8s.client.CustomObjectsApi()
 
-    if 'annotations' in body['metadata'] and CONFIG_ANNOTATION in body['metadata']['annotations']:
-        body = yaml.safe_load(body['metadata']['annotations'][CONFIG_ANNOTATION])
-
     if 'resourceVersion' in body['metadata']:
         del body['metadata']['resourceVersion']
-    body = _add_last_applied_configuration_annotation(body)
-
     api_version = body['apiVersion'].split('/')
+    body = _add_last_applied_configuration_annotation(body)
 
     api.create_namespaced_custom_object(
         group=api_version[0],
