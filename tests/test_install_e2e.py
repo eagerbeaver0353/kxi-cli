@@ -3,6 +3,7 @@ import copy
 import filecmp
 import os
 import shutil
+import subprocess
 from contextlib import contextmanager
 from pathlib import Path
 from tempfile import mkdtemp
@@ -1397,6 +1398,70 @@ Custom assembly resource {test_asm_name2} created!
     assert result.output == expected_output
     os.remove(test_asm_backup)
 
+
+def test_upgrade_reapplies_assemblies_when_upgrade_fails(mocker):
+    upgrades_mocks(mocker)
+    mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
+    mock_get_operator_version(mocker)
+    mock_validate_secret(mocker)
+    mock_helm_env(mocker)
+    mock_helm_fetch(mocker)
+    mock_kube_crd_api(mocker)
+    if os.path.exists(test_asm_backup):
+        os.remove(test_asm_backup)
+    with open(test_asm_file) as f:
+        file = yaml.safe_load(f)
+        last_applied = file['metadata']['annotations'][CONFIG_ANNOTATION]
+        test_asm_file_contents = json.loads(last_applied)
+    with open(test_val_file, 'r') as values_file:
+        values = str(values_file.read())
+    mocker.patch('subprocess.run').side_effect = subprocess.CalledProcessError(1, ['helm', 'upgrade'])
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        # these are responses to the various prompts
+        user_input = f"""y
+y
+y
+y
+y
+"""
+        result = runner.invoke(main.cli,
+            ['install', 'upgrade', '--version', '1.2.3', '--install-config-secret',
+                    test_install_secret, '--assembly-backup-filepath', test_asm_backup],
+            input=user_input
+        )
+        expected_output = f"""Upgrading KX Insights
+{phrases.values_validating}
+
+kxi-operator already installed with version kxi-operator-1.2.0
+Do you want to install kxi-operator version 1.2.3? [Y/n]: y
+Reading CRD data from {test_helm_repo_cache}/kxi-operator-1.2.3.tgz
+
+Backing up assemblies
+Persisted assembly definitions for ['{test_asm_name}'] to {test_asm_backup}
+
+Tearing down assemblies
+Assembly data will be persisted and state will be recovered post-upgrade
+Tearing down assembly {test_asm_name}
+Are you sure you want to teardown {test_asm_name} [y/N]: y
+Waiting for assembly to be torn down
+
+Upgrading insights and operator
+error={phrases.upgrade_error}
+Submitting assembly from {test_asm_backup}
+Submitting assembly {test_asm_name}
+Custom assembly resource {test_asm_name} created!
+"""
+    assert result.exit_code == 1
+    assert result.output == expected_output
+    with open(test_asm_backup) as f:
+        expect = yaml.safe_load(f)
+        assert expect == {'items': [test_asm_file_contents]}
+    assert insights_installed_flag == True
+    assert operator_installed_flag == True
+    assert crd_exists_flag == True
+    assert running_assembly[test_asm_name] == True
+    os.remove(test_asm_backup)
 
 def test_install_run_upgrades_when_already_installed(mocker):
     upgrades_mocks(mocker)
