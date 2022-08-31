@@ -34,7 +34,7 @@ git checkout -b KXI-XXXX
 
 virtualenv venv
 source venv/bin/activate
-pip install -e .
+pip install  --extra-index-url $NEXUS_I_PYPI -e .
 
 deactivate
 export PATH=$(pwd)/venv/bin:${PATH}
