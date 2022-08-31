@@ -819,6 +819,7 @@ def delete_release_operator_and_crds(release, namespace, force):
         click.echo('\nKX Insights installation not found')
     else:
         if force or click.confirm('\nKX Insights is deployed. Do you want to uninstall?'):
+            assembly._delete_running_assemblies(namespace, True, True)
             helm_uninstall(release=release, namespace=namespace)
         else:
             return
