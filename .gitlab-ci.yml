@@ -59,7 +59,7 @@ build dist:
     - pip install dist/*.whl
   script:
     - export KUBECONFIG=$(pwd)/tests/files/test-kube-config
-    - coverage run -m pytest
+    - coverage run -m pytest --junitxml=report.xml
     - coverage report
     - coverage html
     - coverage xml
@@ -68,7 +68,9 @@ build dist:
     paths:
       - htmlcov
       - coverage.xml
+      - report.xml
     reports:
+      junit: report.xml
       coverage_report:
         coverage_format: cobertura
         path: coverage.xml
