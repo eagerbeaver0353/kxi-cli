@@ -373,7 +373,7 @@ def get_values(namespace, install_config_secret):
     Display the kxi-install-config secret used for storing installation values
     """
     install_config_secret = secret.Secret(namespace, install_config_secret, SECRET_TYPE_OPAQUE, INSTALL_CONFIG_KEYS)
-    
+
     data = get_install_config_secret(install_config_secret)
     if data is None:
         click.echo(f'Cannot find values secret {install_config_secret.name}\n')
@@ -877,7 +877,7 @@ def helm_install(release, chart, values_file, values_secret, version=None, names
         input_arg=None
         text_arg=None
 
-    if values_file: 
+    if values_file:
         base_command = base_command + ['-f', values_file]
 
     base_command = base_command + [release, chart]
@@ -986,7 +986,7 @@ def operator_installed(release, namespace: str = operator_namespace):
 
 def get_installed_charts(release, namespace):
     """Retrieve running helm charts"""
-    base_command = ['helm', 'list', '--filter', release, '--deployed', '-o', 'json','--namespace', namespace]
+    base_command = ['helm', 'list', '--filter', release, '-o', 'json','--namespace', namespace]
     try:
         log.debug(f'List command {base_command}')
         l = subprocess.check_output(base_command)
@@ -1061,8 +1061,8 @@ def create_install_config(install_config_secret: secret.Secret, data):
     return install_config_secret
 
 def read_cached_crd_files(
-    version: str, 
-    chart_name: str = 'kxi-operator', 
+    version: str,
+    chart_name: str = 'kxi-operator',
     crds: list = CRD_FILES
 ):
     crd_data = []
