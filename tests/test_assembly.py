@@ -235,6 +235,14 @@ def test_backup_assemblies_when_no_assemblies_running(mocker):
         assert not os.path.exists(test_asm_list_file)
 
 
+def test_add_last_applied_configuration_annotation():
+    test_assembly = build_assembly_object(ASM_NAME)
+    res = assembly._add_last_applied_configuration_annotation(test_assembly)
+    assert assembly.CONFIG_ANNOTATION in res['metadata']['annotations']
+    test_assembly['metadata']['annotations'] = {}
+    assert res['metadata']['annotations'][assembly.CONFIG_ANNOTATION] == '\n' + json.dumps(test_assembly)
+
+
 def test_create_assembly_submits_to_k8s_api(mocker):
     mock_create_assemblies(mocker.patch(CUSTOM_OBJECT_API).return_value)
     with open(test_asm_file) as f:
