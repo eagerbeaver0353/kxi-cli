@@ -12,6 +12,7 @@ from typing import Callable, Dict
 import click
 import kubernetes as k8s
 import yaml
+from click import ClickException
 from cryptography import x509
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization, asymmetric, hashes
@@ -845,7 +846,7 @@ def helm_add_repo(chart_repo_name, url, username, password):
     log.debug(
         f'Attempting to call: helm repo add --username {username} --password {len(password)*"*"} {chart_repo_name} {url}')
     try:
-        subprocess.run(['helm', 'repo', 'add', '--username', username, '--password', password, chart_repo_name, url],
+        return subprocess.run(['helm', 'repo', 'add', '--username', username, '--password', password, chart_repo_name, url],
                        check=True)
     except subprocess.CalledProcessError:
         # Pass here so that the password isn't printed in the log
@@ -859,9 +860,9 @@ def helm_list_versions(chart_repo_name):
         chart = f'{chart_repo_name}/insights'
         click.echo(f'Listing available KX Insights versions in repo {chart_repo_name}')
 
-        subprocess.run(['helm', 'search', 'repo', chart], check=True)
+        return subprocess.run(['helm', 'search', 'repo', chart], check=True)
     except subprocess.CalledProcessError as e:
-        click.echo(e)
+        raise ClickException(str(e))
 
 
 def helm_install(release, chart, values_file, values_secret, version=None, namespace=None):
@@ -905,10 +906,9 @@ def helm_install(release, chart, values_file, values_secret, version=None, names
 
     try:
         log.debug(f'Install command {base_command}')
-        subprocess.run(base_command, check=True, input=input_arg, text=text_arg)
+        return subprocess.run(base_command, check=True, input=input_arg, text=text_arg)
     except subprocess.CalledProcessError as e:
-        click.echo(e)
-        sys.exit(e.returncode)
+        raise ClickException(str(e))
 
 
 def helm_uninstall(release, namespace=None):
@@ -926,10 +926,9 @@ def helm_uninstall(release, namespace=None):
 
     try:
         log.debug(f'Uninstall command {base_command}')
-        subprocess.run(base_command, check=True)
+        return subprocess.run(base_command, check=True)
     except subprocess.CalledProcessError as e:
-        click.echo(e)
-        sys.exit(e.returncode)
+        raise ClickException(str(e))
 
 
 def create_namespace(name):

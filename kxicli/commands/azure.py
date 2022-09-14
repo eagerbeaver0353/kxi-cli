@@ -610,25 +610,9 @@ def _helm_install(
 
 
 def _helm_uninstall(release, helm_version_checked: HelmVersionChecked, namespace=None) -> subprocess.CompletedProcess:
-    """Call 'helm uninstall' using subprocess.run"""
 
     helm_version_checked.ok()
-
-    msg = f'Uninstalling release {release}'
-
-    base_command = ['helm', 'uninstall', release]
-
-    if namespace:
-        base_command = base_command + ['--namespace', namespace]
-        msg = f'{msg} in namespace {namespace}'
-
-    click.echo(msg)
-
-    try:
-        log.debug(f'Uninstall command {base_command}')
-        return subprocess.run(base_command, check=True)
-    except subprocess.CalledProcessError as e:
-        raise ClickException(str(e))
+    return install_lib.helm_uninstall(release, namespace)
 
 
 def _get_helm_version() -> LocalHelmVersion:
