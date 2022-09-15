@@ -119,7 +119,7 @@ def upgrade(
 
     # Backup
 
-    backup_assemblies(
+    assembly_backup_filepath = backup_assemblies(
         insights_namespace=namespace,
         assemblies=assemblies,
         assembly_backup_filepath=assembly_backup_filepath
