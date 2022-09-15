@@ -192,6 +192,8 @@ def _delete_running_assemblies(namespace: str, wait: bool, force: bool) -> List[
 def _backup_assemblies(namespace: str, filepath: str, force: bool):
     return filepath
 
+def _backup_no_assemblies(namespace: str, filepath: str, force: bool):
+    return None
 
 def _get_assemblies_list(namespace: str) -> FakeK8SCustomResource:
     return FakeK8SCustomResource()
