@@ -53,6 +53,11 @@ CRD_FILES = [
     'insights.kx.com_assemblyresources.yaml'
 ]
 
+CRD_NAMES = [
+    'assemblies.insights.kx.com', 
+    'assemblyresources.insights.kx.com'
+]
+
 license_key = 'license.secret'
 image_pull_key = 'image.pullSecret'
 
@@ -350,10 +355,11 @@ def perform_upgrade(namespace, release, chart_repo_name, assembly_backup_filepat
 @arg_release()
 @arg_namespace()
 @arg_force()
-def delete(release, namespace, force):
+@click.option('--uninstall-operator', is_flag=True, help='Remove KXI Operator installation')
+def delete(release, namespace, force, uninstall_operator):
     """Uninstall KX Insights"""
     _, namespace = common.get_namespace(namespace)
-    delete_release_operator_and_crds(release=release, namespace=namespace, force=force)
+    delete_release_operator_and_crds(release=release, namespace=namespace, force=force, uninstall_operator=uninstall_operator)
 
 
 @install.command()
@@ -820,7 +826,7 @@ def install_operator_and_release(
     return True
 
 
-def delete_release_operator_and_crds(release, namespace, force):
+def delete_release_operator_and_crds(release, namespace, force, uninstall_operator):
     """Delete insights, operator and CRDs"""
     if not insights_installed(release, namespace):
         click.echo('\nKX Insights installation not found')
@@ -831,14 +837,13 @@ def delete_release_operator_and_crds(release, namespace, force):
         else:
             return
 
-    if force or operator_installed(release) and click.confirm(
-            '\nThe kxi-operator is deployed. Do you want to uninstall?'):
+    if force or operator_installed(release) and uninstall_operator:
         helm_uninstall(release=release, namespace=operator_namespace)
 
-    crds = common.get_existing_crds(['assemblies.insights.kx.com', 'assemblyresources.insights.kx.com'])
-    if force or len(crds) > 0 and click.confirm(f'\nThe assemblies CRDs {crds} exist. Do you want to delete them?'):
-        for i in crds:
-            common.delete_crd(i)
+        crds = common.get_existing_crds(CRD_NAMES)
+        if len(crds) > 0:
+            for i in crds:
+                common.delete_crd(i)
 
 
 def helm_add_repo(chart_repo_name, url, username, password):

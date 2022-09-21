@@ -956,6 +956,7 @@ def test_delete_removes_insights_and_operator(mocker):
     global delete_assembly_args
 
     mock_subprocess_run(mocker)
+    mock_delete_crd(mocker)
     mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
     mocker.patch(GET_ASSEMBLIES_LIST_FUNC, mock_list_assembly_multiple)
     mocker.patch(DELETE_ASSEMBLIES_FUNC, mock__delete_assembly)
@@ -966,18 +967,14 @@ def test_delete_removes_insights_and_operator(mocker):
     with runner.isolated_filesystem():
         # these are responses to the various prompts
         user_input = f"""y
-y
-n
 """
-        result = runner.invoke(main.cli, ['install', 'delete'], input=user_input)
+        result = runner.invoke(main.cli, ['install', 'delete','--uninstall-operator'], input=user_input)
         expected_output = f"""
 KX Insights is deployed. Do you want to uninstall? [y/N]: y
 Uninstalling release insights in namespace {test_namespace}
-
-The kxi-operator is deployed. Do you want to uninstall? [y/N]: y
 Uninstalling release insights in namespace kxi-operator
-
-The assemblies CRDs ['assemblies.insights.kx.com', 'assemblyresources.insights.kx.com'] exist. Do you want to delete them? [y/N]: n
+Deleting CRD assemblies.insights.kx.com
+Deleting CRD assemblyresources.insights.kx.com
 """
     assert result.exit_code == 0
     assert result.output == expected_output
@@ -988,10 +985,10 @@ The assemblies CRDs ['assemblies.insights.kx.com', 'assemblyresources.insights.k
         ['helm', 'uninstall', 'insights', '--namespace', test_namespace],
         ['helm', 'uninstall', 'insights', '--namespace', 'kxi-operator']
     ]
-    assert delete_crd_params == []
+    assert delete_crd_params == test_crds
 
 
-def test_delete_removes_insights_and_crd(mocker):
+def test_delete_removes_insights(mocker):
     global delete_assembly_args
 
     mock_subprocess_run(mocker)
@@ -1007,19 +1004,11 @@ def test_delete_removes_insights_and_crd(mocker):
     with runner.isolated_filesystem():
         # these are responses to the various prompts
         user_input = f"""y
-n
-y
 """
         result = runner.invoke(main.cli, ['install', 'delete'], input=user_input)
         expected_output = f"""
 KX Insights is deployed. Do you want to uninstall? [y/N]: y
 Uninstalling release insights in namespace {test_namespace}
-
-The kxi-operator is deployed. Do you want to uninstall? [y/N]: n
-
-The assemblies CRDs ['assemblies.insights.kx.com', 'assemblyresources.insights.kx.com'] exist. Do you want to delete them? [y/N]: y
-Deleting CRD assemblies.insights.kx.com
-Deleting CRD assemblyresources.insights.kx.com
 """
     assert result.exit_code == 0
     assert result.output == expected_output
@@ -1027,50 +1016,6 @@ Deleting CRD assemblyresources.insights.kx.com
     for deleted_asm in delete_assembly_args:
         assert deleted_asm['name'] in asms_array
     assert subprocess_run_command == [['helm', 'uninstall', 'insights', '--namespace', test_namespace]]
-    assert delete_crd_params == test_crds
-
-
-def test_delete_removes_insights_operator_and_crd(mocker):
-    global delete_assembly_args
-
-    mock_subprocess_run(mocker)
-    mock_delete_crd(mocker)
-    mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
-    mocker.patch(GET_ASSEMBLIES_LIST_FUNC, mock_list_assembly_multiple)
-    mocker.patch(DELETE_ASSEMBLIES_FUNC, mock__delete_assembly)
-    
-    delete_assembly_args = []
-    asms_array = [test_asm_name, test_asm_name2]
-
-    runner = CliRunner()
-    with runner.isolated_filesystem():
-        # these are responses to the various prompts
-        user_input = f"""y
-y
-y
-"""
-        result = runner.invoke(main.cli, ['install', 'delete'], input=user_input)
-        expected_output = f"""
-KX Insights is deployed. Do you want to uninstall? [y/N]: y
-Uninstalling release insights in namespace {test_namespace}
-
-The kxi-operator is deployed. Do you want to uninstall? [y/N]: y
-Uninstalling release insights in namespace kxi-operator
-
-The assemblies CRDs ['assemblies.insights.kx.com', 'assemblyresources.insights.kx.com'] exist. Do you want to delete them? [y/N]: y
-Deleting CRD assemblies.insights.kx.com
-Deleting CRD assemblyresources.insights.kx.com
-"""
-    assert result.exit_code == 0
-    assert result.output == expected_output
-    assert len(delete_assembly_args) == len(asms_array)
-    for deleted_asm in delete_assembly_args:
-        assert deleted_asm['name'] in asms_array
-    assert subprocess_run_command == [
-        ['helm', 'uninstall', 'insights', '--namespace', test_namespace],
-        ['helm', 'uninstall', 'insights', '--namespace', 'kxi-operator']
-    ]
-    assert delete_crd_params == test_crds
 
 
 def test_delete_force_removes_insights_operator_and_crd(mocker):
@@ -1151,15 +1096,10 @@ def test_delete_when_insights_not_installed(mocker):
     with runner.isolated_filesystem():
         # these are responses to the various prompts
         user_input = f"""n
-n
 """
         result = runner.invoke(main.cli, ['install', 'delete'], input=user_input)
         expected_output = f"""
 KX Insights installation not found
-
-The kxi-operator is deployed. Do you want to uninstall? [y/N]: n
-
-The assemblies CRDs ['assemblies.insights.kx.com', 'assemblyresources.insights.kx.com'] exist. Do you want to delete them? [y/N]: n
 """
     assert result.exit_code == 0
     assert result.output == expected_output
