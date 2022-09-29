@@ -11,7 +11,7 @@ config_dir_path = Path.home() / '.insights'
 config_dir = str(config_dir_path)
 config_file = str(config_dir_path / 'cli-config')
 
-config = None
+config = configparser.ConfigParser()
 
 
 def load_config(profile):

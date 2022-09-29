@@ -7,7 +7,7 @@ global:
   imagePullSecrets:
   - name: kxi-nexus-pull-secret
   ingress:
-    host: test.internal-insights.kx.com
+    host: test.kx.com
   keycloak:
     guiClientSecret: gui-secret
     operatorClientSecret: operator-secret

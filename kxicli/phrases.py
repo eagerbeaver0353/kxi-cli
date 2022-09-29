@@ -38,7 +38,7 @@ image_user = 'Please enter the username for {repo}'
 image_password = 'Please enter the password for {user}'
 
 # License
-license_entry = 'Please enter the path to your kdb license'
+license_entry = 'Please enter the path and filename of your kdb+ license'
 
 # Keycloak
 keycloak_admin = 'Please enter the Keycloak Admin password (input hidden)'

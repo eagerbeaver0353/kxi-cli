@@ -10,16 +10,23 @@ from kxicli import config
 from kxicli import log
 from kxicli import phrases
 
+
+key_install_outputFile = 'install.outputFile'
+key_chart_repo_name = 'chart.repo.name'
+key_install_config_secret = 'install.configSecret'
+
+
 # Help text dictionary for commands
 HELP_TEXT = {
     'hostname': 'Hostname of Insights deployment',
     'namespace': 'Kubernetes namespace',
-    'chart.repo.name': 'Name for chart repository',
+    key_chart_repo_name: 'Name for chart repository',
     'chart.repo.url': 'Repository URL to pull charts from',
     'chart.repo.username': 'Username for the chart repository',
     'chart.repo.password': 'Password for the chart repository',
     'license.secret': 'Secret containing kdb+ license',
     'license.envVar': 'Mount kdb+ license secret as an environment variable',
+    'license.filepath': 'File path and file name of kdb+ license file',
     'client.cert.secret': 'Secret containing TLS cert and key for client issuer',
     'image.repository': 'Repository to pull images from',
     'image.pullSecret': 'Secret containing credentials for the image repository ',
@@ -28,28 +35,32 @@ HELP_TEXT = {
     'keycloak.authURL': 'Auth URL for Keycloak',
     'ingress.host': 'Hostname for the installation',
     'ingress.cert.secret': 'Secret containing self-managed TLS cert and key for the ingress',
-    'install.outputFile': 'Name for the generated values file',
-    'install.configSecret': 'Secret containing helm install values',
+    key_install_outputFile: 'Name for the generated values file',
+    key_install_config_secret: 'Secret containing helm install values',
+    'install.filepath': 'Values file to install with',
     'assembly.backup.file': 'Filepath to store state of running assemblies',
     'release.name': 'Release name for the install',
     'guiClientSecret': 'Keycloak client secret for gui service account',
     'operatorClientSecret': 'Keycloak client secret for operator service account',
-    'realm': 'Name of Keycloak realm'
+    'realm': 'Name of Keycloak realm',
+    'version': 'Version to install',
+    'operator.version': 'Version of the operator to install'
 }
 
 # Default values for commands if needed
 DEFAULT_VALUES = {
     'license.secret': 'kxi-license',
+    'license.as-env-var': False,
     'client.cert.secret': 'kxi-certificate',
-    'chart.repo.name': 'kx-insights',
+    key_chart_repo_name: 'kx-insights',
     'chart.repo.url': 'https://nexus.dl.kx.com/repository/kx-insights-charts',
     'image.pullSecret': 'kxi-nexus-pull-secret',
     'image.repository': 'registry.dl.kx.com',
     'keycloak.secret': 'kxi-keycloak',
     'keycloak.postgresqlSecret': 'kxi-postgresql',
     'ingress.cert.secret': 'kxi-ingress-cert',
-    'install.outputFile': 'values.yaml',
-    'install.configSecret': 'kxi-install-config',
+    key_install_outputFile: 'values.yaml',
+    key_install_config_secret: 'kxi-install-config',
     'assembly.backup.file': 'kxi-assembly-state.yaml',
     'release.name': 'insights',
     'realm': 'insights',
@@ -70,13 +81,13 @@ def get_help_text(option):
 
 def get_default_val(option):
     """Get default value for an option from configuration"""
-    if config.config.has_option(config.config.default_section, option):
+    if option and config.config.has_option(config.config.default_section, option):
         return config.config.get(config.config.default_section, option)
 
     if option in DEFAULT_VALUES:
         return DEFAULT_VALUES[option]
 
-    return ''
+    return None
 
 
 def get_access_token(hostname, client_id, client_secret, realm):

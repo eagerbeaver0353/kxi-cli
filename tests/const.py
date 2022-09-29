@@ -5,7 +5,7 @@ _, active_context = k8s.config.list_kube_config_contexts()
 test_namespace = active_context['context']['namespace']
 test_cluster = active_context['context']['cluster']
 
-test_host = 'test.internal-insights.kx.com'
+test_host = 'https://test.kx.com'
 test_chart_repo_name = 'internal-nexus-dev'
 test_chart_repo_url = 'https://nexus.internal-insights.kx.com/repository/kx-helm-charts-dev'
 test_image_repo = 'test-repo.internal-insights.kx.com'

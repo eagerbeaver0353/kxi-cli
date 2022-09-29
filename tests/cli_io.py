@@ -32,14 +32,18 @@ def cli_input(
     values_exist = False,
     overwrite_values = 'y',
     install_config_exists = False,
-    overwrite_install_config = 'n'
+    overwrite_install_config = 'n',
+    hostname_check=True
 ):
     # TODO: Implement full run support
     if verb in  ('run', 'upgrade'):
         return ''
 
+    inp = ''
     # Hostname
-    inp = f'{test_host}\n{provide_ingress_cert}'
+    if hostname_check:
+        inp = f'{inp}{test_host}\n'
+    inp = f'{inp}{provide_ingress_cert}'
 
     # Ingress
     if provide_ingress_cert == 'y':
@@ -112,7 +116,8 @@ def cli_output(
     values_exist = False,
     overwrite_values = 'y',
     install_config_exists = False,
-    overwrite_install_config = 'n'
+    overwrite_install_config = 'n',
+    hostname_check = True
 ):
 
     # TODO: implement full run and upgrade support properly
@@ -127,7 +132,7 @@ def cli_output(
         elif not lic_sec_is_valid:
             return output_upgrade_required_secrets_invalid()
 
-    ingress = output_ingress(provide_ingress_cert)
+    ingress = output_ingress(hostname_check, provide_ingress_cert)
     chart = output_chart()
     license = output_license(lic, lic_sec_exists, lic_sec_is_valid, lic_sec_overwrite)
     image = output_image(repo, user, image_sec_exists, image_sec_is_valid, use_existing_creds, image_sec_overwrite)
@@ -172,9 +177,7 @@ def output_secret(name, exists, is_valid, prompt, overwrite):
 
 def output_setup_start():
     return f"""{phrases.header_setup}
-{phrases.ns_and_cluster.format(namespace=test_namespace, cluster=test_cluster)}
-{phrases.header_ingress}
-{phrases.hostname_entry}: {test_host}"""
+{phrases.ns_and_cluster.format(namespace=test_namespace, cluster=test_cluster)}"""
 
 
 def output_chart():
@@ -232,8 +235,11 @@ def output_image(repo, user, exists, is_valid, use_existing_creds, overwrite):
 {output_secret(secret_name, exists, is_valid, prompt, overwrite)}"""
 
 
-def output_ingress(provide_cert):
-    str = f'{phrases.ingress_cert} [y/N]: {provide_cert}'
+def output_ingress(hostname_check, provide_cert):
+    str = f'{phrases.header_ingress}'
+    if hostname_check:
+        str = str + f'\n{phrases.hostname_entry} [{test_host}]: {test_host}'
+    str = str + f'\n{phrases.ingress_cert} [y/N]: {provide_cert}'
     if provide_cert == 'y':
         secret_name = common.get_default_val('ingress.cert.secret')
         cert = f'{phrases.ingress_tls_cert}: {test_cert}'

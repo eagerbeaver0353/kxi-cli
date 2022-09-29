@@ -20,9 +20,15 @@ from cryptography.hazmat.primitives import serialization, asymmetric, hashes
 from kxicli import common
 from kxicli import phrases
 from kxicli import log
+from kxicli import options
 from kxicli.commands import assembly
 from kxicli.commands.common import arg_force, arg_filepath, arg_version, arg_operator_version, \
-    arg_release, arg_namespace, arg_assembly_backup_filepath
+    arg_release, arg_namespace, arg_assembly_backup_filepath, arg_output_file, arg_hostname, \
+    arg_chart_repo_name, arg_chart_repo_name_forced, \
+    arg_license_secret, arg_license_as_env_var, arg_license_filepath, arg_client_cert_secret, \
+    arg_image_repo, arg_image_pull_secret, arg_gui_client_secret, arg_operator_client_secret, \
+    arg_keycloak_secret, arg_keycloak_postgresql_secret, arg_keycloak_auth_url, arg_ingress_cert_secret, \
+    arg_install_config_secret, arg_install_config_secret_default
 from kxicli.common import get_default_val as default_val
 from kxicli.common import get_help_text as help_text
 from kxicli.resources import secret, helm
@@ -68,33 +74,28 @@ def install():
 
 @install.command()
 @arg_namespace()
-@click.option('--chart-repo-name', default=lambda: default_val('chart.repo.name'), help=help_text('chart.repo.name'))
-@click.option('--license-secret', default=None, help=help_text('license.secret'))
-@click.option('--license-as-env-var', default=False, help=help_text('license.envVar'))
-@click.option('--client-cert-secret', default=None,
-              help=help_text('client.cert.secret'))
-@click.option('--image-repo', default=lambda: default_val('image.repository'), help=help_text('image.repository'))
-@click.option('--image-pull-secret', default=None,
-              help=help_text('image.pullSecret'))
-@click.option('--gui-client-secret', default=lambda: default_val('guiClientSecret'), help=help_text('guiClientSecret'))
-@click.option('--operator-client-secret', default=lambda: default_val('operatorClientSecret'),
-              help=help_text('operatorClientSecret'))
-@click.option('--keycloak-secret', default=None, help=help_text('keycloak.secret'))
-@click.option('--keycloak-postgresql-secret', default=None,
-              help=help_text('keycloak.postgresqlSecret'))
-@click.option('--keycloak-auth-url', help=help_text('keycloak.authURL'))
-@click.option('--ingress-host', help=help_text('ingress.host'))
-@click.option('--ingress-cert-secret', default=None,
-              help=help_text('ingress.cert.secret'))
-@click.option('--output-file', default=lambda: default_val('install.outputFile'), help=help_text('install.outputFile'))
-@click.option('--install-config-secret', default=lambda: default_val('install.configSecret'),
-              help=help_text('install.configSecret'))
-def setup(namespace, chart_repo_name, license_secret, license_as_env_var, client_cert_secret, image_repo,
+@arg_chart_repo_name()
+@arg_license_secret()
+@arg_license_as_env_var()
+@arg_license_filepath()
+@arg_client_cert_secret()
+@arg_image_repo()
+@arg_image_pull_secret()
+@arg_gui_client_secret()
+@arg_operator_client_secret()
+@arg_keycloak_secret()
+@arg_keycloak_postgresql_secret()
+@arg_keycloak_auth_url()
+@arg_hostname()
+@arg_ingress_cert_secret()
+@arg_output_file()
+@arg_install_config_secret_default()
+def setup(namespace, chart_repo_name, license_secret, license_as_env_var, license_filepath, client_cert_secret, image_repo,
           image_pull_secret, gui_client_secret, operator_client_secret,
-          keycloak_secret, keycloak_postgresql_secret, keycloak_auth_url, ingress_host, ingress_cert_secret,
+          keycloak_secret, keycloak_postgresql_secret, keycloak_auth_url, hostname, ingress_cert_secret,
           output_file, install_config_secret):
     """Perform necessary setup steps to install Insights"""
-
+    
     click.secho(phrases.header_setup, bold=True)
 
     active_context, namespace = common.get_namespace(namespace)
@@ -118,14 +119,12 @@ def setup(namespace, chart_repo_name, license_secret, license_as_env_var, client
     ingress_cert_secret = lookup_secret(namespace, ingress_cert_secret, values_secret, None, 'ingress.cert.secret')
 
     click.secho(phrases.header_ingress, bold=True)
-    if '--ingress-host' not in sys.argv:
-        ingress_host = sanitize_ingress_host(click.prompt(phrases.hostname_entry))
+    hostname = sanitize_ingress_host(options.hostname.prompt(hostname))
     ingress_self_managed, ingress_cert_secret = prompt_for_ingress_cert(ingress_cert_secret)
 
     if '--chart-repo-name' not in sys.argv:
         click.secho(phrases.header_chart, bold=True)
-        chart_repo_name = click.prompt(phrases.chart_repo,
-                                       default=default_val('chart.repo.name'))
+        chart_repo_name = options.chart_repo_name.prompt(chart_repo_name)
         chart_repo_url = click.prompt(phrases.chart_repo_url,
                                       default=default_val('chart.repo.url'))
         username = click.prompt(phrases.chart_user)
@@ -161,7 +160,7 @@ def setup(namespace, chart_repo_name, license_secret, license_as_env_var, client
     install_file = {
         'global': {
             'ingress': {
-                'host': ingress_host
+                'host': hostname
             },
             'license': {
                 'secretName': license_secret.name
@@ -232,12 +231,12 @@ def setup(namespace, chart_repo_name, license_secret, license_as_env_var, client
 @arg_namespace()
 @arg_filepath()
 @arg_release()
-@click.option('--chart-repo-name', default=lambda: default_val('chart.repo.name'), help=help_text('chart.repo.name'))
+@arg_chart_repo_name_forced()
 @arg_version()
 @arg_operator_version()
-@click.option('--image-pull-secret', default=None, help=help_text('image.pullSecret'))
-@click.option('--license-secret', default=None, help=help_text('license.secret'))
-@click.option('--install-config-secret', default=None, help=help_text('install.configSecret'))
+@arg_image_pull_secret()
+@arg_license_secret()
+@arg_install_config_secret()
 @arg_force()
 @click.pass_context
 def run(ctx, namespace, filepath, release, chart_repo_name, version, operator_version, image_pull_secret,
@@ -278,13 +277,13 @@ def run(ctx, namespace, filepath, release, chart_repo_name, version, operator_ve
 @install.command()
 @arg_namespace()
 @arg_release()
-@click.option('--chart-repo-name', default=lambda: default_val('chart.repo.name'), help=help_text('chart.repo.name'))
+@arg_chart_repo_name_forced()
 @arg_assembly_backup_filepath()
 @arg_version()
 @arg_operator_version()
-@click.option('--image-pull-secret', default=None, help=help_text('image.pullSecret'))
-@click.option('--license-secret', default=None, help=help_text('license.secret'))
-@click.option('--install-config-secret', default=None, help=help_text('install.configSecret'))
+@arg_image_pull_secret()
+@arg_license_secret()
+@arg_install_config_secret()
 @arg_filepath()
 @arg_force()
 def upgrade(namespace, release, chart_repo_name, assembly_backup_filepath, version, operator_version, image_pull_secret,
@@ -363,7 +362,7 @@ def delete(release, namespace, force, uninstall_operator):
 
 
 @install.command()
-@click.option('--chart-repo-name', default=lambda: default_val('chart.repo.name'), help=help_text('chart.repo.name'))
+@arg_chart_repo_name_forced()
 def list_versions(chart_repo_name):
     """
     List available versions of KX Insights
@@ -373,8 +372,7 @@ def list_versions(chart_repo_name):
 
 @install.command()
 @arg_namespace()
-@click.option('--install-config-secret', default=lambda: default_val('install.configSecret'),
-              help=help_text('install.configSecret'))
+@arg_install_config_secret_default()
 def get_values(namespace, install_config_secret):
     """
     Display the kxi-install-config secret used for storing installation values
@@ -598,8 +596,7 @@ def populate_license_secret(secret: secret.Secret, filepath = None, as_env = Fal
     """Populate the data in a license secret"""
     license_on_demand = False
 
-    if filepath is None:
-        filepath = click.prompt('Please enter the path to your kdb license')
+    filepath = options.license_filepath.prompt(filepath)
 
     if os.path.basename(filepath) == 'kc.lic':
         license_on_demand = True
