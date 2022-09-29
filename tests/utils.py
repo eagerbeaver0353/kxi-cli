@@ -45,6 +45,12 @@ def raise_conflict(*args, **kwargs):
 def return_none(*args, **kwargs):
     return None
 
+def return_true(*args, **kwargs):
+    return True
+
+def return_false(*args, **kwargs):
+    return False
+
 def mocked_create_namespaced_secret(namespace, body):
     return secret.Secret(namespace, body.metadata.name, body.type, data=body.data, string_data=body.string_data).get_body()
 

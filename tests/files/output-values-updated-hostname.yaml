@@ -7,14 +7,16 @@ global:
   imagePullSecrets:
   - name: kxi-nexus-pull-secret
   ingress:
-    host: test.kx.com
+    host: a-test-hostname.kx.com
   keycloak:
-    authURL: http://keycloak.keycloak.svc.cluster.local/auth/
     guiClientSecret: gui-secret
     operatorClientSecret: operator-secret
   license:
     secretName: kxi-license
 keycloak:
-  enabled: false
-keycloak-config-cli:
-  enabled: true
+  auth:
+    existingSecret: kxi-keycloak
+  postgresql:
+    auth:
+      existingSecret: kxi-postgresql
+    existingSecret: kxi-postgresql

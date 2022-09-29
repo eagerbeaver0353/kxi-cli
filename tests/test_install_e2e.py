@@ -13,10 +13,11 @@ from click.testing import CliRunner
 
 from kxicli import common
 from kxicli import main
+from kxicli import options
 from kxicli import phrases
 from kxicli.resources import secret
 from kxicli.commands.assembly import CONFIG_ANNOTATION
-from utils import mock_kube_secret_api, return_none, raise_not_found, \
+from utils import mock_kube_secret_api, return_none, return_true, raise_not_found, \
     test_val_file, mock_validate_secret, mock_kube_crd_api, mock_helm_env, mock_helm_fetch, \
     test_helm_repo_cache
 from cli_io import cli_input, cli_output
@@ -35,13 +36,14 @@ test_chart = 'kx-insights/insights'
 test_operator_chart = 'kx-insights/kxi-operator'
 test_install_secret = 'test-install-secret'
 
-test_val_file_shared_keycloak = str(Path(__file__).parent / 'files' / 'test-values-shared-keycloak.yaml')
 test_k8s_config = str(Path(__file__).parent / 'files' / 'test-kube-config')
 test_cli_config_static = str(Path(__file__).parent / 'files' / 'test-cli-config')
 expected_test_output_file = str(Path(__file__).parent / 'files' / 'output-values.yaml')
 test_output_file_lic_env_var = str(Path(__file__).parent / 'files' / 'output-values-license-as-env-var.yaml')
 test_output_file_lic_on_demand = str(Path(__file__).parent / 'files' / 'output-values-license-on-demand.yaml')
 test_output_file_manual_ingress = str(Path(__file__).parent / 'files' / 'output-values-manual-ingress-secret.yaml')
+test_output_file_updated_hostname = str(Path(__file__).parent / 'files' / 'output-values-updated-hostname.yaml')
+test_val_file_shared_keycloak = str(Path(__file__).parent / 'files' / 'test-values-shared-keycloak.yaml')
 test_asm_file = str(Path(__file__).parent / 'files' / 'assembly-v1.yaml')
 test_asm_file2 = str(Path(__file__).parent / 'files' / 'assembly2-v1.yaml')
 test_asm_name = 'basic-assembly'  # As per contents of test_asm_file
@@ -63,6 +65,9 @@ copy_secret_params = []
 # override where the command looks for the docker config json
 # by default this is $HOME/.docker/config.json
 main.install.DOCKER_CONFIG_FILE_PATH = test_docker_config_json
+
+# Tell cli that this is an interactive session
+options._is_interactive_session = return_true
 
 @contextmanager
 def temp_test_output_file(prefix: str = 'kxicli-e2e-', file_name='output-values.yaml'):
@@ -153,14 +158,6 @@ def mock_copy_secret(mocker):
     global copy_secret_params
     copy_secret_params = []
     mocker.patch('kxicli.commands.install.copy_secret', mocked_copy_secret)
-
-
-def mocked_return_true(name):
-    return True
-
-
-def mocked_return_false(name):
-    return False
 
 
 def mocked_k8s_list_empty_config():
@@ -376,6 +373,39 @@ guiClientSecret = gui-secret
 operatorClientSecret = operator-secret
 
 """
+
+
+def test_install_setup_check_output_values_file(mocker):
+    mock_secret_helm_add(mocker)
+    mock_create_namespace(mocker)
+    with temp_test_output_file() as test_output_file, temp_config_file() as test_cli_config:
+        cmd = ['install', 'setup', '--output-file', test_output_file]
+        run_cli(cmd, {}, test_cli_config, test_output_file, 0)
+        assert compare_files(test_output_file, expected_test_output_file)
+
+
+def test_install_setup_when_hostname_provided_from_command_line(mocker):
+    mock_secret_helm_add(mocker)
+    mock_create_namespace(mocker)
+    with temp_test_output_file() as test_output_file, temp_config_file() as test_cli_config:
+        cmd = ['install', 'setup', '--output-file', test_output_file, '--hostname', 'https://a-test-hostname.kx.com'] 
+        test_cfg = {
+            'hostname_check': False
+        }
+        run_cli(cmd, test_cfg, test_cli_config, test_output_file, 0)
+        assert compare_files(test_output_file, test_output_file_updated_hostname)
+
+
+def test_install_setup_ingress_host_is_an_alias_for_hostname(mocker):
+    mock_secret_helm_add(mocker)
+    mock_create_namespace(mocker)
+    with temp_test_output_file() as test_output_file, temp_config_file() as test_cli_config:
+        cmd = ['install', 'setup', '--output-file', test_output_file, '--ingress-host', 'https://a-test-hostname.kx.com'] 
+        test_cfg = {
+            'hostname_check': False
+        }
+        run_cli(cmd, test_cfg, test_cli_config, test_output_file, 0)
+        assert compare_files(test_output_file, test_output_file_updated_hostname)
 
 
 def test_install_setup_when_ingress_cert_provided(mocker):
