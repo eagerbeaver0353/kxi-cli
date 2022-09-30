@@ -24,10 +24,11 @@ from kxicli import options
 from kxicli.commands import assembly
 from kxicli.commands.common import arg_force, arg_filepath, arg_version, arg_operator_version, \
     arg_release, arg_namespace, arg_assembly_backup_filepath, arg_output_file, arg_hostname, \
-    arg_chart_repo_name, arg_chart_repo_name_forced, \
+    arg_chart_repo_name, arg_chart_repo_name_forced, arg_chart_repo_url, arg_chart_repo_username, arg_chart_repo_password, \
     arg_license_secret, arg_license_as_env_var, arg_license_filepath, arg_client_cert_secret, \
-    arg_image_repo, arg_image_pull_secret, arg_gui_client_secret, arg_operator_client_secret, \
-    arg_keycloak_secret, arg_keycloak_postgresql_secret, arg_keycloak_auth_url, arg_ingress_cert_secret, \
+    arg_image_repo, arg_image_repo_user, arg_image_pull_secret, arg_gui_client_secret, arg_operator_client_secret, \
+    arg_keycloak_secret, arg_keycloak_postgresql_secret, arg_keycloak_auth_url, \
+    arg_ingress_cert_secret, arg_ingress_cert, arg_ingress_key, \
     arg_install_config_secret, arg_install_config_secret_default
 from kxicli.common import get_default_val as default_val
 from kxicli.common import get_help_text as help_text
@@ -75,11 +76,14 @@ def install():
 @install.command()
 @arg_namespace()
 @arg_chart_repo_name()
+@arg_chart_repo_url()
+@arg_chart_repo_username()
 @arg_license_secret()
 @arg_license_as_env_var()
 @arg_license_filepath()
 @arg_client_cert_secret()
 @arg_image_repo()
+@arg_image_repo_user()
 @arg_image_pull_secret()
 @arg_gui_client_secret()
 @arg_operator_client_secret()
@@ -88,11 +92,15 @@ def install():
 @arg_keycloak_auth_url()
 @arg_hostname()
 @arg_ingress_cert_secret()
+@arg_ingress_cert()
+@arg_ingress_key()
 @arg_output_file()
 @arg_install_config_secret_default()
-def setup(namespace, chart_repo_name, license_secret, license_as_env_var, license_filepath, client_cert_secret, image_repo,
-          image_pull_secret, gui_client_secret, operator_client_secret,
-          keycloak_secret, keycloak_postgresql_secret, keycloak_auth_url, hostname, ingress_cert_secret,
+def setup(namespace, chart_repo_name, chart_repo_url, chart_repo_username, 
+          license_secret, license_as_env_var, license_filepath,
+          client_cert_secret, image_repo, image_repo_user, image_pull_secret, gui_client_secret, operator_client_secret,
+          keycloak_secret, keycloak_postgresql_secret, keycloak_auth_url, hostname, 
+          ingress_cert_secret, ingress_cert, ingress_key,
           output_file, install_config_secret):
     """Perform necessary setup steps to install Insights"""
     
@@ -110,32 +118,34 @@ def setup(namespace, chart_repo_name, license_secret, license_as_env_var, licens
     #   - cmd line arg
     #      - values file (currently None in this command)
     #        - values secret if it exists
-    #          - default name
+    #          - value configured in cli-config file
+    #            - value in DEFAULT_VALUES
     license_secret = lookup_secret(namespace, license_secret, values_secret, None, license_key)
     client_cert_secret = lookup_secret(namespace, client_cert_secret, values_secret, None, 'client.cert.secret')
     image_pull_secret = lookup_secret(namespace, image_pull_secret, values_secret, None, image_pull_key)
     keycloak_secret = lookup_secret(namespace, keycloak_secret, values_secret, None, 'keycloak.secret')
     keycloak_postgresql_secret = lookup_secret(namespace, keycloak_postgresql_secret, values_secret, None, 'keycloak.postgresqlSecret')
-    ingress_cert_secret = lookup_secret(namespace, ingress_cert_secret, values_secret, None, 'ingress.cert.secret')
+    ingress_cert_secret_object = lookup_secret(namespace, ingress_cert_secret, values_secret, None, 'ingress.cert.secret')
 
     click.secho(phrases.header_ingress, bold=True)
     hostname = sanitize_ingress_host(options.hostname.prompt(hostname))
-    ingress_self_managed, ingress_cert_secret = prompt_for_ingress_cert(ingress_cert_secret)
+    ingress_self_managed, ingress_cert_secret_object = prompt_for_ingress_cert(ingress_cert_secret_object, ingress_cert_secret, ingress_cert, ingress_key)
 
-    if '--chart-repo-name' not in sys.argv:
-        click.secho(phrases.header_chart, bold=True)
-        chart_repo_name = options.chart_repo_name.prompt(chart_repo_name)
-        chart_repo_url = click.prompt(phrases.chart_repo_url,
-                                      default=default_val('chart.repo.url'))
-        username = click.prompt(phrases.chart_user)
-        password = common.enter_password(phrases.chart_password)
+    click.secho(phrases.header_chart, bold=True)
+    chart_repo_name = options.chart_repo_name.prompt(chart_repo_name)
+    if any (chart_repo_name == item['name'] for item in helm_repo_list()):
+       click.echo(f'Using existing helm repo {chart_repo_name}')
+    else:
+        chart_repo_url = options.chart_repo_url.prompt(chart_repo_url)
+        username = options.chart_repo_username.prompt(chart_repo_username)
+        password = options.chart_repo_password.prompt()
         helm_add_repo(chart_repo_name, chart_repo_url, username, password)
 
     click.secho(phrases.header_license, bold=True)
     license_secret, license_on_demand = prompt_for_license(license_secret, license_as_env_var)
 
     click.secho(phrases.header_image, bold=True)
-    image_repo, image_pull_secret = prompt_for_image_details(image_pull_secret, image_repo)
+    image_repo, image_pull_secret = prompt_for_image_details(image_pull_secret, image_repo, image_repo_user)
 
     click.secho(phrases.header_client_cert, bold=True)
     client_cert_secret = ensure_secret(client_cert_secret, populate_cert)
@@ -203,7 +213,7 @@ def setup(namespace, chart_repo_name, license_secret, license_as_env_var, licens
 
     if ingress_self_managed:
         install_file['global']['ingress']['certmanager'] = False
-        install_file['global']['ingress']['tlsSecret'] = ingress_cert_secret.name
+        install_file['global']['ingress']['tlsSecret'] = ingress_cert_secret_object.name
 
     if license_as_env_var:
         install_file['global']['license']['asFile'] = False
@@ -478,18 +488,17 @@ def populate_cert(secret: secret.Secret, **kwargs):
     return populate_tls_secret(secret, cert, key)
 
 
-def prompt_for_image_details(secret: secret.Secret, image_repo):
+def prompt_for_image_details(secret: secret.Secret, image_repo, image_repo_user):
     """Prompt for an existing image pull secret or create on if it doesn't exist"""
-    if '--image-repo' not in sys.argv:
-        image_repo = click.prompt(phrases.image_repo, default=image_repo)
-
-    secret = ensure_secret(secret, populate_image_pull_secret, {'image_repo': image_repo})
+    image_repo = options.image_repo.prompt(image_repo)
+    secret = ensure_secret(secret, populate_image_pull_secret, {'image_repo': image_repo, 'image_repo_user': image_repo_user})
     return image_repo, secret
 
 
 def populate_image_pull_secret(secret: secret.Secret, **kwargs):
     data = kwargs.get('data')
     image_repo = data['image_repo']
+    image_repo_user = data['image_repo_user']
     existing_config = check_existing_docker_config(image_repo, DOCKER_CONFIG_FILE_PATH)
 
     if existing_config:
@@ -505,8 +514,8 @@ def populate_image_pull_secret(secret: secret.Secret, **kwargs):
             secret = populate_docker_config_secret(secret, docker_config)
             return secret
 
-    user = click.prompt(phrases.image_user.format(repo=image_repo))
-    password = common.enter_password(phrases.image_password.format(user=user))
+    user = options.image_repo_user.prompt(image_repo_user, prompt_message=phrases.image_user.format(repo=image_repo))
+    password = options.image_repo_password.prompt(prompt_message=phrases.image_password.format(user=user))
     docker_config = create_docker_config(image_repo, user, password)
     secret = populate_docker_config_secret(secret, docker_config)
 
@@ -539,23 +548,31 @@ def populate_postgresql_secret(secret: secret.Secret, **kwargs):
     return secret
 
 
-def prompt_for_ingress_cert(secret: secret.Secret):
-    if click.confirm(phrases.ingress_cert):
+def prompt_for_ingress_cert(secret: secret.Secret, name, ingress_cert, ingress_key):
+    if name:
         ingress_self_managed = True
-        secret = ensure_secret(secret, populate_ingress_cert)
+    elif click.confirm(phrases.ingress_cert):
+        ingress_self_managed = True
+        secret = ensure_secret(secret, populate_ingress_cert,
+            {
+                'ingress_cert':ingress_cert, 
+                'ingress_key': ingress_key
+            }
+        )
     else:
+        click.echo(phrases.ingress_lets_encrypt)
         ingress_self_managed = False
 
     return ingress_self_managed, secret
 
 
 def populate_ingress_cert(secret: secret.Secret, **kwargs):
-    path_to_cert = click.prompt(phrases.ingress_tls_cert)
+    path_to_cert = options.ingress_cert.prompt(kwargs.get('ingress_cert'))
     with open(path_to_cert, 'r') as cert_file:
         cert_data = cert_file.read()
         cert = x509.load_pem_x509_certificate(cert_data.encode(), backend=default_backend())
 
-    path_to_key = click.prompt(phrases.ingress_tls_key)
+    path_to_key = options.ingress_key.prompt(kwargs.get('ingress_key'))
     with open(path_to_key, 'r') as key_file:
         key_data = key_file.read()
         key = serialization.load_pem_private_key(key_data.encode(), password=None, backend=default_backend())
@@ -853,6 +870,17 @@ def helm_add_repo(chart_repo_name, url, username, password):
     except subprocess.CalledProcessError:
         # Pass here so that the password isn't printed in the log
         pass
+
+
+def helm_repo_list():
+    """Call 'helm repo list' using subprocess.run"""
+    log.debug('Attempting to call: helm repo list')
+    try:
+        res = subprocess.run(
+            ['helm', 'repo', 'list', '--output', 'json'], check=True, capture_output=True, text=True)
+    except subprocess.CalledProcessError as e:
+        click.echo(e)
+    return json.loads(res.stdout)
 
 
 def helm_list_versions(chart_repo_name):

@@ -22,7 +22,7 @@ from utils import mock_kube_secret_api, return_none, return_true, raise_not_foun
     test_helm_repo_cache
 from cli_io import cli_input, cli_output
 from const import test_namespace,  test_chart_repo_name, test_chart_repo_url, \
-    test_user, test_pass, test_docker_config_json
+    test_user, test_pass, test_docker_config_json, test_cert, test_key, test_ingress_cert_secret
 
 common.config.config_file = os.path.dirname(__file__) + '/files/test-cli-config'
 common.config.load_config("default")
@@ -54,6 +54,7 @@ test_crds = ['assemblies.insights.kx.com', 'assemblyresources.insights.kx.com']
 with open(test_val_file, 'rb') as values_file:
     test_vals = yaml.full_load(values_file)
 
+helm_add_repo_params = ()
 delete_crd_params = []
 delete_assembly_args = []
 insights_installed_flag = True
@@ -119,12 +120,25 @@ def mocked_read_namespaced_secret_return_values(namespace, name):
 
 
 def mocked_helm_add_repo(repo, url, username, password):
-    # Test function to mock
+    global helm_add_repo_params
+    helm_add_repo_params = (repo, url, username, password)
     pass
 
 
 def mocked_helm_list_returns_empty_json(base_command):
     return '[]'
+
+
+def mocked_empty_list():
+    return []
+
+
+def mocked_helm_repo_list():
+    return [{'name':test_chart_repo_name, 'url': test_chart_repo_url}]
+
+
+def mock_empty_helm_repo_list(mocker):
+    mocker.patch('kxicli.commands.install.helm_repo_list', mocked_empty_list)
 
 
 def mock_delete_crd(mocker):
@@ -240,11 +254,14 @@ def mocked_crd_exists(name):
 
 def mock_secret_helm_add(mocker):
     mock_kube_secret_api(mocker, read=raise_not_found)
+    mock_empty_helm_repo_list(mocker)
+    helm_add_repo_params = ()
     mocker.patch('kxicli.commands.install.helm_add_repo', mocked_helm_add_repo)
 
 
 def mock_list_assembly_none(namespace):
     return {'items': []}
+
 
 def mock_list_assembly(namespace):
     with open(test_asm_file) as f:
@@ -407,14 +424,83 @@ def test_install_setup_ingress_host_is_an_alias_for_hostname(mocker):
         run_cli(cmd, test_cfg, test_cli_config, test_output_file, 0)
         assert compare_files(test_output_file, test_output_file_updated_hostname)
 
+def test_install_setup_when_chart_repo_provided_from_command_line(mocker):
+    mock_secret_helm_add(mocker)
+    mock_create_namespace(mocker)
+    test_repo_name='test-repo-command-line'
+    test_repo_url='https://test-repo-command-line.kx.com/repository/kx-insights-charts'
+    test_repo_username='test-repo-username-command-line'
+    test_repo_password='test-repo-password-prompt'
+ 
+    with temp_test_output_file() as test_output_file, temp_config_file() as test_cli_config:
+        cmd = ['install', 'setup', '--output-file', test_output_file, '--chart-repo-name', test_repo_name, '--chart-repo-url', test_repo_url, '--chart-repo-username', test_repo_username]
+        test_cfg = {
+            'chart_repo_name': None,
+            'chart_repo_url': None,
+            'chart_user': None,
+            'chart_pass': test_repo_password
+        }
+        run_cli(cmd, test_cfg, test_cli_config, test_output_file, 0)
+        assert helm_add_repo_params == (test_repo_name, test_repo_url, test_repo_username, test_repo_password)
 
-def test_install_setup_when_ingress_cert_provided(mocker):
+
+
+def test_install_setup_does_not_prompt_when_chart_repo_already_exists(mocker):
+    mock_create_namespace(mocker)
+    mock_kube_secret_api(mocker, read=raise_not_found)
+    mocker.patch('kxicli.commands.install.helm_repo_list', mocked_helm_repo_list)
+    helm_add_repo_params = ()
+    mocker.patch('kxicli.commands.install.helm_add_repo', mocked_helm_add_repo)
+ 
+    with temp_test_output_file() as test_output_file, temp_config_file() as test_cli_config:
+        cmd = ['install', 'setup', '--output-file', test_output_file, '--chart-repo-name', test_chart_repo_name]
+        test_cfg = {
+            'chart_repo_existing': test_chart_repo_name,
+            'chart_repo_name': None,
+            'chart_repo_url': None,
+            'chart_user': None,
+            'chart_pass': None
+        }
+        run_cli(cmd, test_cfg, test_cli_config, test_output_file, 0)
+        assert helm_add_repo_params == ()
+
+
+def test_install_setup_when_ingress_cert_prompted(mocker):
     mock_secret_helm_add(mocker)
     mock_create_namespace(mocker)
     with temp_test_output_file() as test_output_file, temp_config_file() as test_cli_config:
-        cmd = ['install', 'setup', '--output-file', test_output_file, '--license-as-env-var', 'True'] 
+        cmd = ['install', 'setup', '--output-file', test_output_file] 
         test_cfg = {
             'provide_ingress_cert': 'y'
+        }
+        run_cli(cmd, test_cfg, test_cli_config, test_output_file, 0)
+        assert compare_files(test_output_file, test_output_file_manual_ingress)
+
+
+def test_install_setup_when_ingress_cert_secret_provided_on_command_line(mocker):
+    mock_secret_helm_add(mocker)
+    mock_create_namespace(mocker)
+    with temp_test_output_file() as test_output_file, temp_config_file() as test_cli_config:
+        cmd = ['install', 'setup', '--output-file', test_output_file, '--ingress-cert-secret', test_ingress_cert_secret] 
+        test_cfg = {
+            'provide_ingress_cert': None
+        }
+        run_cli(cmd, test_cfg, test_cli_config, test_output_file, 0)
+        assert compare_files(test_output_file, test_output_file_manual_ingress)
+
+
+def test_install_setup_when_ingress_cert_provided_on_command_line(mocker):
+    mock_secret_helm_add(mocker)
+    mock_create_namespace(mocker)
+    with temp_test_output_file() as test_output_file, temp_test_output_file(file_name='tls_crt') as test_cert_filepath, \
+        temp_test_output_file(file_name='tls_key') as test_key_filepath, temp_config_file() as test_cli_config:
+        shutil.copyfile(test_cert, test_cert_filepath)
+        shutil.copyfile(test_key, test_key_filepath)
+        cmd = ['install', 'setup', '--output-file', test_output_file, '--ingress-cert', test_cert_filepath, '--ingress-key', test_key_filepath] 
+        test_cfg = {
+            'provide_ingress_cert': 'y',
+            'ingress_cert': test_cert_filepath,
+            'ingress_key': test_key_filepath
         }
         run_cli(cmd, test_cfg, test_cli_config, test_output_file, 0)
         assert compare_files(test_output_file, test_output_file_manual_ingress)
@@ -546,6 +632,7 @@ Installing chart kx-insights/insights version 1.2.3 with values file from {test_
 
 
 def test_install_run_when_no_file_provided(mocker):
+    mock_empty_helm_repo_list(mocker)
     mock_kube_secret_api(mocker, read=mocked_read_namespaced_secret_return_values)
     mock_subprocess_run(mocker)
     mocker.patch('subprocess.check_output', mocked_helm_list_returns_empty_json)

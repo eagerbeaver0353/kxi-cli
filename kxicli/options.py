@@ -6,17 +6,33 @@ from functools import partial
 from kxicli import phrases
 from kxicli.common import get_default_val as default_val
 from kxicli.common import get_help_text as help_text
-from kxicli.common import key_install_outputFile, key_chart_repo_name, key_install_config_secret
+from kxicli.common import key_install_outputFile, key_chart_repo_name, key_install_config_secret, \
+    key_image_repository, key_image_repository_user, key_image_repository_password, key_image_pullSecret, \
+    key_ingress_cert_secret, key_ingress_cert, key_ingress_key
+from kxicli.common import enter_password
+from kxicli.config import config_file
 
 def _is_interactive_session():
     return sys.stdout.isatty() and '--force' not in sys.argv
 
+def prompt_error_message(self):
+    error_message = 'Could not find expected option.'
+    if self.click_option_args:
+        error_message = error_message + f' Please set command line argument {self.click_option_args[0]}'
+        if self.config_name:
+            error_message = error_message + f' or configuration value {self.config_name} in config file {config_file}'
+    elif self.config_name:
+        error_message = error_message + f' Please set configuration value {self.config_name} in config file {config_file}'
+
+    return error_message
+
 class Option():
-    def __init__(self, *click_option_args , config_name=None, force=False, prompt_message='', **click_option_kwargs):
+    def __init__(self, *click_option_args , config_name=None, force=False, password=False, prompt_message='', **click_option_kwargs):
         self._click_option_args = click_option_args
         self._click_option_kwargs = click_option_kwargs
         self._config_name = config_name
         self._force = force
+        self._password = password
         self._prompt_message = prompt_message
 
     @property
@@ -36,21 +52,36 @@ class Option():
         return self._force
 
     @property
+    def password(self):
+        return self._password
+
+    @property
     def prompt_message(self):
         return self._prompt_message
 
 
-    def prompt(self, cmd_line_value=None):
+    def prompt(self, cmd_line_value=None, **kwargs):
+        prompt_message = None
+        
+        if kwargs.get('prompt_message'):
+            prompt_message = kwargs.get('prompt_message')
+        elif self.prompt_message:
+            prompt_message = self.prompt_message
+
         # read value in hierarchy of cmd line arg, config value, default value, user prompt response
         if cmd_line_value:
             return cmd_line_value
         # check if there's a tty and not explicitly no prompt
-        elif self.prompt_message and _is_interactive_session():
-            return click.prompt(self.prompt_message, default=default_val(self.config_name))
+        elif prompt_message and _is_interactive_session():
+            if self.password:
+                return enter_password(prompt_message)
+            else:
+                return click.prompt(prompt_message, default=default_val(self.config_name))
         elif default_val(self.config_name):
             return default_val(self.config_name)
         else:
-            raise click.ClickException(f'Must either set command line arg {self.click_option_args[0]} or configuration value {self.config_name}')
+            raise click.ClickException(prompt_error_message(self))
+
 
     def decorator(self):
         if self.force:
@@ -138,6 +169,27 @@ chart_repo_name_forced = Option(
     force=True
 )
 
+chart_repo_url = Option (
+    '--chart-repo-url',
+    config_name = 'chart.repo.url',
+    prompt_message = phrases.chart_repo_url,
+    help = help_text('chart.repo.url')
+)
+
+chart_repo_username = Option (
+    '--chart-repo-username',
+    config_name = 'chart.repo.username',
+    prompt_message = phrases.chart_user,
+    help = help_text('chart.repo.username')
+)
+
+chart_repo_password = Option (
+    config_name = 'chart.repo.password',
+    prompt_message = phrases.chart_password,
+    help = help_text('chart.repo.password'),
+    password=True
+)
+
 client_cert_secret = Option (
     '--client-cert-secret',
     help=help_text('client.cert.secret')
@@ -145,14 +197,31 @@ client_cert_secret = Option (
 
 image_repo = Option ( 
     '--image-repo',
-    default=lambda: default_val('image.repository'),
-    help=help_text('image.repository')
+    config_name = key_image_repository,
+    prompt_message = phrases.image_repo,
+    help=help_text(key_image_repository)
+)
+
+image_repo_user = Option ( 
+    '--image-repo-user',
+    config_name = key_image_repository_user,
+    prompt_message = phrases.image_user,
+    default=lambda: default_val(key_image_repository_user),
+    help=help_text(key_image_repository_user)
+)
+
+image_repo_password = Option (
+    config_name = key_image_repository_password,
+    prompt_message = phrases.image_password,
+    default=lambda: default_val(key_image_repository_password),
+    help=help_text(key_image_repository_password),
+    password=True
 )
 
 image_pull_secret = Option (
     '--image-pull-secret',
     default=None,
-    help=help_text('image.pullSecret')
+    help=help_text(key_image_pullSecret)
 )
 
 gui_client_secret = Option (
@@ -186,8 +255,22 @@ keycloak_auth_url = Option (
 
 ingress_cert_secret = Option (
     '--ingress-cert-secret',
-    default=None,
-    help=help_text('ingress.cert.secret')
+    config_name = key_ingress_cert_secret,
+    help=help_text(key_ingress_cert_secret)
+)
+
+ingress_cert = Option (
+    '--ingress-cert',
+    config_name = key_ingress_cert,
+    prompt_message = phrases.ingress_tls_cert,
+    help=help_text(key_ingress_cert)
+)
+
+ingress_key = Option (
+    '--ingress-key',
+    config_name = key_ingress_key,
+    prompt_message = phrases.ingress_tls_key,
+    help=help_text(key_ingress_key)
 )
 
 install_config_secret = Option (

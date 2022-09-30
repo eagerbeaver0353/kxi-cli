@@ -14,7 +14,13 @@ from kxicli import phrases
 key_install_outputFile = 'install.outputFile'
 key_chart_repo_name = 'chart.repo.name'
 key_install_config_secret = 'install.configSecret'
-
+key_ingress_cert_secret = 'ingress.cert.secret'
+key_ingress_cert = 'ingress.cert'
+key_ingress_key ='ingress.key'
+key_image_repository = 'image.repository'
+key_image_repository_user = 'image.repository.user'
+key_image_repository_password = 'image.repository.password'
+key_image_pullSecret = 'image.pullSecret'
 
 # Help text dictionary for commands
 HELP_TEXT = {
@@ -28,13 +34,16 @@ HELP_TEXT = {
     'license.envVar': 'Mount kdb+ license secret as an environment variable',
     'license.filepath': 'File path and file name of kdb+ license file',
     'client.cert.secret': 'Secret containing TLS cert and key for client issuer',
-    'image.repository': 'Repository to pull images from',
-    'image.pullSecret': 'Secret containing credentials for the image repository ',
+    key_image_repository: 'Repository to pull images from',
+    key_image_repository_user: 'User name for image repository',
+    key_image_repository_password: 'Password for image repository',
+    key_image_pullSecret: 'Secret containing credentials for the image repository ',
     'keycloak.secret': 'Secret containing Keycloak admin password',
     'keycloak.postgresqlSecret': 'Secret containing Keycloak postgresql passwords',
     'keycloak.authURL': 'Auth URL for Keycloak',
-    'ingress.host': 'Hostname for the installation',
-    'ingress.cert.secret': 'Secret containing self-managed TLS cert and key for the ingress',
+    key_ingress_cert_secret: 'Secret containing self-managed TLS cert and key for the ingress',
+    key_ingress_cert: 'File path to TLS certificate for the ingress',
+    key_ingress_key: 'File path to TLS private key for the ingress',
     key_install_outputFile: 'Name for the generated values file',
     key_install_config_secret: 'Secret containing helm install values',
     'install.filepath': 'Values file to install with',
@@ -54,11 +63,11 @@ DEFAULT_VALUES = {
     'client.cert.secret': 'kxi-certificate',
     key_chart_repo_name: 'kx-insights',
     'chart.repo.url': 'https://nexus.dl.kx.com/repository/kx-insights-charts',
-    'image.pullSecret': 'kxi-nexus-pull-secret',
-    'image.repository': 'registry.dl.kx.com',
+    key_image_pullSecret: 'kxi-nexus-pull-secret',
+    key_image_repository: 'registry.dl.kx.com',
     'keycloak.secret': 'kxi-keycloak',
     'keycloak.postgresqlSecret': 'kxi-postgresql',
-    'ingress.cert.secret': 'kxi-ingress-cert',
+    key_ingress_cert_secret: 'kxi-ingress-cert',
     key_install_outputFile: 'values.yaml',
     key_install_config_secret: 'kxi-install-config',
     'assembly.backup.file': 'kxi-assembly-state.yaml',

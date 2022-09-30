@@ -3,10 +3,17 @@ from const import test_namespace, test_cluster, test_host, test_chart_repo_name,
 from kxicli import common
 from kxicli import phrases
 
+def append_message(message, new_message):
+    if len(message):
+        message = message + '\n'
+    return message + new_message
+
 def cli_input(
     verb,
     output_file = None,
     provide_ingress_cert = 'n',
+    ingress_cert = test_cert,
+    ingress_key = test_key,
     lic = test_lic_file,
     lic_sec_exists = False,
     lic_sec_is_valid = True,
@@ -33,7 +40,13 @@ def cli_input(
     overwrite_values = 'y',
     install_config_exists = False,
     overwrite_install_config = 'n',
-    hostname_check=True
+    hostname_check=True,
+    chart_repo_existing=None,
+    chart_repo_name=test_chart_repo_name,
+    chart_repo_url=test_chart_repo_url,
+    chart_user=test_user,
+    chart_pass=test_pass
+
 ):
     # TODO: Implement full run support
     if verb in  ('run', 'upgrade'):
@@ -42,27 +55,33 @@ def cli_input(
     inp = ''
     # Hostname
     if hostname_check:
-        inp = f'{inp}{test_host}\n'
-    inp = f'{inp}{provide_ingress_cert}'
+        inp = append_message(inp, test_host)
 
     # Ingress
+    if provide_ingress_cert:
+        inp = append_message(inp, provide_ingress_cert)
     if provide_ingress_cert == 'y':
-        inp = f'{inp}\n{test_cert}\n{test_key}'
+        if ingress_cert: inp = append_message(inp, ingress_cert)
+        if ingress_key: inp = append_message(inp, ingress_key)
 
     # Chart
-    inp = f'{inp}\n{test_chart_repo_name}\n{test_chart_repo_url}\n{test_user}\n{test_pass}\n{test_pass}'
+    if chart_repo_name: inp = append_message(inp, chart_repo_name)
+    if chart_repo_url: inp = append_message(inp, chart_repo_url)
+    if chart_user: inp = append_message(inp, chart_user)
+    if chart_pass: inp = append_message(inp, f"{chart_pass}\n{chart_pass}")
+
 
     # License
     inp = input_secret(inp, lic_sec_exists, lic_sec_is_valid, lic_overwrite, lic)
 
     # Image
-    inp = f'{inp}\n{repo}'
+    inp = append_message(inp, repo)
     inp = input_secret(inp, image_sec_exists, image_sec_is_valid,
         image_sec_overwrite, input_image(user, use_existing_creds))
 
     # Client
     if client_sec_exists and not client_sec_is_valid:
-        inp = f'{inp}\n{client_overwrite}'
+        inp = append_message(inp, client_overwrite)
 
     # Keycloak passwords
     if deploy_keycloak:
@@ -75,13 +94,13 @@ def cli_input(
 
     # values
     if values_exist and overwrite_values == 'y':
-        inp = f'{inp}\n{overwrite_values}'
+        inp = append_message(inp, overwrite_values)
     elif values_exist:
-        inp = f'{inp}\n{overwrite_values}\n{output_file}_new'
+        inp = append_message(inp, f'{overwrite_values}\n{output_file}_new')
 
     # install config
     if install_config_exists:
-        inp = f'{inp}\n{overwrite_install_config}'
+        inp = append_message(inp, overwrite_install_config)
 
     return inp
 
@@ -91,6 +110,8 @@ def cli_output(
     cli_config,
     output_file = None,
     provide_ingress_cert = 'n',
+    ingress_cert = test_cert,
+    ingress_key = test_key,
     lic = test_lic_file,
     lic_sec_exists = False,
     lic_sec_is_valid = True,
@@ -117,7 +138,12 @@ def cli_output(
     overwrite_values = 'y',
     install_config_exists = False,
     overwrite_install_config = 'n',
-    hostname_check = True
+    hostname_check = True,
+    chart_repo_existing=None,
+    chart_repo_name=test_chart_repo_name,
+    chart_repo_url=test_chart_repo_url,
+    chart_user=test_user,
+    chart_pass=test_pass
 ):
 
     # TODO: implement full run and upgrade support properly
@@ -132,8 +158,8 @@ def cli_output(
         elif not lic_sec_is_valid:
             return output_upgrade_required_secrets_invalid()
 
-    ingress = output_ingress(hostname_check, provide_ingress_cert)
-    chart = output_chart()
+    ingress = output_ingress(hostname_check, provide_ingress_cert, ingress_cert, ingress_key)
+    chart = output_chart(chart_repo_existing, chart_repo_name, chart_repo_url, chart_user, chart_pass)
     license = output_license(lic, lic_sec_exists, lic_sec_is_valid, lic_sec_overwrite)
     image = output_image(repo, user, image_sec_exists, image_sec_is_valid, use_existing_creds, image_sec_overwrite)
     client = output_client(client_sec_exists, client_sec_is_valid, client_sec_overwrite)
@@ -180,13 +206,16 @@ def output_setup_start():
 {phrases.ns_and_cluster.format(namespace=test_namespace, cluster=test_cluster)}"""
 
 
-def output_chart():
-    return f"""{phrases.header_chart}
-{phrases.chart_repo} [{common.get_default_val('chart.repo.name')}]: {test_chart_repo_name}
-{phrases.chart_repo_url} [{common.get_default_val('chart.repo.url')}]: {test_chart_repo_url}
-{phrases.chart_user}: {test_user}
-{phrases.chart_password}: 
-{phrases.password_reenter}: """
+def output_chart(chart_repo_existing, chart_repo_name, chart_repo_url, chart_user, chart_pass):
+    out = f'{phrases.header_chart}'
+    if chart_repo_name: out = append_message(out, f"{phrases.chart_repo} [{common.get_default_val('chart.repo.name')}]: {chart_repo_name}")
+    if chart_repo_existing:
+        out = f"{out}\nUsing existing helm repo {chart_repo_existing}"
+    else:
+        if chart_repo_url: out = append_message(out, f"{phrases.chart_repo_url} [{common.get_default_val('chart.repo.url')}]: {chart_repo_url}")
+        if chart_user: out = append_message(out, f"{phrases.chart_user}: {chart_user}")
+        if chart_pass: out = append_message(out, f"{phrases.chart_password}: \n{phrases.password_reenter}: ")
+    return out
 
 
 def output_license(license, exists, is_valid, overwrite):
@@ -235,17 +264,19 @@ def output_image(repo, user, exists, is_valid, use_existing_creds, overwrite):
 {output_secret(secret_name, exists, is_valid, prompt, overwrite)}"""
 
 
-def output_ingress(hostname_check, provide_cert):
+def output_ingress(hostname_check, provide_cert, ingress_cert, ingress_key):
     str = f'{phrases.header_ingress}'
     if hostname_check:
-        str = str + f'\n{phrases.hostname_entry} [{test_host}]: {test_host}'
-    str = str + f'\n{phrases.ingress_cert} [y/N]: {provide_cert}'
+        str = append_message(str, f'{phrases.hostname_entry} [{test_host}]: {test_host}')
+    if provide_cert:
+        str = append_message(str, f'{phrases.ingress_cert} [y/N]: {provide_cert}')
     if provide_cert == 'y':
         secret_name = common.get_default_val('ingress.cert.secret')
-        cert = f'{phrases.ingress_tls_cert}: {test_cert}'
-        key = f'{phrases.ingress_tls_key}: {test_key}'
-        created = f'{phrases.secret_created.format(name=secret_name)}'
-        str = f'{str}\n{cert}\n{key}\n{created}'
+        if ingress_cert: str = append_message(str, f'{phrases.ingress_tls_cert}: {ingress_cert}')
+        if ingress_key: str = append_message(str, f'{phrases.ingress_tls_key}: {ingress_key}')
+        str = append_message(str, phrases.secret_created.format(name=secret_name))
+    if provide_cert == 'n':
+        str = append_message(str, phrases.ingress_lets_encrypt)
     return str
 
 
@@ -308,7 +339,7 @@ def output_values_file(output_file, exists, overwrite):
         str = f'\n{phrases.values_file_overwrite.format(output_file=output_file)} [y/N]: {overwrite}'
         if overwrite == 'n':
             new_save_path = f'{phrases.values_save_path}: {output_file}_new'
-            str = f'{str}\n{new_save_path}'
+            str = append_message(str, new_save_path)
     else:
         str = ''
     return str
@@ -329,9 +360,9 @@ def input_secret(inp, exists, is_valid, overwrite, data):
 
 def input_provide_data(inp, prompt_answer, data):
     if prompt_answer == 'y':
-        inp = f'{inp}\n{prompt_answer}\n{data}'
+        inp = append_message(inp, f'{prompt_answer}\n{data}')
     else:
-        inp = f'{inp}\n{prompt_answer}'
+        inp = append_message(inp, prompt_answer)
     return inp
 
 def input_image(user, use_existing_creds):

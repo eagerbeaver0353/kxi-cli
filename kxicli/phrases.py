@@ -30,6 +30,7 @@ hostname_entry = 'Please enter the hostname for the installation'
 ingress_cert = 'Do you want to provide a self-managed cert for the ingress'
 ingress_tls_cert = 'Please enter the path to your TLS certificate'
 ingress_tls_key = 'Please enter the path to your TLS private key'
+ingress_lets_encrypt = "Using Let's Encrypt TLS certificates"
 
 # Images
 image_repo = 'Please enter the image repository to pull images from'
