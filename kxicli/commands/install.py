@@ -142,7 +142,7 @@ def setup(namespace, chart_repo_name, chart_repo_url, chart_repo_username,
         helm_add_repo(chart_repo_name, chart_repo_url, username, password)
 
     click.secho(phrases.header_license, bold=True)
-    license_secret, license_on_demand = prompt_for_license(license_secret, license_as_env_var)
+    license_secret, license_on_demand = prompt_for_license(license_secret, license_filepath, license_as_env_var)
 
     click.secho(phrases.header_image, bold=True)
     image_repo, image_pull_secret = prompt_for_image_details(image_pull_secret, image_repo, image_repo_user)
@@ -448,18 +448,18 @@ def sanitize_auth_url(raw_string):
     return trimmed
 
 
-def prompt_for_license(secret: secret.Secret, license_as_env_var):
+def prompt_for_license(secret: secret.Secret, filepath, license_as_env_var):
     """Prompt for an existing license or create on if it doesn't exist"""
     license_on_demand = False
 
     exists, is_valid, _ = secret.validate()
     if not exists:
-        secret, license_on_demand = populate_license_secret(secret, as_env=license_as_env_var)
+        secret, license_on_demand = populate_license_secret(secret, filepath=filepath, as_env=license_as_env_var)
         secret.create()
     elif not is_valid:
         if click.confirm(phrases.secret_exist_invalid.format(name=secret.name)):
             click.echo(phrases.secret_overwriting.format(name=secret.name))
-            secret, license_on_demand = populate_license_secret(secret, as_env=license_as_env_var)
+            secret, license_on_demand = populate_license_secret(secret, filepath=filepath, as_env=license_as_env_var)
             secret.patch()
     else:
         click.echo(phrases.secret_use_existing.format(name=secret.name))
