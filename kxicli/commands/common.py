@@ -44,9 +44,17 @@ arg_chart_repo_name = options.chart_repo_name.decorator()
 
 arg_chart_repo_name_forced = options.chart_repo_name_forced.decorator()
 
+arg_chart_repo_url = options.chart_repo_url.decorator()
+
+arg_chart_repo_username = options.chart_repo_username.decorator()
+
+arg_chart_repo_password = options.chart_repo_password.decorator()
+
 arg_client_cert_secret = options.client_cert_secret.decorator()
 
 arg_image_repo = options.image_repo.decorator()
+
+arg_image_repo_user= options.image_repo_user.decorator()
 
 arg_image_pull_secret = options.image_pull_secret.decorator()
 
@@ -61,6 +69,10 @@ arg_keycloak_postgresql_secret = options.keycloak_postgresql_secret.decorator()
 arg_keycloak_auth_url = options.keycloak_auth_url.decorator()
 
 arg_ingress_cert_secret = options.ingress_cert_secret.decorator()
+
+arg_ingress_cert = options.ingress_cert.decorator()
+
+arg_ingress_key = options.ingress_key.decorator()
 
 arg_install_config_secret = options.install_config_secret.decorator()
 
