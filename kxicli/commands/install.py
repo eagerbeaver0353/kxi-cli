@@ -789,7 +789,7 @@ def check_for_operator_install(release, chart_repo_name, insights_ver, op_ver, f
         click.echo(f'\nkxi-operator not found')
 
     operator_version_to_install = get_operator_version(chart_repo_name, insights_ver, op_ver)
-    install_operator = force or click.confirm(f'Do you want to install kxi-operator version {operator_version_to_install}?', default=True)
+    install_operator = force or op_ver or click.confirm(f'Do you want to install kxi-operator version {operator_version_to_install}?', default=True)
 
     crd_data = []
     if install_operator and is_upgrade:
