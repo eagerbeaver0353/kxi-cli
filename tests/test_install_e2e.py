@@ -174,7 +174,10 @@ def mock_create_namespace(mocker):
 
 
 def mocked_get_operator_version(chart_repo_name, insights_version, operator_version):
-    return insights_version
+    if operator_version:
+        return operator_version
+    else:
+        return insights_version
 
 
 def mock_get_operator_version(mocker):
@@ -717,6 +720,39 @@ Installing chart kx-insights/insights version 1.2.3 with values file from {test_
     assert subprocess_run_command == [
         ['helm', 'repo', 'update'],
         ['helm', 'upgrade', '--install', '-f', test_val_file, 'insights', test_operator_chart, '--version', '1.2.3', '--namespace',
+         'kxi-operator'],
+        ['helm', 'upgrade', '--install', '-f', test_val_file, 'insights', test_chart, '--version', '1.2.3', '--namespace',
+         test_namespace]
+    ]
+
+
+def test_install_run_with_operator_version(mocker):
+    mock_subprocess_run(mocker)
+    mock_create_namespace(mocker)
+    mock_copy_secret(mocker)
+    mock_set_insights_operator_and_crd_installed_state(mocker, False, False, False)
+    mock_get_operator_version(mocker)
+    mock_validate_secret(mocker)
+    global copy_secret_params
+    copy_secret_params = []
+
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        result = runner.invoke(main.cli,
+                               ['install', 'run', '--version', '1.2.3', '--filepath', test_val_file, '--operator-version', '4.5.6'])
+        expected_output = f"""{phrases.values_validating}
+
+kxi-operator not found
+Installing chart kx-insights/kxi-operator version 4.5.6 with values file from {test_val_file}
+Installing chart kx-insights/insights version 1.2.3 with values file from {test_val_file}
+"""    
+    assert result.exit_code == 0
+    assert result.output == expected_output
+    assert copy_secret_params == [('kxi-nexus-pull-secret', test_namespace, 'kxi-operator'),
+                                  ('kxi-license', test_namespace, 'kxi-operator')]
+    assert subprocess_run_command == [
+        ['helm', 'repo', 'update'],
+        ['helm', 'upgrade', '--install', '-f', test_val_file, 'insights', test_operator_chart, '--version', '4.5.6', '--namespace',
          'kxi-operator'],
         ['helm', 'upgrade', '--install', '-f', test_val_file, 'insights', test_chart, '--version', '1.2.3', '--namespace',
          test_namespace]
