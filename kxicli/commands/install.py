@@ -48,7 +48,7 @@ VALUES_YAML = 'values.yaml'
 
 # Basic validation for secrets
 KEYCLOAK_KEYS =  ('admin-password', 'management-password')
-POSTGRESQL_KEYS =  ('postgresql-postgres-password', 'postgresql-password')
+POSTGRESQL_KEYS =  ('postgres-password', 'password')
 LICENSE_KEYS = ('license',)
 IMAGE_PULL_KEYS =  ('.dockerconfigjson',)
 INGRESS_CERT_KEYS = (TLS_CRT, TLS_KEY)
