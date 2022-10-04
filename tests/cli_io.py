@@ -378,7 +378,7 @@ error=Required secret kxi-license has an invalid format, expected type Opaque an
 error=Required secret kxi-certificate has an invalid format, expected type kubernetes.io/tls and keys ('tls.crt', 'tls.key')
 error=Required secret kxi-nexus-pull-secret has an invalid format, expected type kubernetes.io/dockerconfigjson and keys ('.dockerconfigjson',)
 error=Required secret kxi-keycloak has an invalid format, expected type Opaque and keys ('admin-password', 'management-password')
-error=Required secret kxi-postgresql has an invalid format, expected type Opaque and keys ('postgresql-postgres-password', 'postgresql-password')
+error=Required secret kxi-postgresql has an invalid format, expected type Opaque and keys ('postgres-password', 'password')
 Validation failed, run "kxi install setup" to fix
 """
 
