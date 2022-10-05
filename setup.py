@@ -12,7 +12,7 @@ setup(
         "kubernetes>=18.20.0",
         "pyyaml>=6.0",
         "cryptography>=2.8",
-        "pakxcli==1.0.0rc1",
+        "pakxcli==1.1.0rc4",
         "packaging>=21.3",
         "python-keycloak>=2.3.0",
         "azure-identity>=1.10.0",
