@@ -12,19 +12,16 @@ import yaml
 
 from kxicli import common
 from kxicli import log
-from kxicli.commands.common import arg_force, arg_namespace as arg_common_namespace
+from kxicli.commands.common import arg_force, arg_namespace
 from kxicli.common import get_default_val as default_val
 from kxicli.common import get_help_text as help_text
+from kxicli.options import namespace as options_namespace
 
 API_GROUP = 'insights.kx.com'
 API_VERSION = 'v1'
 API_PLURAL = 'assemblies'
 CONFIG_ANNOTATION = 'kubectl.kubernetes.io/last-applied-configuration'
 ASM_LABEL_SELECTOR = 'insights.kx.com/queryEnvironment!=true'
-
-arg_namespace = partial(
-    arg_common_namespace, default=lambda: default_val('namespace')
-)
 
 arg_filepath = partial(
     click.option, '--filepath', default=lambda: default_val('assembly.backup.file'),
@@ -318,7 +315,7 @@ def _delete_running_assemblies(namespace, wait, force):
 def backup(namespace, filepath, force):
     """Back up running assemblies to a file"""
 
-    _, namespace = common.get_namespace(namespace)
+    namespace = options_namespace.prompt(namespace)
 
     _backup_assemblies(namespace, filepath, force)
 
@@ -330,7 +327,7 @@ def backup(namespace, filepath, force):
 def create(namespace, filepath, wait):
     """Create an assembly given an assembly file"""
 
-    _, namespace = common.get_namespace(namespace)
+    namespace = options_namespace.prompt(namespace)
 
     _create_assemblies_from_file(namespace, filepath, wait)
 
@@ -342,7 +339,7 @@ def create(namespace, filepath, wait):
 def status(namespace, name, wait_for_ready):
     """Print status of the assembly"""
 
-    _, namespace = common.get_namespace(namespace)
+    namespace = options_namespace.prompt(namespace)
 
     if wait_for_ready:
         with click.progressbar(range(10), label='Waiting for assembly to enter "Ready" state') as bar:
@@ -359,7 +356,7 @@ def status(namespace, name, wait_for_ready):
 def list(namespace):
     """List assemblies"""
 
-    _, namespace = common.get_namespace(namespace)
+    namespace = options_namespace.prompt(namespace)
 
     if _list_assemblies(namespace):
         sys.exit(0)
@@ -374,6 +371,9 @@ def list(namespace):
 @arg_force()
 def teardown(namespace, name, wait, force):
     """Tears down an assembly given its name"""
+
+    namespace = options_namespace.prompt(namespace)
+
     _delete_assembly(namespace, name, wait, force)
 
 
@@ -385,7 +385,7 @@ def teardown(namespace, name, wait, force):
 def delete(namespace, name, wait, force):
     """Deletes an assembly given its name"""
 
-    _, namespace = common.get_namespace(namespace)
+    namespace = options_namespace.prompt(namespace)
 
     _delete_assembly(namespace, name, wait, force)
 

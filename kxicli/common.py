@@ -204,16 +204,6 @@ def delete_crd(name):
     except k8s.client.rest.ApiException as exception:
         click.echo(f'Exception when calling ApiextensionsV1Api->delete_custom_resource_definition: {exception}')
 
-
-def get_namespace(namespace):
-    _, active_context = k8s.config.list_kube_config_contexts()
-    if '--namespace' not in sys.argv:
-        if 'namespace' in active_context['context']:
-            namespace = active_context['context']['namespace']
-        else:
-            namespace = click.prompt('\nPlease enter a namespace to run in', default=get_default_val('namespace'))
-    return active_context, namespace
-
 def extract_files_from_tar(tar: Path, files: list, max_read_size: int = 2000000):
     data = []
     if tar.exists() and tarfile.is_tarfile(tar):

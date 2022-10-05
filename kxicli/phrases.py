@@ -14,6 +14,7 @@ header_run = 'No values file provided, invoking "kxi install setup"\n'
 header_upgrade = 'Upgrading KX Insights'
 
 # Kubernetes
+namespace = '\nPlease enter a namespace to run in'
 ns_and_cluster = '\nRunning in namespace {namespace} on the cluster {cluster}'
 
 # Config

@@ -1,5 +1,6 @@
 import click
 import sys
+import kubernetes as k8s
 import kxicli.common
 
 from functools import partial
@@ -93,11 +94,19 @@ class Option():
             **self.click_option_kwargs
         )
 
+
+def get_namespace():
+    _, active_context = k8s.config.list_kube_config_contexts()
+    if 'namespace' in active_context['context']:
+        return active_context['context']['namespace']
+
+
 namespace = Option(
     '--namespace',
     config_name = 'namespace',
+    default = lambda: get_namespace(),
     help = help_text('namespace'),
-    type = click.STRING
+    prompt_message = phrases.namespace
 )
 
 filepath = Option(

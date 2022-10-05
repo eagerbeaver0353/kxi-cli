@@ -8,7 +8,7 @@ from kxicli import options
 
 
 arg_force = partial(
-    click.option, '--force', is_flag=True, help='Perform installation without prompting for confirmation'
+    click.option, '--force', is_flag=True, help='Perform action without prompting for confirmation'
 )
 
 arg_filepath = options.filepath.decorator()
