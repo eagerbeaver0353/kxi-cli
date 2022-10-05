@@ -35,31 +35,6 @@ def mocked_one_crd_exists(name):
     return name == 'testcrd'
 
 
-def mock_k8s_contexts():
-    return ['', k8s_config['contexts'][0]]
-
-
-def mocked_k8s_list_empty_config():
-    return ([], {'context': ()})
-
-
-def test_get_namespace(mocker):
-    mocker.patch('kubernetes.config.list_kube_config_contexts', mock_k8s_contexts)
-
-    res = common.get_namespace(None)
-    assert res[1] == 'test'
-    assert res[0] == k8s_config['contexts'][0]
-    assert 'cluster' in res[0]['context'].keys()
-
-
-def test_get_namespace_prompts_when_no_context_set(mocker, monkeypatch):
-    mocker.patch('kubernetes.config.list_kube_config_contexts', mocked_k8s_list_empty_config)
-    monkeypatch.setattr('sys.stdin', io.StringIO('a-test-namespace'))
-
-    res = common.get_namespace(None)
-    assert res[1] == 'a-test-namespace'
-
-
 def test_get_existing_crds_return_all_crds(mocker):
     mocker.patch('kxicli.common.crd_exists', mocked_all_crds_exist)
     #mock_kube_crd_api(mocker)

@@ -21,7 +21,7 @@ from kxicli import log
 from kxicli.commands import assembly as assembly_lib
 from kxicli.commands import install as install_lib
 from kxicli.commands.common import arg_force, arg_filepath, arg_operator_version as arg_common_operator_version, \
-    arg_version, arg_release as arg_common_release, arg_namespace as arg_common_namespace, arg_assembly_backup_filepath
+    arg_version, arg_release as arg_common_release, arg_namespace, arg_assembly_backup_filepath
 from kxicli.common import get_help_text as help_text
 from kxicli.resources import secret
 
@@ -50,9 +50,6 @@ required_helm_version: RequiredHelmVersion = RequiredHelmVersion(version=minimum
 
 # Possible arguments
 
-arg_namespace = partial(
-    arg_common_namespace, default=default_insights_namespace
-)
 arg_operator_namespace = partial(
     click.option, '--operator-namespace', default=default_kxi_operator_namespace, help=help_text('namespace'),
     type=click.STRING

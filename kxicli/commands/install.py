@@ -106,7 +106,8 @@ def setup(namespace, chart_repo_name, chart_repo_url, chart_repo_username,
     
     click.secho(phrases.header_setup, bold=True)
 
-    active_context, namespace = common.get_namespace(namespace)
+    _, active_context = k8s.config.list_kube_config_contexts()
+    namespace = options.namespace.prompt(namespace)
     create_namespace(namespace)
     click.echo(phrases.ns_and_cluster.format(namespace=namespace, \
         cluster=active_context["context"]["cluster"]))
@@ -258,7 +259,7 @@ def run(ctx, namespace, filepath, release, chart_repo_name, version, operator_ve
         click.echo(phrases.header_run)
         filepath, chart_repo_name = ctx.invoke(setup)
 
-    _, namespace = common.get_namespace(namespace)
+    namespace = options.namespace.prompt(namespace)
 
     install_config_secret = secret.Secret(namespace, install_config_secret, SECRET_TYPE_OPAQUE, INSTALL_CONFIG_KEYS)
 
@@ -304,7 +305,7 @@ def upgrade(namespace, release, chart_repo_name, assembly_backup_filepath, versi
 def perform_upgrade(namespace, release, chart_repo_name, assembly_backup_filepath, version, operator_version, image_pull_secret,
                     license_secret, install_config_secret, filepath, force):
     """Upgrade KX Insights"""
-    _, namespace = common.get_namespace(namespace)
+    namespace = options.namespace.prompt(namespace)
 
     upgraded = False
     click.secho(phrases.header_upgrade, bold=True)
@@ -367,7 +368,7 @@ def perform_upgrade(namespace, release, chart_repo_name, assembly_backup_filepat
 @click.option('--uninstall-operator', is_flag=True, help='Remove KXI Operator installation')
 def delete(release, namespace, force, uninstall_operator):
     """Uninstall KX Insights"""
-    _, namespace = common.get_namespace(namespace)
+    namespace = options.namespace.prompt(namespace)
     delete_release_operator_and_crds(release=release, namespace=namespace, force=force, uninstall_operator=uninstall_operator)
 
 

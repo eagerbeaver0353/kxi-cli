@@ -15,10 +15,54 @@ common.config.config_file = os.path.dirname(__file__) + '/files/test-cli-config'
 common.config.load_config("default")
 
 
+def mocked_k8s_list_empty_config():
+    return ([], {'context': ()})
+
+
+def mock_k8s_list_empty_config(mocker):
+    mocker.patch('kubernetes.config.list_kube_config_contexts', mocked_k8s_list_empty_config)
+
+
+def test_get_namespace(mocker):
+    # Result retrived from kube context
+    assert options.get_namespace() == 'test'
+    mocker.patch('kubernetes.config.list_kube_config_contexts', mocked_k8s_list_empty_config)
+    assert options.get_namespace() == None
+
+
 def test_options_namespace_decorator():
     assert options.namespace.decorator().func == click.option
     assert options.namespace.decorator().args == ('--namespace',)
-    assert options.namespace.decorator().keywords == {'help': 'Kubernetes namespace', 'type': click.STRING}
+    assert options.namespace.decorator().keywords['help'] == 'Kubernetes namespace'
+    assert options.namespace.decorator().keywords['default']() == 'test'
+
+
+def test_options_namespace_prompt_with_k8s_context(mocker):
+    # Result retrieved from --namespace command line option or default from kube context when provided
+    assert options.namespace.prompt('test-namespace-from-command-line') == 'test-namespace-from-command-line'
+    # Result retrieved from kube context
+    assert options.namespace.prompt('test') == 'test'
+
+
+def test_options_namespace_prompt_prompts_user_without_k8s_context(capsys, mocker, monkeypatch):
+    # When context is not set, assert that user is prompted in an interactive session
+    mock_k8s_list_empty_config(mocker)
+    mocker.patch('kxicli.options._is_interactive_session', return_true)
+    monkeypatch.setattr(SYS_STDIN, io.StringIO('test-namespace-from-prompt'))
+    assert options.namespace.prompt() == 'test-namespace-from-prompt'
+    assert capsys.readouterr().out == '\nPlease enter a namespace to run in [test]: '
+
+
+def test_options_namespace_prompt_non_interactrive_without_k8s_context(mocker):
+    # When context is not set, assert that value from cli-config is used
+    mock_k8s_list_empty_config(mocker)
+    mocker.patch('kxicli.options._is_interactive_session', return_false)
+    common.config.config['default']['namespace'] = 'test-namespace-from-config'
+    assert options.namespace.prompt() == 'test-namespace-from-config'
+    # When neither context nor cli-config is set, assert that default is used
+    common.config.config['default'].pop('namespace')
+    assert options.namespace.prompt() == 'kxi'
+    common.config.load_config("default")
 
 
 def test_options_version_decorator():
