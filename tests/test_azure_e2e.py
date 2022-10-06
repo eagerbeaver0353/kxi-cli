@@ -12,8 +12,8 @@ from kxicli.common import get_default_val
 from test_azure import fun_assembly_create_assemblies_from_file, _create_assemblies_from_file, \
     fun_assembly_delete_running_assemblies, _delete_running_assemblies, \
     fun_assembly_backup_assemblies, _backup_assemblies, _backup_no_assemblies, fake_version, fake_values_yaml, \
-    read_secret, fun_subprocess_run, subprocess_run_helm_success, \
-    install_create_namespace, fun_assembly_get_assemblies_list, _get_assemblies_list, _get_assemblies_list_raise_apiexception_404, \
+    read_secret, fun_subprocess_run, subprocess_run_helm_success, install_create_namespace, \
+    fun_assembly_get_assemblies_list, _get_assemblies_list, _get_assemblies_list_raise_apiexception_404, \
     helm_version_checked, fun_install_operator_installed, install_operator_installed, fun_common_get_existing_crds, \
     common_get_existing_crds, fun_common_delete_crd, fun_install_insights_installed, install_insights_installed, \
     fun_install_create_namespace
@@ -32,7 +32,7 @@ config.load_config(default_config)
 # config must be loaded before get_default_val
 default_assembly_backup_file: str = get_default_val('assembly.backup.file')
 
-fun_get_helm_version_checked: str = 'kxicli.commands.azure.get_helm_version_checked'
+fun_get_helm_version_checked: str = 'kxicli.commands.common.helm.get_helm_version_checked'
 
 
 def common_delete_crd(crd):

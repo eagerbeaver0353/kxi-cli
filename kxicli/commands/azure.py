@@ -1,10 +1,7 @@
 import base64
 import os
-import shutil
 import subprocess
-import tempfile
-from contextlib import contextmanager
-from functools import partial, lru_cache
+from functools import partial
 from pathlib import Path
 from typing import Optional, List
 
@@ -14,13 +11,14 @@ import requests
 import yaml
 from click import ClickException
 from kubernetes.client import V1Secret
-from packaging.version import Version
 
+import kxicli.commands.common.helm
+import kxicli.commands.common.namespace
 from kxicli import common
-from kxicli import log
 from kxicli.commands import assembly as assembly_lib
 from kxicli.commands import install as install_lib
-from kxicli.commands.common import arg_force, arg_filepath, arg_operator_version as arg_common_operator_version, \
+from kxicli.commands.common import helm as helm_lib
+from kxicli.commands.common.arg import arg_force, arg_filepath, arg_operator_version as arg_common_operator_version, \
     arg_version, arg_release as arg_common_release, arg_namespace, arg_assembly_backup_filepath
 from kxicli.common import get_help_text as help_text
 from kxicli.resources import secret
@@ -36,17 +34,6 @@ default_values_secret_data_name: str = 'kxi-config.yaml'
 default_docker_config_secret_name: str = 'kxi-acr-pull-secret'
 default_docker_config_secret_data_name: str = '.dockerconfigjson'
 
-
-class RequiredHelmVersion(Version):
-    pass
-
-
-class LocalHelmVersion(Version):
-    pass
-
-
-minimum_helm_version: str = '3.8.0'
-required_helm_version: RequiredHelmVersion = RequiredHelmVersion(version=minimum_helm_version)
 
 # Possible arguments
 
@@ -134,14 +121,14 @@ def upgrade(
         insights_release=release,
         insights_namespace=namespace,
         is_interactive_exec=is_interactive_exec,
-        helm_version_checked=get_helm_version_checked()
+        helm_version_checked=helm_lib.get_helm_version_checked()
     )
 
     uninstall_kxi_operator(
         kxi_operator_release=operator_release,
         kxi_operator_namespace=operator_namespace,
         is_interactive_exec=is_interactive_exec,
-        helm_version_checked=get_helm_version_checked()
+        helm_version_checked=helm_lib.get_helm_version_checked()
     )
 
     delete_crds(is_interactive_exec=is_interactive_exec)
@@ -155,7 +142,7 @@ def upgrade(
         chart_repo_url=chart_repo_url,
         values=values,
         docker_config=docker_config,
-        helm_version_checked=get_helm_version_checked()
+        helm_version_checked=helm_lib.get_helm_version_checked()
     )
 
     install_insights(
@@ -165,7 +152,7 @@ def upgrade(
         chart_repo_url=chart_repo_url,
         values=values,
         docker_config=docker_config,
-        helm_version_checked=get_helm_version_checked()
+        helm_version_checked=helm_lib.get_helm_version_checked()
     )
 
     # Restore
@@ -223,14 +210,14 @@ def uninstall(
         insights_release=release,
         insights_namespace=namespace,
         is_interactive_exec=is_interactive_exec,
-        helm_version_checked=get_helm_version_checked()
+        helm_version_checked=helm_lib.get_helm_version_checked()
     )
 
     uninstall_kxi_operator(
         kxi_operator_release=operator_release,
         kxi_operator_namespace=operator_namespace,
         is_interactive_exec=is_interactive_exec,
-        helm_version_checked=get_helm_version_checked()
+        helm_version_checked=helm_lib.get_helm_version_checked()
     )
 
     delete_crds(is_interactive_exec=is_interactive_exec)
@@ -280,7 +267,7 @@ def install(
         chart_repo_url=chart_repo_url,
         values=values,
         docker_config=docker_config,
-        helm_version_checked=get_helm_version_checked()
+        helm_version_checked=helm_lib.get_helm_version_checked()
     )
 
     install_insights(
@@ -290,7 +277,7 @@ def install(
         chart_repo_url=chart_repo_url,
         values=values,
         docker_config=docker_config,
-        helm_version_checked=get_helm_version_checked()
+        helm_version_checked=helm_lib.get_helm_version_checked()
     )
 
     # Restore
@@ -361,29 +348,6 @@ def restore(
         insights_namespace=namespace,
         assembly_backup_filepath=assembly_backup_filepath,
         is_interactive_exec=is_interactive_exec
-    )
-
-
-# Prepare
-
-class HelmVersionChecked:
-    def __init__(self, req_helm_version: RequiredHelmVersion, local_helm_version: LocalHelmVersion) -> None:
-        if local_helm_version < req_helm_version:
-            raise ClickException(f'Local helm version {local_helm_version} is lower then required {req_helm_version}')
-
-    def ok(self):
-        """
-        To prevent variable unused.
-        """
-
-
-# @cache
-# can't use cache cause of 3.8 compatibility
-@lru_cache(maxsize=None)
-def get_helm_version_checked() -> HelmVersionChecked:
-    return HelmVersionChecked(
-        req_helm_version=required_helm_version,
-        local_helm_version=_get_helm_version()
     )
 
 
@@ -475,30 +439,32 @@ def delete_assemblies(assemblies: List, insights_namespace: str, is_interactive_
 
 def uninstall_insights(
         insights_namespace: str, insights_release: str, is_interactive_exec: bool,
-        helm_version_checked: HelmVersionChecked
+        helm_version_checked: helm_lib.HelmVersionChecked
 ) -> Optional[subprocess.CompletedProcess]:
     if install_lib.insights_installed(insights_release, namespace=insights_namespace) and \
             _prompt_if_interactive_exec(
                 is_interactive_exec=is_interactive_exec,
                 message='KX Insights is deployed. Do you want to uninstall?'
             ):
-        return _helm_uninstall(
-            release=insights_release, namespace=insights_namespace, helm_version_checked=helm_version_checked
+        helm_version_checked.ok()
+        return kxicli.commands.common.helm.helm_uninstall(
+            release=insights_release, namespace=insights_namespace
         )
     return None
 
 
 def uninstall_kxi_operator(
         kxi_operator_namespace: str, kxi_operator_release: str, is_interactive_exec: bool,
-        helm_version_checked: HelmVersionChecked
+        helm_version_checked: helm_lib.HelmVersionChecked
 ) -> Optional[subprocess.CompletedProcess]:
     if install_lib.operator_installed(release=kxi_operator_release, namespace=kxi_operator_namespace) and \
             _prompt_if_interactive_exec(
                 is_interactive_exec=is_interactive_exec,
                 message='The kxi-operator is deployed. Do you want to uninstall?'
             ):
-        return _helm_uninstall(
-            release=kxi_operator_release, namespace=kxi_operator_namespace, helm_version_checked=helm_version_checked
+        helm_version_checked.ok()
+        return kxicli.commands.common.helm.helm_uninstall(
+            release=kxi_operator_release, namespace=kxi_operator_namespace
         )
     return None
 
@@ -518,23 +484,25 @@ def delete_crds(is_interactive_exec: bool):
 
 def install_kxi_operator(
         release: str, namespace: str, version: str, chart_repo_url: str, values: str,
-        docker_config: str, helm_version_checked: HelmVersionChecked
+        docker_config: str, helm_version_checked: helm_lib.HelmVersionChecked
 ) -> subprocess.CompletedProcess:
     click.secho('\nReinstalling kxi-operator', bold=True)
-    return _helm_install(
+    helm_version_checked.ok()
+    return kxicli.commands.common.helm.helm_upgrade_install(
         release, chart=f'{chart_repo_url}/kxi-operator', values=values, version=version, namespace=namespace,
-        docker_config=docker_config, helm_version_checked=helm_version_checked
+        docker_config=docker_config
     )
 
 
 def install_insights(
         release: str, namespace: str, version: str, chart_repo_url: str, values: str, docker_config: str,
-        helm_version_checked: HelmVersionChecked
+        helm_version_checked: helm_lib.HelmVersionChecked
 ) -> subprocess.CompletedProcess:
     click.secho('\nReinstalling insights', bold=True)
-    return _helm_install(
+    helm_version_checked.ok()
+    return kxicli.commands.common.helm.helm_upgrade_install(
         release, chart=f'{chart_repo_url}/insights', values=values, version=version, namespace=namespace,
-        docker_config=docker_config, helm_version_checked=helm_version_checked
+        docker_config=docker_config
     )
 
 
@@ -565,57 +533,3 @@ def _prompt_if_interactive_exec(is_interactive_exec: bool, message: str) -> bool
         return True
     else:
         return click.confirm(f'\n{message}', abort=True)
-
-
-@contextmanager
-def _temp_docker_config(docker_config: str):
-    temp_dir: str = str(tempfile.mkdtemp())
-    try:
-        with open(Path(temp_dir).joinpath('config.json'), 'w') as docker_config_json:
-            docker_config_json.write(docker_config)
-        yield temp_dir
-    finally:
-        shutil.rmtree(temp_dir)
-
-
-def _helm_install(
-        release: str, helm_version_checked: HelmVersionChecked, chart: str, values: str, version: str,
-        namespace: str, docker_config: str
-) -> subprocess.CompletedProcess:
-    """Call 'helm install' using subprocess.run
-    """
-
-    helm_version_checked.ok()
-
-    base_command: List[str] = ['helm', 'install', '-f', '-', release, chart]
-
-    if version:
-        base_command = base_command + ['--version', version]
-
-    if namespace:
-        base_command = base_command + ['--namespace', namespace]
-        install_lib.create_namespace(namespace)
-
-    try:
-        log.debug(f'Install command {base_command}')
-        with _temp_docker_config(docker_config) as temp_dir:
-            helm_env = os.environ.copy()
-            helm_env['DOCKER_CONFIG'] = temp_dir
-            return subprocess.run(base_command, check=True, input=values, text=True, env=helm_env)
-    except subprocess.CalledProcessError as e:
-        raise ClickException(str(e))
-
-
-def _helm_uninstall(release, helm_version_checked: HelmVersionChecked, namespace=None) -> subprocess.CompletedProcess:
-
-    helm_version_checked.ok()
-    return install_lib.helm_uninstall(release, namespace)
-
-
-def _get_helm_version() -> LocalHelmVersion:
-    command: List[str] = ['helm', 'version', "--template={{.Version}}"]
-    try:
-        version: str = subprocess.check_output(command, text=True)
-        return LocalHelmVersion(version=version)
-    except subprocess.CalledProcessError as e:
-        raise ClickException(str(e))
