@@ -12,7 +12,7 @@ import yaml
 
 from kxicli import common
 from kxicli import log
-from kxicli.commands.common import arg_force, arg_namespace
+from kxicli.commands.common.arg import arg_force, arg_namespace
 from kxicli.common import get_default_val as default_val
 from kxicli.common import get_help_text as help_text
 from kxicli.options import namespace as options_namespace

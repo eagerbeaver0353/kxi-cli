@@ -18,20 +18,21 @@ from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization, asymmetric, hashes
 
 from kxicli import common
-from kxicli import phrases
 from kxicli import log
 from kxicli import options
+from kxicli import phrases
 from kxicli.commands import assembly
-from kxicli.commands.common import arg_force, arg_filepath, arg_version, arg_operator_version, \
+from kxicli.commands.common.arg import arg_force, arg_filepath, arg_version, arg_operator_version, \
     arg_release, arg_namespace, arg_assembly_backup_filepath, arg_output_file, arg_hostname, \
-    arg_chart_repo_name, arg_chart_repo_name_forced, arg_chart_repo_url, arg_chart_repo_username, arg_chart_repo_password, \
-    arg_license_secret, arg_license_as_env_var, arg_license_filepath, arg_client_cert_secret, \
+    arg_chart_repo_name, arg_chart_repo_name_forced, arg_chart_repo_url, arg_chart_repo_username, \
+    arg_chart_repo_password, arg_license_secret, arg_license_as_env_var, arg_license_filepath, arg_client_cert_secret, \
     arg_image_repo, arg_image_repo_user, arg_image_pull_secret, arg_gui_client_secret, arg_operator_client_secret, \
     arg_keycloak_secret, arg_keycloak_postgresql_secret, arg_keycloak_auth_url, \
     arg_ingress_cert_secret, arg_ingress_cert, arg_ingress_key, \
     arg_install_config_secret, arg_install_config_secret_default
+from kxicli.commands.common.helm import helm_uninstall, helm_install
+from kxicli.commands.common.namespace import create_namespace
 from kxicli.common import get_default_val as default_val
-from kxicli.common import get_help_text as help_text
 from kxicli.resources import secret, helm
 
 DOCKER_CONFIG_FILE_PATH = str(Path.home() / '.docker' / 'config.json')
@@ -826,7 +827,7 @@ def install_operator_and_release(
         copy_secret(license_secret, namespace, operator_namespace)
 
         helm_install(release, chart=f'{chart_repo_name}/kxi-operator', values_file=values_file, values_secret=values_secret,
-            version=operator_version, namespace=operator_namespace)
+                     version=operator_version, namespace=operator_namespace)
 
         if is_operator_upgrade:
             replace_chart_crds(crd_data)
@@ -836,7 +837,7 @@ def install_operator_and_release(
         click.echo(f'\nKX Insights already installed with version {insights_installed_charts[0]["chart"]}')
 
     helm_install(release, chart=f'{chart_repo_name}/insights', values_file=values_file, values_secret=values_secret,
-            version=version, namespace=namespace)
+                 version=version, namespace=namespace)
 
     return True
 
@@ -894,86 +895,6 @@ def helm_list_versions(chart_repo_name):
         return subprocess.run(['helm', 'search', 'repo', chart], check=True)
     except subprocess.CalledProcessError as e:
         raise ClickException(str(e))
-
-
-def helm_install(release, chart, values_file, values_secret, version=None, namespace=None):
-    """Call 'helm install' using subprocess.run"""
-
-    base_command = ['helm', 'upgrade', '--install']
-
-    if values_secret:
-        base_command = base_command + ['-f', '-']
-        input_arg = values_secret
-        text_arg = True
-    else:
-        input_arg=None
-        text_arg=None
-
-    if values_file:
-        base_command = base_command + ['-f', values_file]
-
-    base_command = base_command + [release, chart]
-
-    version_msg = ''
-    if version:
-        version_msg = ' version ' + version
-        base_command = base_command + ['--version', version]
-
-    if values_file:
-        if values_secret:
-            click.echo(f'Installing chart {chart}{version_msg} with values from secret and values file from {values_file}')
-        else:
-            click.echo(f'Installing chart {chart}{version_msg} with values file from {values_file}')
-    else:
-        if values_secret:
-            click.echo(f'Installing chart {chart}{version_msg} with values from secret')
-        else:
-            click.echo(f'Must provide one of values file or secret. Exiting install')
-            sys.exit(1)
-
-    if namespace:
-        base_command = base_command + ['--namespace', namespace]
-        create_namespace(namespace)
-
-    try:
-        log.debug(f'Install command {base_command}')
-        return subprocess.run(base_command, check=True, input=input_arg, text=text_arg)
-    except subprocess.CalledProcessError as e:
-        raise ClickException(str(e))
-
-
-def helm_uninstall(release, namespace=None):
-    """Call 'helm uninstall' using subprocess.run"""
-
-    msg = f'Uninstalling release {release}'
-
-    base_command = ['helm', 'uninstall', release]
-
-    if namespace:
-        base_command = base_command + ['--namespace', namespace]
-        msg = f'{msg} in namespace {namespace}'
-
-    click.echo(msg)
-
-    try:
-        log.debug(f'Uninstall command {base_command}')
-        return subprocess.run(base_command, check=True)
-    except subprocess.CalledProcessError as e:
-        raise ClickException(str(e))
-
-
-def create_namespace(name):
-    common.load_kube_config()
-    api = k8s.client.CoreV1Api()
-    ns = k8s.client.V1Namespace()
-    ns.metadata = k8s.client.V1ObjectMeta(name=name)
-    try:
-        api.create_namespace(ns)
-    except k8s.client.rest.ApiException as exception:
-        # 409 is a conflict, this occurs if the namespace already exists
-        if not exception.status == 409:
-            log.error(f'Exception when trying to create namespace {exception}')
-            sys.exit(1)
 
 
 def copy_secret(name, from_ns, to_ns):

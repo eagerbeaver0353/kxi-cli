@@ -12,13 +12,14 @@ from kubernetes.client import V1Secret
 from kubernetes.client.exceptions import ApiException
 from pytest_mock import MockerFixture
 
-from kxicli.commands.azure import LocalHelmVersion, minimum_helm_version, _get_helm_version, _helm_install, \
-    HelmVersionChecked, required_helm_version, default_insights_release, _helm_uninstall, _prompt_if_interactive_exec, \
-    restore_assemblies, default_insights_namespace, install_insights, install_kxi_operator, \
-    default_kxi_operator_release, default_kxi_operator_namespace, delete_crds, uninstall_kxi_operator, \
-    uninstall_insights, delete_assemblies, backup_assemblies, get_assemblies, get_docker_config, get_repo_url, \
-    get_values, get_helm_version_checked, default_docker_config_secret_data_name, default_values_secret_data_name, \
-    default_docker_config_secret_name, default_values_secret_name
+from kxicli.commands.azure import default_insights_release, \
+    _prompt_if_interactive_exec, restore_assemblies, default_insights_namespace, install_insights, \
+    install_kxi_operator, default_kxi_operator_release, default_kxi_operator_namespace, delete_crds, \
+    uninstall_kxi_operator, uninstall_insights, delete_assemblies, backup_assemblies, get_assemblies, \
+    get_docker_config, get_repo_url, get_values, default_docker_config_secret_data_name, \
+    default_values_secret_data_name, default_docker_config_secret_name, default_values_secret_name
+from kxicli.commands.common.helm import LocalHelmVersion, minimum_helm_version, _get_helm_version, \
+    HelmVersionChecked, required_helm_version, get_helm_version_checked, helm_upgrade_install, helm_uninstall
 from kxicli.common import get_default_val as default_val
 from utils import temp_file, mock_kube_secret_api
 
@@ -26,7 +27,7 @@ from utils import temp_file, mock_kube_secret_api
 
 fun_subprocess_check_out: str = 'subprocess.check_output'
 fun_subprocess_run: str = 'subprocess.run'
-fun_install_create_namespace: str = 'kxicli.commands.install.create_namespace'
+fun_install_create_namespace: str = 'kxicli.commands.common.helm.create_namespace'
 fun_click_confirm: str = 'click.confirm'
 fun_assembly_create_assemblies_from_file: str = 'kxicli.commands.assembly._create_assemblies_from_file'
 fun_common_get_existing_crds: str = 'kxicli.common.get_existing_crds'
@@ -247,7 +248,7 @@ def test_helm_version_exception(mocker: MockerFixture):
 def test_helm_install_success(mocker: MockerFixture):
     res: dict = {}
     expected_cmd: List[str] = [
-        'helm', 'install', '-f', '-', default_insights_release, whatever_str,
+        'helm', 'upgrade', '--install', '-f', '-', default_insights_release, whatever_str,
         '--version', whatever_str,
         '--namespace', whatever_str
     ]
@@ -257,9 +258,8 @@ def test_helm_install_success(mocker: MockerFixture):
     mocker.patch(fun_subprocess_run, subprocess_run_helm_success_helm_install)
     mocker.patch(fun_install_create_namespace, install_create_namespace)
 
-    actual_res = _helm_install(
+    actual_res = helm_upgrade_install(
         release=default_insights_release,
-        helm_version_checked=helm_version_checked,
         chart=whatever_str,
         values=whatever_str,
         version=whatever_str,
@@ -279,9 +279,8 @@ def test_helm_install_fail(mocker: MockerFixture):
     mocker.patch(fun_subprocess_run, subprocess_run_helm_fail)
     mocker.patch(fun_install_create_namespace, install_create_namespace)
     with pytest.raises(click.ClickException):
-        _helm_install(
+        helm_upgrade_install(
             release=default_insights_release,
-            helm_version_checked=helm_version_checked,
             chart=whatever_str,
             values=whatever_str,
             version=whatever_str,
@@ -301,9 +300,8 @@ def test_helm_uninstall_success(mocker: MockerFixture):
 
     mocker.patch(fun_subprocess_run, subprocess_run_helm_success_uninstall)
     mocker.patch(fun_install_create_namespace, install_create_namespace)
-    actual_res = _helm_uninstall(
+    actual_res = helm_uninstall(
         release=default_insights_release,
-        helm_version_checked=helm_version_checked,
         namespace=whatever_str
     )
     assert compare_completed_process(actual_res, expected_res)
@@ -314,9 +312,8 @@ def test_helm_uninstall_fail(mocker: MockerFixture):
     mocker.patch(fun_subprocess_run, subprocess_run_helm_fail)
     mocker.patch(fun_install_create_namespace, install_create_namespace)
     with pytest.raises(click.ClickException):
-        _helm_uninstall(
+        helm_uninstall(
             release=default_insights_release,
-            helm_version_checked=helm_version_checked,
             namespace=whatever_str
         )
 
@@ -373,7 +370,7 @@ def test_restore_assemblies_not_exists(mocker: MockerFixture):
 def test_install_insights_helm_success(mocker: MockerFixture):
     res: dict = {}
     expected_cmd: List[str] = [
-        'helm', 'install', '-f', '-', default_insights_release, f'{fake_chart_repo_url}/insights',
+        'helm', 'upgrade', '--install', '-f', '-', default_insights_release, f'{fake_chart_repo_url}/insights',
         '--version', fake_version,
         '--namespace', default_insights_namespace
     ]
@@ -403,7 +400,7 @@ def test_install_insights_helm_success(mocker: MockerFixture):
 def test_install_kxi_operator(mocker: MockerFixture):
     res: dict = {}
     expected_cmd: List[str] = [
-        'helm', 'install', '-f', '-', default_kxi_operator_release, f'{fake_chart_repo_url}/kxi-operator',
+        'helm', 'upgrade', '--install', '-f', '-', default_kxi_operator_release, f'{fake_chart_repo_url}/kxi-operator',
         '--version', fake_version,
         '--namespace', default_kxi_operator_namespace
     ]

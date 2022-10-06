@@ -184,6 +184,7 @@ def mocked_create_namespace(namespace):
 
 
 def mock_create_namespace(mocker):
+    mocker.patch('kxicli.commands.common.helm.create_namespace', mocked_create_namespace)
     mocker.patch('kxicli.commands.install.create_namespace', mocked_create_namespace)
 
 
