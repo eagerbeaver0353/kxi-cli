@@ -14,6 +14,7 @@ test_helm_repo_cache = str(Path(__file__).parent / 'files' / 'helm')
 
 IPATH_KUBE_COREV1API = 'kubernetes.client.CoreV1Api'
 IPATH_KUBE_APIEXTENSTIONSV1API = 'kubernetes.client.ApiextensionsV1Api'
+IPATH_KUBE_APPSV1API = 'kubernetes.client.AppsV1Api'
 IPATH_CLICK_PROMPT = 'click.prompt'
 
 @contextmanager
@@ -100,6 +101,27 @@ def mock_kube_crd_api(
     mock.return_value.create_custom_resource_definition = create
     mock.return_value.read_custom_resource_definition = read
     mock.return_value.replace_custom_resource_definition = replace
+
+def mock_list_empty_deployment_api(namespace, **kwargs):
+    return k8s.client.V1DeploymentList(items={})
+
+def mocked_kube_deployment_list(namespace, **kwargs):
+    return k8s.client.V1DeploymentList(
+        items=[k8s.client.V1Deployment(
+            metadata=k8s.client.V1ObjectMeta(
+                name='kxi-operator',
+                namespace=namespace,
+                labels={"helm.sh/chart":'kxi-operator-1.2.3'}
+            )
+        )]
+    )
+
+def mock_kube_deployment_api(
+    mocker,
+    read=mock_list_empty_deployment_api,
+):
+    mock = mocker.patch(IPATH_KUBE_APPSV1API)
+    mock.return_value.list_namespaced_deployment = read
 
 def mock_validate_secret(mocker, exists=True, is_valid=True, missing_keys=[]):
     mock = mocker.patch.object(secret.Secret, 'validate')

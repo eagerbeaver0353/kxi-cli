@@ -198,15 +198,22 @@ def mocked_get_operator_version(chart_repo_name, insights_version, operator_vers
 def mock_get_operator_version(mocker):
     mocker.patch('kxicli.commands.install.get_operator_version', mocked_get_operator_version)
 
+
 def mocked_helm_list_returns_valid_json(release, namespace):
-    if operator_installed_flag and namespace == 'kxi-operator':
-        return [{"name":"insights","namespace":"testNamespace","revision":"1","updated":"2022-02-23 10:39:53.7668809 +0000 UTC","status":"deployed","chart":"kxi-operator-1.2.0","app_version":"1.2.0"}]
-    elif insights_installed_flag and namespace == test_namespace:
+    if insights_installed_flag and namespace == test_namespace:
         return [{"name":"insights","namespace":"testNamespace","revision":"1","updated":"2022-02-23 10:39:53.7668809 +0000 UTC","status":"deployed","chart":"insights-1.2.1","app_version":"1.2.1"}]
     else:
         return []
 
-def mocked_subprocess_run(base_command, check=True, input=None, text=None, capture_output=False):
+
+def mocked_get_installed_operator_versions(namespace):
+    if operator_installed_flag:
+        return ['1.2.0']
+    else:
+        return []
+
+
+def mocked_subprocess_run(base_command, check=True, input=None, text=None, **kwargs):
     global insights_installed_flag
     global operator_installed_flag
     global crd_exists_flag
@@ -242,6 +249,7 @@ def mock_set_insights_operator_and_crd_installed_state(mocker, insights_flag, op
     mocker.patch('kxicli.commands.install.operator_installed', mocked_operator_installed)
     mocker.patch('kxicli.common.crd_exists', mocked_crd_exists)
     mocker.patch('kxicli.commands.install.get_installed_charts', mocked_helm_list_returns_valid_json)
+    mocker.patch('kxicli.commands.install.get_installed_operator_versions', mocked_get_installed_operator_versions)
 
 
 def mocked_insights_installed(release, namespace):
@@ -622,7 +630,7 @@ def test_install_run_when_provided_file(mocker):
         )
         expected_output = f"""{phrases.values_validating}
 
-kxi-operator already installed with version kxi-operator-1.2.0
+kxi-operator already installed with version 1.2.0
 Do you want to install kxi-operator version 1.2.3? [Y/n]: n
 Installing chart kx-insights/insights version 1.2.3 with values file from {test_val_file}
 """
@@ -663,8 +671,6 @@ def test_install_run_when_no_file_provided(mocker):
 
             expected_output = f"""{phrases.header_run}
 {cli_output('setup', test_cli_config, 'values.yaml', **test_cfg)}{phrases.values_validating}
-
-kxi-operator not found
 Do you want to install kxi-operator version 1.2.3? [Y/n]: n
 Installing chart internal-nexus-dev/insights version 1.2.3 with values file from values.yaml
 """
@@ -696,7 +702,7 @@ def test_install_run_when_provided_secret(mocker):
         )
         expected_output = f"""{phrases.values_validating}
 
-kxi-operator already installed with version kxi-operator-1.2.0
+kxi-operator already installed with version 1.2.0
 Do you want to install kxi-operator version 1.2.3? [Y/n]: n
 Installing chart kx-insights/insights version 1.2.3 with values from secret
 """
@@ -728,7 +734,7 @@ def test_install_run_when_provided_file_and_secret(mocker):
         )
         expected_output = f"""{phrases.values_validating}
 
-kxi-operator already installed with version kxi-operator-1.2.0
+kxi-operator already installed with version 1.2.0
 Do you want to install kxi-operator version 1.2.3? [Y/n]: n
 Installing chart kx-insights/insights version 1.2.3 with values from secret and values file from {test_val_file}
 """
@@ -762,8 +768,6 @@ def test_install_run_installs_operator(mocker):
         result = runner.invoke(main.cli, ['install', 'run', '--version', '1.2.3', '--filepath', test_val_file],
                                input=user_input)
         expected_output = f"""{phrases.values_validating}
-
-kxi-operator not found
 Do you want to install kxi-operator version 1.2.3? [Y/n]: y
 Installing chart kx-insights/kxi-operator version 1.2.3 with values file from {test_val_file}
 Installing chart kx-insights/insights version 1.2.3 with values file from {test_val_file}
@@ -796,8 +800,6 @@ def test_install_run_force_installs_operator(mocker):
         result = runner.invoke(main.cli,
                                ['install', 'run', '--version', '1.2.3', '--filepath', test_val_file, '--force'])
         expected_output = f"""{phrases.values_validating}
-
-kxi-operator not found
 Installing chart kx-insights/kxi-operator version 1.2.3 with values file from {test_val_file}
 Installing chart kx-insights/insights version 1.2.3 with values file from {test_val_file}
 """    
@@ -827,21 +829,69 @@ def test_install_run_with_operator_version(mocker):
     runner = CliRunner()
     with runner.isolated_filesystem():
         result = runner.invoke(main.cli,
-                               ['install', 'run', '--version', '1.2.3', '--filepath', test_val_file, '--operator-version', '4.5.6'])
+                               ['install', 'run', '--version', '1.2.3', '--filepath', test_val_file, '--operator-version', '1.2.1'])
         expected_output = f"""{phrases.values_validating}
-
-kxi-operator not found
-Installing chart kx-insights/kxi-operator version 4.5.6 with values file from {test_val_file}
+Installing chart kx-insights/kxi-operator version 1.2.1 with values file from {test_val_file}
 Installing chart kx-insights/insights version 1.2.3 with values file from {test_val_file}
-"""    
+"""
     assert result.exit_code == 0
     assert result.output == expected_output
     assert copy_secret_params == [('kxi-nexus-pull-secret', test_namespace, 'kxi-operator'),
                                   ('kxi-license', test_namespace, 'kxi-operator')]
     assert subprocess_run_command == [
         ['helm', 'repo', 'update'],
-        ['helm', 'upgrade', '--install', '-f', test_val_file, 'insights', test_operator_chart, '--version', '4.5.6', '--namespace',
+        ['helm', 'upgrade', '--install', '-f', test_val_file, 'insights', test_operator_chart, '--version', '1.2.1', '--namespace',
          'kxi-operator'],
+        ['helm', 'upgrade', '--install', '-f', test_val_file, 'insights', test_chart, '--version', '1.2.3', '--namespace',
+         test_namespace]
+    ]
+
+def test_install_run_with_no_operator_version_available(mocker):
+    mock_subprocess_run(mocker)
+    mock_create_namespace(mocker)
+    mock_copy_secret(mocker)
+    mock_set_insights_operator_and_crd_installed_state(mocker, False, False, False)
+    mocker.patch('kxicli.commands.install.get_operator_version', return_none)    
+    mock_validate_secret(mocker)
+    global copy_secret_params
+    copy_secret_params = []
+
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        result = runner.invoke(main.cli,
+                               ['install', 'run', '--version', '1.2.3', '--filepath', test_val_file])
+        expected_output = f"""{phrases.values_validating}
+Error: Compatible version of operator not found
+"""
+    assert result.exit_code == 1
+    assert result.output == expected_output
+    assert copy_secret_params == []
+    assert subprocess_run_command == []
+
+
+def test_install_run_with_compitable_operator_already_installed(mocker):
+    mock_subprocess_run(mocker)
+    mock_set_insights_operator_and_crd_installed_state(mocker, False, True, True)
+    mock_create_namespace(mocker)
+    mocker.patch('kxicli.commands.install.get_operator_version', return_none)
+    mock_validate_secret(mocker)
+    mock_helm_env(mocker)
+
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        result = runner.invoke(main.cli,
+                               ['install', 'run', '--version', '1.2.3', '--filepath', test_val_file])
+        expected_output = f"""{phrases.values_validating}
+
+kxi-operator already installed with version 1.2.0
+Not installing kxi-operator
+Installing chart kx-insights/insights version 1.2.3 with values file from {test_val_file}
+"""
+    assert result.exit_code == 0
+    assert result.output == expected_output
+    assert copy_secret_params == []
+    assert subprocess_run_command == [
+        ['helm', 'repo', 'update'],
         ['helm', 'upgrade', '--install', '-f', test_val_file, 'insights', test_chart, '--version', '1.2.3', '--namespace',
          test_namespace]
     ]
@@ -871,8 +921,6 @@ def test_install_run_installs_operator_with_modified_secrets(mocker):
                                ['install', 'run', '--version', '1.2.3', '--install-config-secret', test_install_secret],
                                input=user_input)
         expected_output = f"""{phrases.values_validating}
-
-kxi-operator not found
 Do you want to install kxi-operator version 1.2.3? [Y/n]: y
 Installing chart kx-insights/kxi-operator version 1.2.3 with values from secret
 Installing chart kx-insights/insights version 1.2.3 with values from secret
@@ -910,7 +958,7 @@ def test_install_run_when_no_context_set(mocker):
 Please enter a namespace to run in [test]: 
 {phrases.values_validating}
 
-kxi-operator already installed with version kxi-operator-1.2.0
+kxi-operator already installed with version 1.2.0
 Do you want to install kxi-operator version 1.2.3? [Y/n]: n
 Installing chart kx-insights/insights version 1.2.3 with values file from {test_val_file}
 """
@@ -1337,7 +1385,7 @@ y
         expected_output = f"""Upgrading KX Insights
 {phrases.values_validating}
 
-kxi-operator already installed with version kxi-operator-1.2.0
+kxi-operator already installed with version 1.2.0
 Do you want to install kxi-operator version 1.2.3? [Y/n]: y
 Reading CRD data from {test_helm_repo_cache}/kxi-operator-1.2.3.tgz
 
@@ -1350,7 +1398,7 @@ Tearing down assembly {test_asm_name}
 Are you sure you want to teardown {test_asm_name} [y/N]: y
 Waiting for assembly to be torn down
 
-Upgrading insights and operator
+Upgrading insights
 Installing chart kx-insights/kxi-operator version 1.2.3 with values from secret
 Replacing CRD assemblies.insights.kx.com
 Replacing CRD assemblyresources.insights.kx.com
@@ -1400,8 +1448,6 @@ def test_upgrade_skips_to_install_when_not_running(mocker):
         )
     expected_output = f"""Upgrading KX Insights
 {phrases.values_validating}
-
-kxi-operator not found
 Do you want to install kxi-operator version 1.2.3? [Y/n]: y
 KX Insights is not deployed. Skipping to install
 Installing chart kx-insights/kxi-operator version 1.2.3 with values from secret
@@ -1450,7 +1496,7 @@ def test_upgrade_when_user_declines_to_teardown_assembly(mocker):
     expected_output = f"""Upgrading KX Insights
 {phrases.values_validating}
 
-kxi-operator already installed with version kxi-operator-1.2.0
+kxi-operator already installed with version 1.2.0
 Do you want to install kxi-operator version 1.2.3? [Y/n]: y
 Reading CRD data from {test_helm_repo_cache}/kxi-operator-1.2.3.tgz
 
@@ -1527,7 +1573,7 @@ y
         expected_output = f"""Upgrading KX Insights
 {phrases.values_validating}
 
-kxi-operator already installed with version kxi-operator-1.2.0
+kxi-operator already installed with version 1.2.0
 Do you want to install kxi-operator version 1.2.3? [Y/n]: y
 Reading CRD data from {test_helm_repo_cache}/kxi-operator-1.2.3.tgz
 
@@ -1540,7 +1586,7 @@ Tearing down assembly {test_asm_name}
 Are you sure you want to teardown {test_asm_name} [y/N]: y
 Waiting for assembly to be torn down
 
-Upgrading insights and operator
+Upgrading insights
 error={phrases.upgrade_error}
 Submitting assembly from {test_asm_backup}
 Submitting assembly {test_asm_name}
@@ -1580,7 +1626,7 @@ KX Insights is already installed with version insights-1.2.1. Would you like to 
 Upgrading KX Insights
 {phrases.values_validating}
 
-kxi-operator already installed with version kxi-operator-1.2.0
+kxi-operator already installed with version 1.2.0
 Do you want to install kxi-operator version 1.2.3? [Y/n]: y
 Reading CRD data from {test_helm_repo_cache}/kxi-operator-1.2.3.tgz
 
@@ -1593,7 +1639,7 @@ Tearing down assembly {test_asm_name}
 Are you sure you want to teardown {test_asm_name} [y/N]: y
 Waiting for assembly to be torn down
 
-Upgrading insights and operator
+Upgrading insights
 Installing chart kx-insights/kxi-operator version 1.2.3 with values file from {test_val_file}
 Replacing CRD assemblies.insights.kx.com
 Replacing CRD assemblyresources.insights.kx.com

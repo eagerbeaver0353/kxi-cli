@@ -346,7 +346,7 @@ def perform_upgrade(namespace, release, chart_repo_name, assembly_backup_filepat
         deleted = assembly._delete_running_assemblies(namespace=namespace, wait=True, force=force)
 
         if all(deleted):
-            click.secho(phrases.upgrade_insights_and_op, bold=True)
+            click.secho(phrases.upgrade_insights, bold=True)
             upgraded =  install_operator_and_release(release, namespace, version, operator_version, filepath, values_secret,
                                                     image_pull_secret, license_secret, chart_repo_name,
                                                     install_operator, is_op_upgrade, crd_data)
@@ -411,11 +411,16 @@ def get_install_config_secret(install_config_secret: secret.Secret):
     return values_secret
 
 
+def get_minor_version(version):
+    if version:
+        version_parsed = version.split(".")
+        return version_parsed[0] + "." + version_parsed[1]
+
+
 def get_operator_version(chart_repo_name, insights_version, operator_version):
     """Determine operator version to use. Retrieve the most recent operator minor version matching the insights version"""
     if operator_version is None:
-        insights_version_parsed = insights_version.split(".")
-        insights_version_minor = insights_version_parsed[0] + "." + insights_version_parsed[1]
+        insights_version_minor = get_minor_version(insights_version)
         ops_from_helm = subprocess.run(
             ['helm', 'search', 'repo', f'{chart_repo_name}/kxi-operator', '--version', f'{insights_version_minor}',
              '--output', 'json'], check=True, capture_output=True, text=True)
@@ -423,8 +428,8 @@ def get_operator_version(chart_repo_name, insights_version, operator_version):
         if len(ops_from_helm):
             operator_version = ops_from_helm[0]['version']
         else:
-            log.error(f'Cannot find operator version matching insights minor version {insights_version_minor}')
-            sys.exit(1)
+            log.warn(f'Cannot find operator version in chart repo {chart_repo_name} to install matching insights minor version {insights_version_minor}')
+            operator_version = None
     return operator_version
 
 
@@ -782,16 +787,30 @@ def check_for_operator_install(release, chart_repo_name, insights_ver, op_ver, f
     Fetch the CRD data if it's an upgrade
     This all happens prior to install / upgrade so we can exit cleanly in the event of an exception
     """
-    operator_installed_charts = get_installed_charts(release, operator_namespace)
+    installed_operator_version = None
+    operator_installed_charts = get_installed_operator_versions(operator_namespace)
     is_upgrade = len(operator_installed_charts) > 0
 
     if is_upgrade:
-        click.echo(f'\nkxi-operator already installed with version {operator_installed_charts[0]["chart"]}')
-    else:
-        click.echo(f'\nkxi-operator not found')
+        installed_operator_version = operator_installed_charts[0]
+        click.echo(f'\nkxi-operator already installed with version {installed_operator_version}')
 
+    insights_version_minor = get_minor_version(insights_ver)
     operator_version_to_install = get_operator_version(chart_repo_name, insights_ver, op_ver)
-    install_operator = force or op_ver or click.confirm(f'Do you want to install kxi-operator version {operator_version_to_install}?', default=True)
+    installed_operator_compatible = insights_version_minor == get_minor_version(installed_operator_version)
+    operator_version_to_install_compatible = insights_version_minor == get_minor_version(operator_version_to_install)
+
+    if op_ver and not operator_version_to_install_compatible: 
+        raise ClickException(f'kxi-operator version {op_ver} is incompatible with insights version {insights_ver}')
+
+    if not installed_operator_compatible and not operator_version_to_install_compatible: 
+        raise ClickException('Compatible version of operator not found')
+
+    if operator_version_to_install:
+        install_operator = force or op_ver is not None or click.confirm(f'Do you want to install kxi-operator version {operator_version_to_install}?', default=True)
+    else:
+        click.echo(f'Not installing kxi-operator')
+        install_operator = False
 
     crd_data = []
     if install_operator and is_upgrade:
@@ -933,7 +952,8 @@ def insights_installed(release, namespace):
 
 def operator_installed(release, namespace: str = operator_namespace):
     """Check if a helm release of the operator exists"""
-    return len(get_installed_charts(release, namespace)) > 0
+    return len(get_installed_operator_versions(namespace)) > 0
+
 
 def get_installed_charts(release, namespace):
     """Retrieve running helm charts"""
@@ -945,6 +965,15 @@ def get_installed_charts(release, namespace):
     except subprocess.CalledProcessError as e:
         click.echo(e)
 
+
+def get_installed_operator_versions(namespace: str = operator_namespace):
+    """Retrieve running operator versions"""
+    api_instance = k8s.client.AppsV1Api(k8s.client.ApiClient())
+    operators = api_instance.list_namespaced_deployment(namespace, label_selector='app.kubernetes.io/name=kxi-operator')
+    operator_versions = []
+    for item in operators.items:
+        operator_versions.append(item.metadata.labels["helm.sh/chart"].lstrip("kxi-operator-"))
+    return operator_versions
 
 # Check if Keycloak is being deployed with Insights
 def deploy_keycloak():
