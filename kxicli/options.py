@@ -4,14 +4,14 @@ import kubernetes as k8s
 import kxicli.common
 
 from functools import partial
+from kxicli import config
 from kxicli import phrases
 from kxicli.common import get_default_val as default_val
 from kxicli.common import get_help_text as help_text
 from kxicli.common import key_install_outputFile, key_chart_repo_name, key_install_config_secret, \
     key_image_repository, key_image_repository_user, key_image_repository_password, key_image_pullSecret, \
-    key_ingress_cert_secret, key_ingress_cert, key_ingress_key
+    key_ingress_cert_secret, key_ingress_self_managed, key_ingress_cert, key_ingress_key
 from kxicli.common import enter_password
-from kxicli.config import config_file
 
 def _is_interactive_session():
     return sys.stdout.isatty() and '--force' not in sys.argv
@@ -21,9 +21,9 @@ def prompt_error_message(self):
     if self.click_option_args:
         error_message = error_message + f' Please set command line argument {self.click_option_args[0]}'
         if self.config_name:
-            error_message = error_message + f' or configuration value {self.config_name} in config file {config_file}'
+            error_message = error_message + f' or configuration value {self.config_name} in config file {config.config_file}'
     elif self.config_name:
-        error_message = error_message + f' Please set configuration value {self.config_name} in config file {config_file}'
+        error_message = error_message + f' Please set configuration value {self.config_name} in config file {config.config_file}'
 
     return error_message
 
@@ -63,23 +63,33 @@ class Option():
 
     def prompt(self, cmd_line_value=None, **kwargs):
         prompt_message = None
-        
+
         if kwargs.get('prompt_message'):
             prompt_message = kwargs.get('prompt_message')
         elif self.prompt_message:
             prompt_message = self.prompt_message
 
-        # read value in hierarchy of cmd line arg, config value, default value, user prompt response
-        if cmd_line_value:
+        # cmd line arg
+        if cmd_line_value is not None:
+            if self.click_option_kwargs.get('default') is None:
+                click.echo(f'Using {self.config_name} {cmd_line_value} from command line option')
             return cmd_line_value
+        # config file
+        elif config.config.has_option(config.config.default_section, self.config_name):
+            val = config.config.get(config.config.default_section, self.config_name)
+            click.echo(f'Using {self.config_name} {val} from config file {config.config_file}')
+            return val
         # check if there's a tty and not explicitly no prompt
         elif prompt_message and _is_interactive_session():
             if self.password:
                 return enter_password(prompt_message)
             else:
                 return click.prompt(prompt_message, default=default_val(self.config_name))
-        elif default_val(self.config_name):
-            return default_val(self.config_name)
+        # embedded default values
+        elif self.config_name in kxicli.common.DEFAULT_VALUES:
+            val = kxicli.common.DEFAULT_VALUES[self.config_name]
+            click.echo(f'Using {self.config_name} {val} from embedded default values')
+            return val
         else:
             raise click.ClickException(prompt_error_message(self))
 

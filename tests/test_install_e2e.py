@@ -419,7 +419,8 @@ def test_install_setup_when_hostname_provided_from_command_line(mocker):
     with temp_test_output_file() as test_output_file, temp_config_file() as test_cli_config:
         cmd = ['install', 'setup', '--output-file', test_output_file, '--hostname', 'https://a-test-hostname.kx.com'] 
         test_cfg = {
-            'hostname_check': False
+            'hostname': 'https://a-test-hostname.kx.com',
+            'hostname_source': 'command-line'
         }
         run_cli(cmd, test_cfg, test_cli_config, test_output_file, 0)
         assert compare_files(test_output_file, test_output_file_updated_hostname)
@@ -431,7 +432,8 @@ def test_install_setup_ingress_host_is_an_alias_for_hostname(mocker):
     with temp_test_output_file() as test_output_file, temp_config_file() as test_cli_config:
         cmd = ['install', 'setup', '--output-file', test_output_file, '--ingress-host', 'https://a-test-hostname.kx.com'] 
         test_cfg = {
-            'hostname_check': False
+            'hostname': 'https://a-test-hostname.kx.com',
+            'hostname_source': 'command-line'
         }
         run_cli(cmd, test_cfg, test_cli_config, test_output_file, 0)
         assert compare_files(test_output_file, test_output_file_updated_hostname)
@@ -447,14 +449,16 @@ def test_install_setup_when_chart_repo_provided_from_command_line(mocker):
     with temp_test_output_file() as test_output_file, temp_config_file() as test_cli_config:
         cmd = ['install', 'setup', '--output-file', test_output_file, '--chart-repo-name', test_repo_name, '--chart-repo-url', test_repo_url, '--chart-repo-username', test_repo_username]
         test_cfg = {
-            'chart_repo_name': None,
-            'chart_repo_url': None,
-            'chart_user': None,
+            'chart_repo_name': test_repo_name,
+            'chart_repo_name_source': 'command-line',
+            'chart_repo_url': test_repo_url,
+            'chart_repo_url_source': 'command-line',
+            'chart_user': test_repo_username,
+            'chart_user_source': 'command-line',
             'chart_pass': test_repo_password
         }
         run_cli(cmd, test_cfg, test_cli_config, test_output_file, 0)
         assert helm_add_repo_params == (test_repo_name, test_repo_url, test_repo_username, test_repo_password)
-
 
 
 def test_install_setup_does_not_prompt_when_chart_repo_already_exists(mocker):
@@ -468,26 +472,14 @@ def test_install_setup_does_not_prompt_when_chart_repo_already_exists(mocker):
         cmd = ['install', 'setup', '--output-file', test_output_file, '--chart-repo-name', test_chart_repo_name]
         test_cfg = {
             'chart_repo_existing': test_chart_repo_name,
-            'chart_repo_name': None,
+            'chart_repo_name': test_chart_repo_name,
+            'chart_repo_name_source': 'command-line',
             'chart_repo_url': None,
             'chart_user': None,
             'chart_pass': None
         }
         run_cli(cmd, test_cfg, test_cli_config, test_output_file, 0)
         assert helm_add_repo_params == ()
-
-
-def test_install_setup_when_ingress_cert_prompted(mocker):
-    mock_secret_helm_add(mocker)
-    mock_create_namespace(mocker)
-    with temp_test_output_file() as test_output_file, temp_config_file() as test_cli_config:
-        cmd = ['install', 'setup', '--output-file', test_output_file] 
-        test_cfg = {
-            'provide_ingress_cert': 'y'
-        }
-        run_cli(cmd, test_cfg, test_cli_config, test_output_file, 0)
-        assert compare_files(test_output_file, test_output_file_manual_ingress)
-
 
 def test_install_setup_when_ingress_cert_secret_provided_on_command_line(mocker):
     mock_secret_helm_add(mocker)
@@ -501,7 +493,7 @@ def test_install_setup_when_ingress_cert_secret_provided_on_command_line(mocker)
         assert compare_files(test_output_file, test_output_file_manual_ingress)
 
 
-def test_install_setup_when_ingress_cert_provided_on_command_line(mocker):
+def test_install_setup_when_ingress_cert_and_key_files_provided_on_command_line(mocker):
     mock_secret_helm_add(mocker)
     mock_create_namespace(mocker)
     with temp_test_output_file() as test_output_file, temp_test_output_file(file_name='tls_crt') as test_cert_filepath, \
@@ -512,7 +504,28 @@ def test_install_setup_when_ingress_cert_provided_on_command_line(mocker):
         test_cfg = {
             'provide_ingress_cert': 'y',
             'ingress_cert': test_cert_filepath,
-            'ingress_key': test_key_filepath
+            'ingress_cert_source': 'command-line',
+            'ingress_key': test_key_filepath,
+            'ingress_key_source': 'command-line'
+        }
+        run_cli(cmd, test_cfg, test_cli_config, test_output_file, 0)
+        assert compare_files(test_output_file, test_output_file_manual_ingress)
+
+
+def test_install_setup_when_ingress_cert_file_provided_on_command_line(mocker):
+    mock_secret_helm_add(mocker)
+    mock_create_namespace(mocker)
+    with temp_test_output_file() as test_output_file, temp_test_output_file(file_name='tls_crt') as test_cert_filepath, \
+        temp_test_output_file(file_name='tls_key') as test_key_filepath, temp_config_file() as test_cli_config:
+        shutil.copyfile(test_cert, test_cert_filepath)
+        shutil.copyfile(test_key, test_key_filepath)
+        cmd = ['install', 'setup', '--output-file', test_output_file, '--ingress-cert', test_cert_filepath] 
+        test_cfg = {
+            'provide_ingress_cert': 'y',
+            'ingress_cert': test_cert_filepath,
+            'ingress_cert_source': 'command-line',
+            'ingress_key': test_key_filepath,
+            'ingress_key_source': 'prompt',
         }
         run_cli(cmd, test_cfg, test_cli_config, test_output_file, 0)
         assert compare_files(test_output_file, test_output_file_manual_ingress)
@@ -952,11 +965,10 @@ def test_install_run_when_no_context_set(mocker):
         # these are responses to the various prompts
         result = runner.invoke(main.cli,
             ['install', 'run', '--version', '1.2.3', '--filepath', test_val_file],
-            input='\nn'
+            input='n'
         )
-        expected_output = f"""
-Please enter a namespace to run in [test]: 
-{phrases.values_validating}
+        expected_output = f"""Using namespace test from config file {test_cli_config_static}
+Validating values...
 
 kxi-operator already installed with version 1.2.0
 Do you want to install kxi-operator version 1.2.3? [Y/n]: n

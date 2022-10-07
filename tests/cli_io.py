@@ -4,6 +4,8 @@ from kxicli import common
 from kxicli import phrases
 
 def append_message(message, new_message):
+    if not new_message:
+        return message
     if len(message):
         message = message + '\n'
     return message + new_message
@@ -12,8 +14,10 @@ def cli_input(
     verb,
     output_file = None,
     provide_ingress_cert = 'n',
-    ingress_cert = test_cert,
-    ingress_key = test_key,
+    ingress_cert = None,
+    ingress_cert_source = None,
+    ingress_key = None,
+    ingress_key_source = None,
     lic = test_lic_file,
     lic_sec_exists = False,
     lic_sec_is_valid = True,
@@ -40,11 +44,15 @@ def cli_input(
     overwrite_values = 'y',
     install_config_exists = False,
     overwrite_install_config = 'n',
-    hostname_check=True,
+    hostname = test_host,
+    hostname_source='config',
     chart_repo_existing=None,
     chart_repo_name=test_chart_repo_name,
+    chart_repo_name_source='prompt',
     chart_repo_url=test_chart_repo_url,
+    chart_repo_url_source='prompt',
     chart_user=test_user,
+    chart_user_source='prompt',
     chart_pass=test_pass
 
 ):
@@ -54,21 +62,24 @@ def cli_input(
 
     inp = ''
     # Hostname
-    if hostname_check:
-        inp = append_message(inp, test_host)
+    if hostname_source == 'prompt':
+        inp = append_message(inp, hostname)
 
     # Ingress
-    if provide_ingress_cert:
-        inp = append_message(inp, provide_ingress_cert)
-    if provide_ingress_cert == 'y':
-        if ingress_cert: inp = append_message(inp, ingress_cert)
-        if ingress_key: inp = append_message(inp, ingress_key)
+    if ingress_cert_source == 'prompt':
+        inp = append_message(inp, ingress_cert)
+    if ingress_key_source == 'prompt':
+        inp = append_message(inp, ingress_key)
 
     # Chart
-    if chart_repo_name: inp = append_message(inp, chart_repo_name)
-    if chart_repo_url: inp = append_message(inp, chart_repo_url)
-    if chart_user: inp = append_message(inp, chart_user)
-    if chart_pass: inp = append_message(inp, f"{chart_pass}\n{chart_pass}")
+    if chart_repo_name_source=='prompt':
+        inp = append_message(inp, chart_repo_name)
+    if chart_repo_url_source=='prompt':
+        inp = append_message(inp, chart_repo_url)
+    if chart_user_source=='prompt':
+        inp = append_message(inp, chart_user)
+    if chart_pass:
+        inp = append_message(inp, f"{chart_pass}\n{chart_pass}")
 
 
     # License
@@ -110,8 +121,10 @@ def cli_output(
     cli_config,
     output_file = None,
     provide_ingress_cert = 'n',
-    ingress_cert = test_cert,
-    ingress_key = test_key,
+    ingress_cert = None,
+    ingress_cert_source = 'prompt',
+    ingress_key = None,
+    ingress_key_source = 'prompt',
     lic = test_lic_file,
     lic_sec_exists = False,
     lic_sec_is_valid = True,
@@ -138,11 +151,15 @@ def cli_output(
     overwrite_values = 'y',
     install_config_exists = False,
     overwrite_install_config = 'n',
-    hostname_check = True,
+    hostname = test_host,
+    hostname_source = 'config',
     chart_repo_existing=None,
     chart_repo_name=test_chart_repo_name,
+    chart_repo_name_source='prompt',
     chart_repo_url=test_chart_repo_url,
+    chart_repo_url_source='prompt',
     chart_user=test_user,
+    chart_user_source='prompt',
     chart_pass=test_pass
 ):
 
@@ -158,8 +175,8 @@ def cli_output(
         elif not lic_sec_is_valid:
             return output_upgrade_required_secrets_invalid()
 
-    ingress = output_ingress(hostname_check, provide_ingress_cert, ingress_cert, ingress_key)
-    chart = output_chart(chart_repo_existing, chart_repo_name, chart_repo_url, chart_user, chart_pass)
+    ingress = output_ingress(hostname, hostname_source, provide_ingress_cert, ingress_cert, ingress_cert_source, ingress_key, ingress_key_source, cli_config)
+    chart = output_chart(chart_repo_existing, chart_repo_name, chart_repo_name_source, chart_repo_url, chart_repo_url_source, chart_user, chart_user_source, chart_pass, cli_config)
     license = output_license(lic, lic_sec_exists, lic_sec_is_valid, lic_sec_overwrite)
     image = output_image(repo, user, image_sec_exists, image_sec_is_valid, use_existing_creds, image_sec_overwrite)
     client = output_client(client_sec_exists, client_sec_is_valid, client_sec_overwrite)
@@ -201,19 +218,34 @@ def output_secret(name, exists, is_valid, prompt, overwrite):
     return str
 
 
+def output_option(out, name, source, cli_config, prompt_message, default, value):
+    str = ''
+    if not value:
+        return out
+    if source == 'prompt':
+        if default:
+            prompt_message = prompt_message + f' [{default}]'
+        str = prompt_message + f': {value}'
+    elif source == 'config':
+        str = f'Using {name} {value} from config file {cli_config}'
+    elif source == 'command-line':
+        str = f'Using {name} {value} from command line option'
+    return append_message(out, str)
+
+
 def output_setup_start():
     return f"""{phrases.header_setup}
 {phrases.ns_and_cluster.format(namespace=test_namespace, cluster=test_cluster)}"""
 
 
-def output_chart(chart_repo_existing, chart_repo_name, chart_repo_url, chart_user, chart_pass):
-    out = f'{phrases.header_chart}'
-    if chart_repo_name: out = append_message(out, f"{phrases.chart_repo} [{common.get_default_val('chart.repo.name')}]: {chart_repo_name}")
+def output_chart(chart_repo_existing, chart_repo_name, chart_repo_name_source, chart_repo_url, chart_repo_url_source, chart_user, chart_user_source, chart_pass, cli_config):
+    out = phrases.header_chart
+    out = output_option(out, 'chart.repo.name', chart_repo_name_source, cli_config, phrases.chart_repo, common.get_default_val('chart.repo.name'), chart_repo_name)
     if chart_repo_existing:
-        out = f"{out}\nUsing existing helm repo {chart_repo_existing}"
+        out = append_message(out, f'Using existing helm repo {chart_repo_existing}')
     else:
-        if chart_repo_url: out = append_message(out, f"{phrases.chart_repo_url} [{common.get_default_val('chart.repo.url')}]: {chart_repo_url}")
-        if chart_user: out = append_message(out, f"{phrases.chart_user}: {chart_user}")
+        out = output_option(out, 'chart.repo.url', chart_repo_url_source, cli_config, phrases.chart_repo_url, common.get_default_val('chart.repo.url'), chart_repo_url)
+        out = output_option(out, 'chart.repo.username', chart_user_source, cli_config, phrases.chart_user, common.get_default_val('chart.repo.user'), chart_user)
         if chart_pass: out = append_message(out, f"{phrases.chart_password}: \n{phrases.password_reenter}: ")
     return out
 
@@ -264,19 +296,17 @@ def output_image(repo, user, exists, is_valid, use_existing_creds, overwrite):
 {output_secret(secret_name, exists, is_valid, prompt, overwrite)}"""
 
 
-def output_ingress(hostname_check, provide_cert, ingress_cert, ingress_key):
-    str = f'{phrases.header_ingress}'
-    if hostname_check:
-        str = append_message(str, f'{phrases.hostname_entry} [{test_host}]: {test_host}')
-    if provide_cert:
-        str = append_message(str, f'{phrases.ingress_cert} [y/N]: {provide_cert}')
-    if provide_cert == 'y':
+def output_ingress(hostname, hostname_source, provide_ingress_cert, ingress_cert, ingress_cert_source, ingress_key, ingress_key_source, cli_config):
+    str = phrases.header_ingress
+    str = output_option(str, 'hostname', hostname_source, cli_config, phrases.hostname_entry, test_host, hostname)
+    str = output_option(str, 'ingress.cert', ingress_cert_source, cli_config, phrases.ingress_tls_cert, '', ingress_cert)
+    str = output_option(str, 'ingress.key', ingress_key_source, cli_config, phrases.ingress_tls_key, '', ingress_key)
+    if provide_ingress_cert == 'y':
         secret_name = common.get_default_val('ingress.cert.secret')
-        if ingress_cert: str = append_message(str, f'{phrases.ingress_tls_cert}: {ingress_cert}')
-        if ingress_key: str = append_message(str, f'{phrases.ingress_tls_key}: {ingress_key}')
         str = append_message(str, phrases.secret_created.format(name=secret_name))
-    if provide_cert == 'n':
+    elif provide_ingress_cert == 'n':
         str = append_message(str, phrases.ingress_lets_encrypt)
+    
     return str
 
 
@@ -352,7 +382,7 @@ def output_setup_end(output_file):
 def input_secret(inp, exists, is_valid, overwrite, data):
     # if it doesn't exist just pass in the data
     if not exists:
-        inp = f'{inp}\n{data}'
+        inp = append_message(inp, data)
     # if it exists and is invalid, pass in the data only if you want to overwrite
     elif exists and not is_valid:
         inp = input_provide_data(inp, overwrite, data)

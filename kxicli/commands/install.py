@@ -558,7 +558,7 @@ def populate_postgresql_secret(secret: secret.Secret, **kwargs):
 def prompt_for_ingress_cert(secret: secret.Secret, name, ingress_cert, ingress_key):
     if name:
         ingress_self_managed = True
-    elif click.confirm(phrases.ingress_cert):
+    elif ingress_cert or ingress_key:
         ingress_self_managed = True
         secret = ensure_secret(secret, populate_ingress_cert,
             {
@@ -574,12 +574,12 @@ def prompt_for_ingress_cert(secret: secret.Secret, name, ingress_cert, ingress_k
 
 
 def populate_ingress_cert(secret: secret.Secret, **kwargs):
-    path_to_cert = options.ingress_cert.prompt(kwargs.get('ingress_cert'))
+    path_to_cert = options.ingress_cert.prompt(kwargs.get('data')['ingress_cert'])
     with open(path_to_cert, 'r') as cert_file:
         cert_data = cert_file.read()
         cert = x509.load_pem_x509_certificate(cert_data.encode(), backend=default_backend())
 
-    path_to_key = options.ingress_key.prompt(kwargs.get('ingress_key'))
+    path_to_key = options.ingress_key.prompt(kwargs.get('data')['ingress_key'])
     with open(path_to_key, 'r') as key_file:
         key_data = key_file.read()
         key = serialization.load_pem_private_key(key_data.encode(), password=None, backend=default_backend())
