@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='kxicli',
-    version='1.3.0-rc.7',
+    version='1.3.0-rc.8',
     packages=find_packages(),
     include_package_data=True,
     install_requires=[
