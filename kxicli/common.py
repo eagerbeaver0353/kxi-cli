@@ -15,6 +15,7 @@ key_install_outputFile = 'install.outputFile'
 key_chart_repo_name = 'chart.repo.name'
 key_install_config_secret = 'install.configSecret'
 key_ingress_cert_secret = 'ingress.cert.secret'
+key_ingress_self_managed = 'ingress.self-managed'
 key_ingress_cert = 'ingress.cert'
 key_ingress_key ='ingress.key'
 key_image_repository = 'image.repository'
@@ -42,6 +43,7 @@ HELP_TEXT = {
     'keycloak.postgresqlSecret': 'Secret containing Keycloak postgresql passwords',
     'keycloak.authURL': 'Auth URL for Keycloak',
     key_ingress_cert_secret: 'Secret containing self-managed TLS cert and key for the ingress',
+    key_ingress_self_managed: 'Whether a self managed self-managed TLS cert should be used',
     key_ingress_cert: 'File path to TLS certificate for the ingress',
     key_ingress_key: 'File path to TLS private key for the ingress',
     key_install_outputFile: 'Name for the generated values file',
@@ -68,6 +70,7 @@ DEFAULT_VALUES = {
     'keycloak.secret': 'kxi-keycloak',
     'keycloak.postgresqlSecret': 'kxi-postgresql',
     key_ingress_cert_secret: 'kxi-ingress-cert',
+    key_ingress_self_managed: False,
     key_install_outputFile: 'values.yaml',
     key_install_config_secret: 'kxi-install-config',
     'assembly.backup.file': 'kxi-assembly-state.yaml',

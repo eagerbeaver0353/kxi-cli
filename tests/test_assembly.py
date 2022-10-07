@@ -572,45 +572,23 @@ Custom assembly resource basic-assembly created!
         {'group': assembly.API_GROUP, 'version': PREFERRED_VERSION, 'namespace': 'test', 'plural': 'assemblies',
          'body': assembly._add_last_applied_configuration_annotation(test_asm)}]
 
-def test_cli_assembly_create_with_context_not_set_non_interactive(mocker):
-    # In a non-interactive session, the default namespace is taken from cli-config
+
+def test_cli_assembly_create_with_context_not_set(mocker):
+    # When context is not set, the default namespace is taken from cli-config
     with open(test_asm_file) as f:
         test_asm = yaml.safe_load(f)
     mock_create_assemblies(mocker.patch(CUSTOM_OBJECT_API).return_value)
     mocker.patch('kubernetes.config.list_kube_config_contexts', mocked_k8s_list_empty_config)
-    # Tell cli that this is an interactive session
-    mocker.patch('kxicli.options._is_interactive_session', return_false)
 
-    result = TEST_CLI.invoke(main.cli, ['assembly', 'create', '--filepath', test_asm_file], input='a-test-namespace\n')
+    result = TEST_CLI.invoke(main.cli, ['assembly', 'create', '--filepath', test_asm_file])
 
     assert result.exit_code == 0
-    assert result.output == f"""Submitting assembly from {test_asm_file}
-Custom assembly resource basic-assembly created!
-"""
-    assert appended_args == [
-        {'group': assembly.API_GROUP, 'version': PREFERRED_VERSION, 'namespace': 'test',
-         'plural': 'assemblies', 'body': assembly._add_last_applied_configuration_annotation(test_asm)}]
-
-
-def test_cli_assembly_create_with_context_not_set_interactive(mocker):
-    # In an interactive session, the user is prompted for a namespace
-    with open(test_asm_file) as f:
-        test_asm = yaml.safe_load(f)
-    mock_create_assemblies(mocker.patch(CUSTOM_OBJECT_API).return_value)
-    mocker.patch('kubernetes.config.list_kube_config_contexts', mocked_k8s_list_empty_config)
-    # Tell cli that this is an interactive session
-    mocker.patch('kxicli.options._is_interactive_session', return_true)
-
-    result = TEST_CLI.invoke(main.cli, ['assembly', 'create', '--filepath', test_asm_file], input='a-test-namespace\n')
-
-    assert result.exit_code == 0
-    assert result.output == f"""
-Please enter a namespace to run in [test]: a-test-namespace
+    assert result.output == f"""Using namespace test from config file {common.config.config_file}
 Submitting assembly from {test_asm_file}
 Custom assembly resource basic-assembly created!
 """
     assert appended_args == [
-        {'group': assembly.API_GROUP, 'version': PREFERRED_VERSION, 'namespace': 'a-test-namespace',
+        {'group': assembly.API_GROUP, 'version': PREFERRED_VERSION, 'namespace': 'test',
          'plural': 'assemblies', 'body': assembly._add_last_applied_configuration_annotation(test_asm)}]
 
 
