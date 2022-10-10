@@ -568,8 +568,9 @@ def test_cli_assembly_create_from_file(mocker):
     assert result.output == f"""Submitting assembly from {test_asm_file}
 Custom assembly resource basic-assembly created!
 """
+    current_ns = appended_args[0]['namespace']
     assert appended_args == [
-        {'group': assembly.API_GROUP, 'version': PREFERRED_VERSION, 'namespace': 'test', 'plural': 'assemblies',
+        {'group': assembly.API_GROUP, 'version': PREFERRED_VERSION, 'namespace': current_ns, 'plural': 'assemblies',
          'body': assembly._add_last_applied_configuration_annotation(test_asm)}]
 
 
@@ -606,8 +607,9 @@ def test_cli_assembly_create_and_wait(mocker):
 Waiting for assembly to enter "Ready" state
 Custom assembly resource basic-assembly created!
 """
+    current_ns = appended_args[0]['namespace']
     assert appended_args == [
-        {'group': assembly.API_GROUP, 'version': PREFERRED_VERSION, 'namespace': 'test', 'plural': 'assemblies',
+        {'group': assembly.API_GROUP, 'version': PREFERRED_VERSION, 'namespace': current_ns, 'plural': 'assemblies',
          'body': assembly._add_last_applied_configuration_annotation(test_asm)}]
 
 
