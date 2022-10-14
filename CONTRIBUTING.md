@@ -11,12 +11,13 @@ TODO
 
 This section will give a brief layout of the code.
 
-The first place to look at is `setup.py`.
+The first place to look at is `pyproject.toml`.
 It describes the repository;
 
-- metadata (name, version)
-- dependencies & versions
-- entrypoint script - **this is the key one**
+- `project` - contains project metadata
+- `dependencies` - contains required dependencies and their versions
+    - By default only `project.dependencies` are installed.
+- `project.scripts` - **this is the key one**
     - points to the `cli` function in the `kxicli/main.py` script
 
 The main CLI source code is all contained in the `kxicli` directory.
@@ -34,7 +35,12 @@ git checkout -b KXI-XXXX
 
 virtualenv venv
 source venv/bin/activate
-pip install  --extra-index-url $NEXUS_I_PYPI -e .
+
+# Ensure you've got an up to date version of pip
+python3 -m pip install --upgrade pip
+
+# Installs the CLI with optional dev dependencies
+pip install  --extra-index-url $NEXUS_I_PYPI --editable .[dev]
 
 deactivate
 export PATH=$(pwd)/venv/bin:${PATH}
@@ -48,7 +54,8 @@ To verify the existing tests work as expected and to add further test coverage, 
 as below.
 
 ```bash
-pip install -r tests/requirements.txt
+# Make sure you've installed with the optional dev dependencies
+pip install --editable .[dev]
 export KUBECONFIG=$(pwd)/tests/files/test-kube-config
 pytest
 ```
