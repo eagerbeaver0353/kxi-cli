@@ -7,10 +7,12 @@ import subprocess
 from contextlib import contextmanager
 from pathlib import Path
 from tempfile import mkdtemp
+import pytest
+import click
 
 import yaml, json
 from click.testing import CliRunner
-
+from utils import mock_kube_crd_api,mock_load_kube_config, mock_load_kube_config_incluster
 from kxicli import common
 from kxicli import main
 from kxicli import options
@@ -18,7 +20,7 @@ from kxicli import phrases
 from kxicli.resources import secret
 from kxicli.commands.assembly import CONFIG_ANNOTATION
 from utils import mock_kube_secret_api, return_none, return_true, raise_not_found, \
-    test_val_file, mock_validate_secret, mock_kube_crd_api, mock_helm_env, mock_helm_fetch, \
+    test_val_file, mock_validate_secret, mock_kube_crd_api, mock_helm_env, mock_helm_fetch, mock_list_kube_config_contexts, \
     mocked_helm_repo_list, test_helm_repo_cache
 from cli_io import cli_input, cli_output
 from const import test_namespace,  test_chart_repo_name, test_chart_repo_url, \
@@ -328,9 +330,7 @@ def install_setup_output_check(mocker, test_cfg, expected_exit_code):
     mock_create_namespace(mocker)
     with temp_test_output_file() as test_output_file, temp_config_file() as test_cli_config:
         cmd = ['install', 'setup', '--output-file', test_output_file]
-        run_cli(cmd, test_cfg, test_cli_config, test_output_file, expected_exit_code)
-
-
+        run_cli(cmd, test_cfg, test_cli_config, test_output_file, expected_exit_code)                            
 def run_cli(cmd, test_cfg, cli_config = None, output_file = None, expected_exit_code = 0):
     runner = CliRunner()
     with runner.isolated_filesystem():
@@ -346,7 +346,7 @@ def run_cli(cmd, test_cfg, cli_config = None, output_file = None, expected_exit_
 def test_install_setup_when_creating_secrets(mocker):
     install_setup_output_check(mocker, {}, 0)
 
-
+    
 def test_install_setup_when_using_existing_docker_creds(mocker):
     test_cfg = {
         'use_existing_creds': 'y'
@@ -1739,4 +1739,29 @@ def test_install_values_validated_on_run_and_upgrade(mocker):
     run_cli(cmd, test_cfg, expected_exit_code = 1)
     cmd = ['install', 'run', '--version', '1.2.3', '--filepath', test_val_file]
     run_cli(cmd, test_cfg, expected_exit_code = 1)
+    
+    
+def install_setup_output_check_no_kube(mocker, test_cfg, expected_exit_code):
+    mock_secret_helm_add(mocker)
+    mock_create_namespace(mocker)
+    with temp_test_output_file() as test_output_file, temp_config_file() as test_cli_config:
+        cmd = ['install', 'setup', '--output-file', test_output_file]
+        run_cli_no_kube(cmd, test_cfg, test_cli_config, test_output_file, expected_exit_code)
+def run_cli_no_kube(cmd, test_cfg, cli_config = None, output_file = None, expected_exit_code = 0):
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        verb = cmd[1]
+        user_input = cli_input(verb, **test_cfg)        
+        result = runner.invoke(main.cli, cmd, input=user_input)    
+    assert result.exit_code == expected_exit_code
+    
+    
+def test_install_setup_when_creating_secrets_no_kube(mocker):
+    mock_list_kube_config_contexts(mocker)
+    mock_load_kube_config_incluster(mocker)
+    install_setup_output_check_no_kube(mocker, {}, 1)
+
+def test_install_setup_when_creating_secrets_no_kube_incluster(mocker):
+    mock_list_kube_config_contexts(mocker)
+    install_setup_output_check_no_kube(mocker, {}, 0)    
 

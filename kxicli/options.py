@@ -135,12 +135,22 @@ class Option():
         )
 
 
+
 def get_namespace():
-    _, active_context = k8s.config.list_kube_config_contexts()
-    if 'namespace' in active_context['context']:
-        return active_context['context']['namespace']
-
-
+    in_cluster = False
+    try:
+        _, active_context = k8s.config.list_kube_config_contexts()
+    except k8s.config.config_exception.ConfigException:
+        try: 
+            k8s.config.load_incluster_config()
+            in_cluster = True
+        except k8s.config.config_exception.ConfigException:
+            return None
+    if not in_cluster and 'namespace' in active_context['context']:
+        return  active_context['context']['namespace']
+    if in_cluster:
+        return open("/var/run/secrets/kubernetes.io/serviceaccount/namespace").read() 
+        
 namespace = Option(
     '--namespace',
     config_name = key_namespace,
