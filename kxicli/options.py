@@ -10,11 +10,49 @@ from kxicli.common import get_default_val as default_val
 from kxicli.common import get_help_text as help_text
 from kxicli.common import key_install_outputFile, key_chart_repo_name, key_install_config_secret, \
     key_image_repository, key_image_repository_user, key_image_repository_password, key_image_pullSecret, \
-    key_ingress_cert_secret, key_ingress_self_managed, key_ingress_cert, key_ingress_key
+    key_ingress_cert_secret, key_ingress_self_managed, key_ingress_cert, key_ingress_key, \
+    key_keycloak_secret, key_keycloak_admin_password, key_keycloak_management_password, \
+    key_keycloak_postgresqlSecret, key_postgresql_postgres_password, key_postgresql_user_password, \
+    key_keycloak_authURL, key_keycloak_realm, key_install_outputFile, key_install_config_secret, \
+    key_license_secret, key_license_envVar, key_license_filepath, \
+    key_chart_repo_url, key_chart_repo_username, key_chart_repo_password, \
+    key_client_cert_secret, key_gui_client_secret, key_operator_client_secret, \
+    key_install_filepath, key_assembly_backup_file, key_release_name, \
+    key_namespace, key_hostname, key_version, key_operator_version
 from kxicli.common import enter_password
 
 def _is_interactive_session():
     return sys.stdout.isatty() and '--force' not in sys.argv
+
+
+def print_option_source(message, val, password):
+    if not password:
+        message = message + f': {val}'
+    click.echo(message)
+
+
+def print_cmd_line_option(message, val, password, default):
+    try:
+        if default() is None:
+            print_option_source(message, val, password)
+    except TypeError:
+        if default is None:
+            print_option_source(message, val, password)
+
+
+def get_prompt_message(self, prompt_message):
+    if prompt_message:
+        return prompt_message
+    elif self.prompt_message:
+        return self.prompt_message
+
+
+def interactive_prompt(prompt_message, password, default):
+    if password:
+        return enter_password(prompt_message)
+    else:
+        return click.prompt(prompt_message, default=default)
+
 
 def prompt_error_message(self):
     error_message = 'Could not find expected option.'
@@ -62,41 +100,33 @@ class Option():
 
 
     def prompt(self, cmd_line_value=None, **kwargs):
-        prompt_message = None
-
-        if kwargs.get('prompt_message'):
-            prompt_message = kwargs.get('prompt_message')
-        elif self.prompt_message:
-            prompt_message = self.prompt_message
+        prompt_message = get_prompt_message(self, kwargs.get('prompt_message'))
 
         # cmd line arg
         if cmd_line_value is not None:
-            if self.click_option_kwargs.get('default') is None:
-                click.echo(f'Using {self.config_name} {cmd_line_value} from command line option')
-            return cmd_line_value
+            val = cmd_line_value
+            print_cmd_line_option(f'Using {self.config_name} from command line option', val, 
+                self.password, self.click_option_kwargs.get('default'))
         # config file
         elif config.config.has_option(config.config.default_section, self.config_name):
             val = config.config.get(config.config.default_section, self.config_name)
-            click.echo(f'Using {self.config_name} {val} from config file {config.config_file}')
-            return val
+            print_option_source(f'Using {self.config_name} from config file {config.config_file}', val, self.password)
         # check if there's a tty and not explicitly no prompt
         elif prompt_message and _is_interactive_session():
-            if self.password:
-                return enter_password(prompt_message)
-            else:
-                return click.prompt(prompt_message, default=default_val(self.config_name))
+            val = interactive_prompt(prompt_message, self.password, default_val(self.config_name))
         # embedded default values
         elif self.config_name in kxicli.common.DEFAULT_VALUES:
             val = kxicli.common.DEFAULT_VALUES[self.config_name]
-            click.echo(f'Using {self.config_name} {val} from embedded default values')
-            return val
+            print_option_source(f'Using {self.config_name} from embedded default values', val, self.password)
         else:
             raise click.ClickException(prompt_error_message(self))
+
+        return val
 
 
     def decorator(self):
         if self.force:
-            self.click_option_kwargs['default'] = default_val(self.config_name)
+            self.click_option_kwargs['default'] = lambda: default_val(self.config_name)
         
         return partial(
             click.option,
@@ -113,28 +143,30 @@ def get_namespace():
 
 namespace = Option(
     '--namespace',
-    config_name = 'namespace',
+    config_name = key_namespace,
     default = lambda: get_namespace(),
-    help = help_text('namespace'),
+    help = help_text(key_namespace),
     prompt_message = phrases.namespace
 )
 
 filepath = Option(
     '--filepath',
-    config_name = 'install.filepath',
-    help = help_text('install.filepath'),
+    config_name =key_install_filepath,
+    help = help_text(key_install_filepath),
     type = click.Path(file_okay=True, readable=True, exists=True)
 )
 
 version = Option(
-    '--version', 
+    '--version',
+    config_name = key_version,
     required = True, 
-    help = help_text('version'),
+    help = help_text(key_version),
 )
 
 operator_version = Option(
-    '--operator-version', 
-    help = help_text('operator.version'),
+    '--operator-version',
+    config_name = key_operator_version,
+    help = help_text(key_operator_version),
     type = click.STRING
 )
 
@@ -148,28 +180,28 @@ output_file = Option(
 hostname = Option(
     '--hostname',
     '--ingress-host',
-    config_name = 'hostname',
-    help = help_text('hostname'),
+    config_name = key_hostname,
+    help = help_text(key_hostname),
     prompt_message = phrases.hostname_entry
 )
 
 license_secret = Option(
     '--license-secret',
-    config_name = 'license.secret',
-    help = help_text('license.secret')
+    config_name = key_license_secret,
+    help = help_text(key_license_secret)
 )
 
 license_as_env_var = Option(
     '--license-as-env-var',
-    config_name = 'license.as-env-var',
-    help = help_text('license.envVar'),
+    config_name = key_license_envVar,
+    help = help_text(key_license_envVar),
     type = bool
 )
 
 license_filepath = Option(
     '--license-filepath',
-    config_name = 'license.path',
-    help = help_text('license.path'),
+    config_name = key_license_filepath,
+    help = help_text(key_license_filepath),
     prompt_message = phrases.license_entry
 )
 
@@ -190,28 +222,29 @@ chart_repo_name_forced = Option(
 
 chart_repo_url = Option (
     '--chart-repo-url',
-    config_name = 'chart.repo.url',
+    config_name = key_chart_repo_url,
     prompt_message = phrases.chart_repo_url,
-    help = help_text('chart.repo.url')
+    help = help_text(key_chart_repo_url)
 )
 
 chart_repo_username = Option (
     '--chart-repo-username',
-    config_name = 'chart.repo.username',
+    config_name = key_chart_repo_username,
     prompt_message = phrases.chart_user,
-    help = help_text('chart.repo.username')
+    help = help_text(key_chart_repo_username)
 )
 
 chart_repo_password = Option (
-    config_name = 'chart.repo.password',
+    config_name = key_chart_repo_password,
     prompt_message = phrases.chart_password,
-    help = help_text('chart.repo.password'),
+    help = help_text(key_chart_repo_password),
     password=True
 )
 
 client_cert_secret = Option (
     '--client-cert-secret',
-    help=help_text('client.cert.secret')
+    config_name = key_client_cert_secret,
+    help=help_text(key_client_cert_secret)
 )
 
 image_repo = Option ( 
@@ -239,37 +272,75 @@ image_repo_password = Option (
 
 image_pull_secret = Option (
     '--image-pull-secret',
+    config_name = key_image_pullSecret,
     default=None,
     help=help_text(key_image_pullSecret)
 )
 
 gui_client_secret = Option (
     '--gui-client-secret',
-    default=lambda: default_val('guiClientSecret'),
-    help=help_text('guiClientSecret')
+    config_name = key_gui_client_secret,
+    default=lambda: default_val(key_gui_client_secret),
+    help=help_text(key_gui_client_secret)
 )
 
 operator_client_secret = Option (
     '--operator-client-secret',
-    default=lambda: default_val('operatorClientSecret'),
-    help=help_text('operatorClientSecret')
+    config_name = key_operator_client_secret,
+    default=lambda: default_val(key_operator_client_secret),
+    help=help_text(key_operator_client_secret)
 )
 
 keycloak_secret = Option (
     '--keycloak-secret',
+    config_name = key_keycloak_secret,
     default=None,
-    help=help_text('keycloak.secret')
+    help=help_text(key_keycloak_secret)
+)
+
+keycloak_admin_password = Option (
+    config_name = key_keycloak_admin_password,
+    prompt_message = phrases.keycloak_admin,
+    default=lambda: default_val(key_keycloak_admin_password),
+    help=help_text(key_keycloak_admin_password),
+    password=True
+)
+
+keycloak_management_password = Option (
+    config_name = key_keycloak_management_password,
+    prompt_message = phrases.keycloak_manage,
+    default=lambda: default_val(key_keycloak_management_password),
+    help=help_text(key_keycloak_management_password),
+    password=True
+)
+
+postgresql_postgres_password = Option (
+    config_name = key_postgresql_postgres_password,
+    prompt_message = phrases.postgresql_postgres,
+    default=lambda: default_val(key_postgresql_postgres_password),
+    help=help_text(key_postgresql_postgres_password),
+    password=True
+)
+
+postgresql_user_password = Option (
+    config_name = key_postgresql_user_password,
+    prompt_message = phrases.postgresql_user,
+    default=lambda: default_val(key_postgresql_user_password),
+    help=help_text(key_postgresql_user_password),
+    password=True
 )
 
 keycloak_postgresql_secret = Option (
     '--keycloak-postgresql-secret',
+    config_name = key_keycloak_postgresqlSecret,
     default=None,
-    help=help_text('keycloak.postgresqlSecret')
+    help=help_text(key_keycloak_postgresqlSecret)
 )
 
 keycloak_auth_url = Option (
     '--keycloak-auth-url',
-    help=help_text('keycloak.authURL')
+    config_name = key_keycloak_authURL,
+    help=help_text(key_keycloak_authURL)
 )
 
 ingress_cert_secret = Option (
@@ -300,6 +371,7 @@ install_config_secret = Option (
 
 install_config_secret_default = Option (
     '--install-config-secret',
+    config_name = key_install_config_secret,
     default = lambda: default_val(key_install_config_secret),
     help = help_text(key_install_config_secret)
 )

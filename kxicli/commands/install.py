@@ -260,6 +260,8 @@ def run(ctx, namespace, filepath, release, chart_repo_name, version, operator_ve
         click.echo(phrases.header_run)
         filepath, chart_repo_name = ctx.invoke(setup)
 
+    check_helm_repo_exists(chart_repo_name)
+
     namespace = options.namespace.prompt(namespace)
 
     install_config_secret = secret.Secret(namespace, install_config_secret, SECRET_TYPE_OPAQUE, INSTALL_CONFIG_KEYS)
@@ -307,6 +309,8 @@ def perform_upgrade(namespace, release, chart_repo_name, assembly_backup_filepat
                     license_secret, install_config_secret, filepath, force):
     """Upgrade KX Insights"""
     namespace = options.namespace.prompt(namespace)
+
+    check_helm_repo_exists(chart_repo_name)
 
     upgraded = False
     click.secho(phrases.header_upgrade, bold=True)
@@ -508,7 +512,7 @@ def populate_image_pull_secret(secret: secret.Secret, **kwargs):
     image_repo_user = data['image_repo_user']
     existing_config = check_existing_docker_config(image_repo, DOCKER_CONFIG_FILE_PATH)
 
-    if existing_config:
+    if existing_config and not image_repo_user and not options.image_repo_password.click_option_kwargs.get('default')():
         # parse the user from the existing config which is a base64 encoded string of "username:password"
         user = base64.b64decode(existing_config['auth']).decode('ascii').split(':')[0]
         if click.confirm(
@@ -530,8 +534,8 @@ def populate_image_pull_secret(secret: secret.Secret, **kwargs):
 
 
 def populate_keycloak_secret(secret: secret.Secret, **kwargs):
-    admin_password = common.enter_password(phrases.keycloak_admin)
-    management_password = common.enter_password(phrases.keycloak_manage)
+    admin_password = options.keycloak_admin_password.prompt()
+    management_password = options.keycloak_management_password.prompt()
 
     secret.data = {
             'admin-password': base64.b64encode(admin_password.encode()).decode('ascii'),
@@ -542,8 +546,8 @@ def populate_keycloak_secret(secret: secret.Secret, **kwargs):
 
 
 def populate_postgresql_secret(secret: secret.Secret, **kwargs):
-    postgresql_postgres_password = common.enter_password(phrases.postgresql_postgres)
-    postgresql_password = common.enter_password(phrases.postgresql_user)
+    postgresql_postgres_password = options.postgresql_postgres_password.prompt()
+    postgresql_password = options.postgresql_user_password.prompt()
 
     secret.data = {
             'postgresql-postgres-password': base64.b64encode(postgresql_postgres_password.encode()).decode('ascii'),
@@ -902,6 +906,11 @@ def helm_repo_list():
     except subprocess.CalledProcessError as e:
         click.echo(e)
     return json.loads(res.stdout)
+
+
+def check_helm_repo_exists(chart_repo_name):
+    if not any (chart_repo_name == item['name'] for item in helm_repo_list()):
+        raise click.ClickException(f'Cannot find local chart repo {chart_repo_name}')
 
 
 def helm_list_versions(chart_repo_name):

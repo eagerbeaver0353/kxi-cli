@@ -13,6 +13,10 @@ from kxicli import phrases
 
 key_install_outputFile = 'install.outputFile'
 key_chart_repo_name = 'chart.repo.name'
+key_chart_repo_url = 'chart.repo.url'
+key_chart_repo_username = 'chart.repo.username'
+key_chart_repo_password = 'chart.repo.password'
+key_client_cert_secret = 'client.cert.secret'
 key_install_config_secret = 'install.configSecret'
 key_ingress_cert_secret = 'ingress.cert.secret'
 key_ingress_self_managed = 'ingress.self-managed'
@@ -22,61 +26,85 @@ key_image_repository = 'image.repository'
 key_image_repository_user = 'image.repository.user'
 key_image_repository_password = 'image.repository.password'
 key_image_pullSecret = 'image.pullSecret'
+key_keycloak_secret = 'keycloak.secret'
+key_keycloak_admin_password = 'keycloak.admin.password'
+key_keycloak_management_password = 'keycloak.management.password'
+key_keycloak_postgresqlSecret = 'keycloak.postgresqlSecret'
+key_keycloak_realm = 'realm'
+key_postgresql_postgres_password = 'postgresql.postgres.password'
+key_postgresql_user_password = 'postgresql.user.password'
+key_keycloak_authURL = 'keycloak.authURL'
+key_license_secret = 'license.secret'
+key_license_envVar = 'license.as-env-var'
+key_license_filepath = 'license.filepath'
+key_gui_client_secret = 'guiClientSecret'
+key_operator_client_secret = 'operatorClientSecret'
+key_install_filepath = 'install.filepath'
+key_assembly_backup_file = 'assembly.backup.file'
+key_release_name = 'release.name'
+key_namespace = 'namespace'
+key_hostname = 'hostname'
+key_version = 'version'
+key_operator_version = 'operator.version'
 
 # Help text dictionary for commands
 HELP_TEXT = {
-    'hostname': 'Hostname of Insights deployment',
-    'namespace': 'Kubernetes namespace',
+    key_hostname: 'Hostname of Insights deployment',
+    key_namespace: 'Kubernetes namespace',
     key_chart_repo_name: 'Name for chart repository',
-    'chart.repo.url': 'Repository URL to pull charts from',
-    'chart.repo.username': 'Username for the chart repository',
-    'chart.repo.password': 'Password for the chart repository',
-    'license.secret': 'Secret containing kdb+ license',
-    'license.envVar': 'Mount kdb+ license secret as an environment variable',
-    'license.filepath': 'File path and file name of kdb+ license file',
-    'client.cert.secret': 'Secret containing TLS cert and key for client issuer',
+    key_chart_repo_url: 'Repository URL to pull charts from',
+    key_chart_repo_username: 'Username for the chart repository',
+    key_chart_repo_password: 'Password for the chart repository',
+    key_license_secret: 'Secret containing kdb+ license',
+    key_license_envVar: 'Mount kdb+ license secret as an environment variable',
+    key_license_filepath: 'File path and file name of kdb+ license file',
+    key_client_cert_secret: 'Secret containing TLS cert and key for client issuer',
     key_image_repository: 'Repository to pull images from',
     key_image_repository_user: 'User name for image repository',
     key_image_repository_password: 'Password for image repository',
     key_image_pullSecret: 'Secret containing credentials for the image repository ',
-    'keycloak.secret': 'Secret containing Keycloak admin password',
-    'keycloak.postgresqlSecret': 'Secret containing Keycloak postgresql passwords',
-    'keycloak.authURL': 'Auth URL for Keycloak',
+    key_keycloak_secret: 'Secret containing Keycloak admin password',
+    key_keycloak_admin_password: 'Keycloak Admin password',
+    key_keycloak_management_password: 'Keycloak WildFly Management password',
+    key_keycloak_postgresqlSecret: 'Secret containing Keycloak postgresql passwords',
+    key_postgresql_postgres_password: 'Postgresql postgres password',
+    key_postgresql_user_password: 'Postgresql user password',
+    key_keycloak_authURL: 'Auth URL for Keycloak',
     key_ingress_cert_secret: 'Secret containing self-managed TLS cert and key for the ingress',
     key_ingress_self_managed: 'Whether a self managed self-managed TLS cert should be used',
     key_ingress_cert: 'File path to TLS certificate for the ingress',
     key_ingress_key: 'File path to TLS private key for the ingress',
     key_install_outputFile: 'Name for the generated values file',
     key_install_config_secret: 'Secret containing helm install values',
-    'install.filepath': 'Values file to install with',
-    'assembly.backup.file': 'Filepath to store state of running assemblies',
-    'release.name': 'Release name for the install',
-    'guiClientSecret': 'Keycloak client secret for gui service account',
-    'operatorClientSecret': 'Keycloak client secret for operator service account',
-    'realm': 'Name of Keycloak realm',
-    'version': 'Version to install',
-    'operator.version': 'Version of the operator to install'
+    key_install_filepath: 'Values file to install with',
+    key_assembly_backup_file: 'Filepath to store state of running assemblies',
+    key_release_name: 'Release name for the install',
+    key_gui_client_secret: 'Keycloak client secret for gui service account',
+    key_operator_client_secret: 'Keycloak client secret for operator service account',
+    key_keycloak_realm: 'Name of Keycloak realm',
+    key_version: 'Version to install',
+    key_operator_version: 'Version of the operator to install'
 }
 
 # Default values for commands if needed
 DEFAULT_VALUES = {
-    'license.secret': 'kxi-license',
-    'license.as-env-var': False,
-    'client.cert.secret': 'kxi-certificate',
+    key_license_secret: 'kxi-license',
+    key_license_envVar: False,
+    key_client_cert_secret: 'kxi-certificate',
     key_chart_repo_name: 'kx-insights',
-    'chart.repo.url': 'https://nexus.dl.kx.com/repository/kx-insights-charts',
+    key_chart_repo_url: 'https://nexus.dl.kx.com/repository/kx-insights-charts',
     key_image_pullSecret: 'kxi-nexus-pull-secret',
     key_image_repository: 'registry.dl.kx.com',
-    'keycloak.secret': 'kxi-keycloak',
-    'keycloak.postgresqlSecret': 'kxi-postgresql',
+    key_keycloak_secret: 'kxi-keycloak',
+    key_keycloak_postgresqlSecret: 'kxi-postgresql',
     key_ingress_cert_secret: 'kxi-ingress-cert',
     key_ingress_self_managed: False,
     key_install_outputFile: 'values.yaml',
     key_install_config_secret: 'kxi-install-config',
-    'assembly.backup.file': 'kxi-assembly-state.yaml',
-    'release.name': 'insights',
-    'realm': 'insights',
-    'namespace': 'kxi'
+    key_assembly_backup_file: 'kxi-assembly-state.yaml',
+    key_release_name: 'insights',
+    key_keycloak_realm: 'insights',
+    key_namespace: 'kxi'
 }
 
 # Flag to indicate if k8s.config.load_config has already been called

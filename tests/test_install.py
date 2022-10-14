@@ -13,9 +13,9 @@ from kxicli.commands import install
 from kxicli.resources import secret
 from utils import IPATH_KUBE_COREV1API, test_secret_data, test_secret_type, test_secret_key, \
     mock_kube_deployment_api, mocked_kube_deployment_list, mock_kube_secret_api, mocked_read_namespaced_secret, \
-    raise_not_found, test_val_file, mock_validate_secret, mock_helm_env
+    raise_not_found, test_val_file, mock_validate_secret, mock_helm_env, mocked_helm_repo_list
 from test_install_e2e import mocked_read_namespaced_secret_return_values, test_vals
-from const import test_user, test_pass, test_lic_file
+from const import test_user, test_pass, test_lic_file, test_chart_repo_name, test_chart_repo_url
 
 # Common test parameters
 test_ns = 'test-ns'
@@ -154,6 +154,51 @@ def test_create_tls_secret(mocker):
     assert res.metadata.name == test_secret
     assert 'tls.crt' in res.data
     assert 'tls.key' in res.data
+
+
+def test_create_keycloak_secret_from_cli_config(mocker):
+    mock_kube_secret_api(mocker)
+    admin_pass = 'test-keycloak-admin-password'
+    management_pass = 'test-keycloak-management-password'
+    common.config.config['default']['keycloak.admin.password'] = admin_pass
+    common.config.config['default']['keycloak.management.password'] = management_pass
+
+    s = secret.Secret(test_ns, test_secret, install.SECRET_TYPE_OPAQUE)
+    s = install.populate_keycloak_secret(s)
+    res = s.get_body()
+
+    assert res.type == 'Opaque'
+    assert res.metadata.name == test_secret
+    assert 'admin-password' in res.data
+    assert 'management-password' in res.data
+    assert base64.b64decode(res.data['admin-password']).decode('ascii') == admin_pass
+    assert base64.b64decode(res.data['management-password']).decode('ascii') == management_pass
+    common.config.load_config('default')
+
+
+def test_create_postgres_secret_from_cli_config(mocker):
+    mock_kube_secret_api(mocker)
+    postgres_pass = 'test-postgres-admin-password'
+    user_pass = 'test-postgres-user-password'
+    common.config.config['default']['postgresql.postgres.password'] = postgres_pass
+    common.config.config['default']['postgresql.user.password'] = user_pass
+
+    s = secret.Secret(test_ns, test_secret, install.SECRET_TYPE_OPAQUE)
+    s = install.populate_postgresql_secret(s)
+    res = s.get_body()
+
+    assert res.type == 'Opaque'
+    assert res.metadata.name == test_secret
+    assert 'postgresql-postgres-password' in res.data
+    assert 'postgres-password' in res.data
+    assert 'postgresql-password' in res.data
+    assert 'password' in res.data
+    
+    assert base64.b64decode(res.data['postgresql-postgres-password']).decode('ascii') == postgres_pass
+    assert base64.b64decode(res.data['postgres-password']).decode('ascii') == postgres_pass
+    assert base64.b64decode(res.data['postgresql-password']).decode('ascii') == user_pass
+    assert base64.b64decode(res.data['password']).decode('ascii') == user_pass
+    common.config.load_config('default')
 
 
 def test_read_secret_returns_k8s_secret(mocker):
@@ -318,6 +363,16 @@ def test_insights_installed_returns_true_when_already_exists(mocker):
 def test_insights_installed_returns_false_when_does_not_exist(mocker):
     mocker.patch(fun_subprocess_check_output, mocked_helm_list_returns_empty_json)
     assert install.insights_installed('insights', test_ns) == False
+
+
+def test_insights_check_helm_repo_exists(mocker):
+    mocker.patch('kxicli.commands.install.helm_repo_list', lambda: mocked_helm_repo_list(test_chart_repo_name, test_chart_repo_url))
+    assert install.check_helm_repo_exists(test_chart_repo_name) == None
+    with pytest.raises(Exception) as e:
+        install.check_helm_repo_exists('a-different-repo')
+    assert isinstance(e.value, click.ClickException)
+    assert 'Cannot find local chart repo a-different-repo' in e.value.message
+
 
 
 def test_operator_installed_returns_true_when_already_exists(mocker):

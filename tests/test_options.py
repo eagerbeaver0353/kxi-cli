@@ -29,6 +29,82 @@ def test_get_namespace(mocker):
     assert options.get_namespace() == None
 
 
+def test_print_option_source(capsys):
+    options.print_option_source('Print option source with value', 'test_value', False)
+    assert capsys.readouterr().out == 'Print option source with value: test_value\n'
+
+    options.print_option_source('Print option source but hide password value', 'test_value', True)
+    assert capsys.readouterr().out == 'Print option source but hide password value\n'
+    
+    options.print_option_source('Print option source with non-string value', 1234, False)
+    assert capsys.readouterr().out == 'Print option source with non-string value: 1234\n'    
+
+
+def test_print_cmd_line_option(capsys):
+    options.print_cmd_line_option('Print value from command-line without default', 'a-test-value', False, None)
+    assert capsys.readouterr().out == 'Print value from command-line without default: a-test-value\n'
+
+    options.print_cmd_line_option('Print value from command-line without default, hiding password value', 'a-test-value', True, None)
+    assert capsys.readouterr().out == 'Print value from command-line without default, hiding password value\n'
+
+    options.print_cmd_line_option('Print value from command-line with None default lambda', 'a-test-value', False, lambda: None)
+    assert capsys.readouterr().out == 'Print value from command-line with None default lambda: a-test-value\n'
+
+    options.print_cmd_line_option('Print value from command-line with None default lambda, hiding password value', 'a-test-value', True, lambda: None)
+    assert capsys.readouterr().out == 'Print value from command-line with None default lambda, hiding password value\n'
+
+    options.print_cmd_line_option('Hide value from command-line with default value', 'a-test-value', False, 'a-default-value')
+    assert capsys.readouterr().out == ''
+
+    options.print_cmd_line_option('Hide value from command-line with default value as password', 'a-test-value', True, 'a-default-value')
+    assert capsys.readouterr().out == ''
+
+    options.print_cmd_line_option('Hide value from command-line with default lambda, not as password', 'a-test-value', False, lambda: 'a-default-value')
+    assert capsys.readouterr().out == ''
+
+    options.print_cmd_line_option('Hide value from command-line with default lambda as password', 'a-test-value', True, lambda: 'a-default-value')
+    assert capsys.readouterr().out == ''
+
+
+def test_get_prompt_message():
+    test_option = options.Option(
+        '--test-option',
+        config_name = 'test.option',
+        prompt_message='a test prompt message from option definition'
+    )
+    assert options.get_prompt_message(test_option, 'prompt message from arg') == 'prompt message from arg'
+    assert options.get_prompt_message(test_option, '') == 'a test prompt message from option definition'
+
+
+def test_interactive_prompt(capsys, monkeypatch):
+    monkeypatch.setattr(SYS_STDIN, io.StringIO('test-value'))
+    assert options.interactive_prompt('A prompt message not as password, without default', False, None) == 'test-value'
+    assert capsys.readouterr().out == 'A prompt message not as password, without default: '
+
+    monkeypatch.setattr(SYS_STDIN, io.StringIO('test-value'))
+    assert options.interactive_prompt('A prompt message not as password, with default', False, 'default-value') == 'test-value'
+    assert capsys.readouterr().out == 'A prompt message not as password, with default [default-value]: '
+
+
+def test_prompt_error_message():
+    test_option = options.Option('--test-option', config_name = 'test.option')
+    assert options.prompt_error_message(
+        options.Option('--test-option', config_name = 'test.option')
+        ) == f'Could not find expected option. Please set command line argument --test-option or configuration value test.option in config file {common.config.config_file}'
+
+    assert options.prompt_error_message(
+        options.Option('--test-option')
+        ) == 'Could not find expected option. Please set command line argument --test-option'
+
+    assert options.prompt_error_message(
+        options.Option(config_name = 'test.option')
+        ) == f'Could not find expected option. Please set configuration value test.option in config file {common.config.config_file}'
+
+    assert options.prompt_error_message(
+        options.Option()
+        ) == 'Could not find expected option.'
+
+
 def test_options_namespace_decorator():
     assert options.namespace.decorator().func == click.option
     assert options.namespace.decorator().args == ('--namespace',)
@@ -95,7 +171,8 @@ def test_options_chart_repo_name_decorator():
 def test_options_chart_repo_name_forced_decorator():
     assert options.chart_repo_name_forced.decorator().func == click.option
     assert options.chart_repo_name_forced.decorator().args == ('--chart-repo-name',)
-    assert options.chart_repo_name_forced.decorator().keywords == {'help': 'Name for chart repository', 'default': 'kx-insights'}
+    assert options.chart_repo_name_forced.decorator().keywords['help'] == 'Name for chart repository'
+    assert options.chart_repo_name_forced.decorator().keywords['default']() == 'kx-insights'
 
 
 def test_options_chart_repo_username_decorator():
