@@ -41,6 +41,8 @@
     "jwks",
     "clientid",
     "idps",
-    "oidc"
+    "oidc",
+    "serviceaccount",
+    "incluster"
   ]
 }

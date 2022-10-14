@@ -105,14 +105,22 @@ def setup(namespace, chart_repo_name, chart_repo_url, chart_repo_username,
           output_file, install_config_secret):
     """Perform necessary setup steps to install Insights"""
     
-    click.secho(phrases.header_setup, bold=True)
-
-    _, active_context = k8s.config.list_kube_config_contexts()
+    click.secho(phrases.header_setup, bold=True)                                    
     namespace = options.namespace.prompt(namespace)
     create_namespace(namespace)
-    click.echo(phrases.ns_and_cluster.format(namespace=namespace, \
-        cluster=active_context["context"]["cluster"]))
-
+    
+    try:
+        _, active_context = k8s.config.list_kube_config_contexts()
+        click.echo(phrases.ns_and_cluster.format(namespace=namespace, \
+            cluster=active_context["context"]["cluster"]))
+    except k8s.config.ConfigException:       
+        try:
+            k8s.config.load_incluster_config()
+            click.echo(f'Running in namespace {namespace} in-cluster')
+        except k8s.config.ConfigException:
+            raise click.ClickException("Kubernetes cluster config not found")        
+        
+    
 
     install_config_secret = secret.Secret(namespace, install_config_secret, SECRET_TYPE_OPAQUE, INSTALL_CONFIG_KEYS)
     values_secret = get_install_config_secret(install_config_secret)
