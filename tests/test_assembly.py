@@ -584,7 +584,7 @@ def test_cli_assembly_create_with_context_not_set(mocker):
     result = TEST_CLI.invoke(main.cli, ['assembly', 'create', '--filepath', test_asm_file])
 
     assert result.exit_code == 0
-    assert result.output == f"""Using namespace test from config file {common.config.config_file}
+    assert result.output == f"""Using namespace from config file {common.config.config_file}: test
 Submitting assembly from {test_asm_file}
 Custom assembly resource basic-assembly created!
 """

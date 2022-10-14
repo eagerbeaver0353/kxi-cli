@@ -138,3 +138,6 @@ def mock_helm_fetch(mocker):
     def helm_fetch(*args):
         return args
     mocker.patch('kxicli.resources.helm.fetch', helm_fetch)
+
+def mocked_helm_repo_list(name, url):
+    return [{'name': name, 'url': url}]

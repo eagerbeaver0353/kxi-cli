@@ -227,9 +227,9 @@ def output_option(out, name, source, cli_config, prompt_message, default, value)
             prompt_message = prompt_message + f' [{default}]'
         str = prompt_message + f': {value}'
     elif source == 'config':
-        str = f'Using {name} {value} from config file {cli_config}'
+        str = f'Using {name} from config file {cli_config}: {value}'
     elif source == 'command-line':
-        str = f'Using {name} {value} from command line option'
+        str = f'Using {name} from command line option: {value}'
     return append_message(out, str)
 
 
