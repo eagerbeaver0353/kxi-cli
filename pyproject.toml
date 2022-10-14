@@ -1,6 +1,80 @@
 [build-system]
 requires = [
     "setuptools>=42",
-    "wheel"
+    "wheel",
+    "setuptools_scm>=6.2",
 ]
-build-backend = "setuptools.build_meta"
+
+
+[project]
+name = "kxicli"
+requires-python = ">=3.7"
+dynamic = ["version"]
+dependencies = [
+    "click>=7.0",
+    "requests>=2.26.0",
+    "tabulate>=0.8.9",
+    "kubernetes>=18.20.0",
+    "pyyaml>=6.0",
+    "cryptography>=2.8",
+    "pakxcli==1.1.0rc4",
+    "packaging>=21.3",
+    "python-keycloak>=2.3.0",
+    "azure-identity>=1.10.0",
+    "msgraph-core>=0.2.2",
+    "dataclasses_json>=0.5.7"
+    ]
+
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=6.2.5",
+    "pytest-cov",
+    "pytest-mock>=3.6.1",
+    "responses>=0.15.0",
+    "requests-mock>=1.9.3"
+]
+doc = [
+    "bracex==2.0.1",
+    "click==7.1.2",
+    "future==0.18.2",
+    "gitdb==4.0.5",
+    "GitPython==3.1.12",
+    "importlib-metadata==3.4.0",
+    "Jinja2==2.11.2",
+    "joblib==1.0.0",
+    "livereload==2.6.3",
+    "lunr==0.5.8",
+    "Markdown==3.3.3",
+    "MarkupSafe==1.1.1",
+    "mkdocs==1.1.2",
+    "mkdocs-awesome-pages-plugin==2.5.0",
+    "mkdocs-git-revision-date-plugin==0.3.1",
+    "mkdocs-material==6.2.5",
+    "mkdocs-material-extensions==1.0.1",
+    "nltk==3.5",
+    "Pygments==2.7.4",
+    "pymdown-extensions==8.1",
+    "PyYAML==5.4.1",
+    "regex==2020.11.13",
+    "six==1.15.0",
+    "smmap==3.0.4",
+    "tornado==6.1",
+    "tqdm==4.56.0",
+    "typing-extensions==3.7.4.3",
+    "wcmatch==8.0",
+    "zipp==3.4.0",
+    "mkdocs-click"
+]
+
+
+[project.scripts]
+kxi = "kxicli.main:cli"
+
+[tool.setuptools]
+packages = [
+    "kxicli"
+]
+
+[tool.setuptools_scm]
+write_to = "kxicli/__version__.py"

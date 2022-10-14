@@ -1,5 +1,13 @@
 include MANIFEST.in
 include pyproject.toml
 include README.md
-include setup.py
+exclude CONTRIBUTING.md
+exclude .*
+exclude *.properties
+exclude *.config
+exclude *.json
+prune tests
+prune custom_theme
+prune docs
+prune dev_docs
 graft kxicli

@@ -2,6 +2,7 @@ values.yaml
 launch.json
 settings.json
 kxi-assembly-state.yaml
+__version__.py
 
 # Created by https://www.toptal.com/developers/gitignore/api/vim,git,diff,linux,sonar,patch,macos,python,dotenv,windows,notepadpp,sonarqube,virtualenv,compressed,tortoisegit,intellij+all,visualstudiocode,helm
 # Edit at https://www.toptal.com/developers/gitignore?templates=vim,git,diff,linux,sonar,patch,macos,python,dotenv,windows,notepadpp,sonarqube,virtualenv,compressed,tortoisegit,intellij+all,visualstudiocode,helm
