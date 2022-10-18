@@ -974,7 +974,7 @@ def operator_installed(release, namespace: str = operator_namespace):
 
 def get_installed_charts(release, namespace):
     """Retrieve running helm charts"""
-    base_command = ['helm', 'list', '--filter', release, '-o', 'json','--namespace', namespace]
+    base_command = ['helm', 'list', '--filter', "^"+release+"$", '-o', 'json','--namespace', namespace]
     try:
         log.debug(f'List command {base_command}')
         l = subprocess.check_output(base_command)
