@@ -186,6 +186,7 @@ def cli_output(
     install_config = output_install_config(install_config_exists, overwrite_install_config)
 
     out = output_setup_start()
+    out = f'{out}\nUsing install.configSecret from embedded default values: kxi-install-config'
     out = f'{out}\n{ingress}\n{chart}\n{license}\n{image}'
     out = f'{out}\n{client}\n{keycloak}{values}\n{install_config}'
 

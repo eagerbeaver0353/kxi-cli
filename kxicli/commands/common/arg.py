@@ -42,8 +42,6 @@ arg_hostname = options.hostname.decorator()
 
 arg_chart_repo_name = options.chart_repo_name.decorator()
 
-arg_chart_repo_name_forced = options.chart_repo_name_forced.decorator()
-
 arg_chart_repo_url = options.chart_repo_url.decorator()
 
 arg_chart_repo_username = options.chart_repo_username.decorator()
@@ -75,6 +73,3 @@ arg_ingress_cert = options.ingress_cert.decorator()
 arg_ingress_key = options.ingress_key.decorator()
 
 arg_install_config_secret = options.install_config_secret.decorator()
-
-arg_install_config_secret_default = options.install_config_secret_default.decorator()
-

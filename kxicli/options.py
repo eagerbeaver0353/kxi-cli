@@ -25,19 +25,21 @@ def _is_interactive_session():
     return sys.stdout.isatty() and '--force' not in sys.argv
 
 
-def print_option_source(message, val, password):
+def print_option_source(message, val, password, silent):
+    if silent:
+        return None
     if not password:
         message = message + f': {val}'
     click.echo(message)
 
 
-def print_cmd_line_option(message, val, password, default):
+def print_cmd_line_option(message, val, password, default, silent):
     try:
         if default() is None:
-            print_option_source(message, val, password)
+            print_option_source(message, val, password, silent)
     except TypeError:
         if default is None:
-            print_option_source(message, val, password)
+            print_option_source(message, val, password, silent)
 
 
 def get_prompt_message(self, prompt_message):
@@ -101,23 +103,24 @@ class Option():
 
     def prompt(self, cmd_line_value=None, **kwargs):
         prompt_message = get_prompt_message(self, kwargs.get('prompt_message'))
+        silent =  kwargs.get('silent')
 
         # cmd line arg
         if cmd_line_value is not None:
             val = cmd_line_value
             print_cmd_line_option(f'Using {self.config_name} from command line option', val, 
-                self.password, self.click_option_kwargs.get('default'))
+                self.password, self.click_option_kwargs.get('default'), silent)
         # config file
         elif config.config.has_option(config.config.default_section, self.config_name):
             val = config.config.get(config.config.default_section, self.config_name)
-            print_option_source(f'Using {self.config_name} from config file {config.config_file}', val, self.password)
+            print_option_source(f'Using {self.config_name} from config file {config.config_file}', val, self.password, silent)
         # check if there's a tty and not explicitly no prompt
-        elif prompt_message and _is_interactive_session():
+        elif prompt_message and _is_interactive_session() and not silent:
             val = interactive_prompt(prompt_message, self.password, default_val(self.config_name))
         # embedded default values
         elif self.config_name in kxicli.common.DEFAULT_VALUES:
             val = kxicli.common.DEFAULT_VALUES[self.config_name]
-            print_option_source(f'Using {self.config_name} from embedded default values', val, self.password)
+            print_option_source(f'Using {self.config_name} from embedded default values', val, self.password, silent)
         else:
             raise click.ClickException(prompt_error_message(self))
 
@@ -220,14 +223,6 @@ chart_repo_name = Option(
     config_name = key_chart_repo_name,
     help = help_text(key_chart_repo_name),
     prompt_message = phrases.chart_repo,
-)
-
-chart_repo_name_forced = Option(
-    '--chart-repo-name',
-    config_name = key_chart_repo_name,
-    help = help_text(key_chart_repo_name),
-    prompt_message = phrases.chart_repo,
-    force=True
 )
 
 chart_repo_url = Option (
@@ -377,11 +372,4 @@ install_config_secret = Option (
     '--install-config-secret',
     config_name = key_install_config_secret,
     help=help_text(key_install_config_secret)
-)
-
-install_config_secret_default = Option (
-    '--install-config-secret',
-    config_name = key_install_config_secret,
-    default = lambda: default_val(key_install_config_secret),
-    help = help_text(key_install_config_secret)
 )
