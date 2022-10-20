@@ -38,6 +38,13 @@ def append_config(profile, name, value):
         config.write(f)
 
 
+def update_config(profile, name, value):
+    """Set the configuration for a specific profile if it has changed"""
+    
+    if not config.has_option(profile, name) or config.has_option(profile, name) and config.get(profile, name) != value:
+        append_config(profile, name, value)
+
+
 def set_config(profile):
     """Set the configuration for a specific profile"""
     global config

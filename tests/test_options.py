@@ -1,16 +1,18 @@
 import click
 import io
 import os
+import shutil
 import pytest
 from kxicli import options
 from kxicli import common
 from kxicli import phrases
-from utils import return_true, return_false
+from utils import return_true, return_false, temp_file
 
 # Constants for common import paths
 SYS_STDIN = 'sys.stdin'
 
-common.config.config_file = os.path.dirname(__file__) + '/files/test-cli-config'
+test_cli_config = os.path.dirname(__file__) + '/files/test-cli-config'
+common.config.config_file = test_cli_config
 common.config.load_config("default")
 
 
@@ -108,6 +110,13 @@ def test_prompt_error_message():
     assert options.prompt_error_message(
         options.Option()
         ) == 'Could not find expected option.'
+
+
+def test_options_generate_password():
+    test_pass = options.generate_password()
+    assert len(test_pass) == 10
+    assert type(test_pass) == str
+    assert not test_pass == options.generate_password()
 
 
 def test_options_namespace_decorator():
