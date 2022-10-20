@@ -33,13 +33,13 @@ class Secret():
         common.load_kube_config()
         try:
             secret = k8s.client.CoreV1Api().read_namespaced_secret(namespace=self.namespace, name=self.name)
-        except k8s.client.rest.ApiException as exception:
-            # 404 is returned when this secret doesn't already exist.
-            if exception.status == 404:
-                return None
-
-        return secret
-
+        except Exception as e:
+            log.debug(f'Exception when calling read_namespaced_secret  {e}')
+            return None
+        
+        return secret        
+    
+    
     def patch(self):
         """Updates the Kubernetes secret"""
         log.debug(f'Updating secret {self.name} in namespace {self.namespace}')
