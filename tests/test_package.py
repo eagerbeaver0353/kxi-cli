@@ -9,4 +9,4 @@ def test_package_list():
     with tempfile.TemporaryDirectory() as t:
         result = runner.invoke(main.cli, ["package", f"--pkg-lib={t}", '--artifact-store={t}', "list"])
     assert result.exit_code == 0
-    assert result.output.split("\n")[1] == "{}"
+    assert result.output.rstrip("\n")[-2:]== "{}"
