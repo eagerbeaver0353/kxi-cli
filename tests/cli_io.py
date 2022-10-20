@@ -13,6 +13,7 @@ def append_message(message, new_message):
 def cli_input(
     verb,
     output_file = None,
+    incluster = False,
     provide_ingress_cert = 'n',
     ingress_cert = None,
     ingress_cert_source = None,
@@ -120,6 +121,7 @@ def cli_output(
     verb,
     cli_config,
     output_file = None,
+    incluster = False,
     provide_ingress_cert = 'n',
     ingress_cert = None,
     ingress_cert_source = 'prompt',
@@ -185,7 +187,7 @@ def cli_output(
     values = output_values_file(output_file, values_exist, overwrite_values)
     install_config = output_install_config(install_config_exists, overwrite_install_config)
 
-    out = output_setup_start()
+    out = output_setup_start(incluster)
     out = f'{out}\nUsing install.configSecret from embedded default values: kxi-install-config'
     out = f'{out}\n{ingress}\n{chart}\n{license}\n{image}'
     out = f'{out}\n{client}\n{keycloak}{values}\n{install_config}'
@@ -234,9 +236,13 @@ def output_option(out, name, source, cli_config, prompt_message, default, value)
     return append_message(out, str)
 
 
-def output_setup_start():
-    return f"""{phrases.header_setup}
-{phrases.ns_and_cluster.format(namespace=test_namespace, cluster=test_cluster)}"""
+def output_setup_start(incluster):
+    out = phrases.header_setup
+    if incluster:
+        cluster_message = f'Running in namespace {test_namespace} in-cluster'
+    else:
+        cluster_message = phrases.ns_and_cluster.format(namespace=test_namespace, cluster=test_cluster)
+    return append_message(out, cluster_message)
 
 
 def output_chart(chart_repo_existing, chart_repo_name, chart_repo_name_source, chart_repo_url, chart_repo_url_source, chart_user, chart_user_source, chart_pass, cli_config):
