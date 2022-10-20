@@ -9,8 +9,8 @@ global:
   ingress:
     host: a-test-hostname.kx.com
   keycloak:
-    guiClientSecret: gui-secret
-    operatorClientSecret: operator-secret
+    guiClientSecret: aRandomPassword
+    operatorClientSecret: aRandomPassword
   license:
     secretName: kxi-license
 keycloak:

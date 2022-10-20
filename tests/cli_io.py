@@ -38,8 +38,8 @@ def cli_input(
     pg_secret_exists = False,
     pg_secret_is_valid = True,
     pg_secret_overwrite = 'y',
-    provide_gui_secret = 'y',
-    provide_operator_secret = 'y',
+    gui_secret_source = 'generated',
+    operator_secret_source = 'generated',
     deploy_keycloak=True,
     values_exist = False,
     overwrite_values = 'y',
@@ -100,10 +100,6 @@ def cli_input(
         inp = input_secret(inp, kc_secret_exists, kc_secret_is_valid, kc_secret_overwrite, f'{test_pass}\n{test_pass}\n{test_pass}\n{test_pass}')
         inp = input_secret(inp, pg_secret_exists, pg_secret_is_valid, pg_secret_overwrite, f'{test_pass}\n{test_pass}\n{test_pass}\n{test_pass}')
 
-    # Keycloak clients
-    inp = input_provide_data(inp, provide_gui_secret, 'gui-secret\ngui-secret')
-    inp = input_provide_data(inp, provide_operator_secret, 'operator-secret\noperator-secret')
-
     # values
     if values_exist and overwrite_values == 'y':
         inp = append_message(inp, overwrite_values)
@@ -146,8 +142,8 @@ def cli_output(
     pg_secret_exists = False,
     pg_secret_is_valid = True,
     pg_secret_overwrite = 'y',
-    provide_gui_secret = 'y',
-    provide_operator_secret = 'y',
+    gui_secret_source = 'generated',
+    operator_secret_source = 'generated',
     deploy_keycloak=True,
     values_exist = False,
     overwrite_values = 'y',
@@ -183,7 +179,7 @@ def cli_output(
     image = output_image(repo, user, image_sec_exists, image_sec_is_valid, use_existing_creds, image_sec_overwrite)
     client = output_client(client_sec_exists, client_sec_is_valid, client_sec_overwrite)
     keycloak = output_keycloak(cli_config, deploy_keycloak, kc_secret_exists, kc_secret_is_valid, kc_secret_overwrite,
-        pg_secret_exists, pg_secret_is_valid, pg_secret_overwrite, provide_gui_secret, provide_operator_secret)
+        pg_secret_exists, pg_secret_is_valid, pg_secret_overwrite, gui_secret_source, operator_secret_source)
     values = output_values_file(output_file, values_exist, overwrite_values)
     install_config = output_install_config(install_config_exists, overwrite_install_config)
 
@@ -332,21 +328,23 @@ def output_install_config(exists, overwrite):
 
     return str
 
-def output_keycloak_clients(cli_config, provide_gui_secret, provide_operator_secret):
-    gui = output_client_prompt(cli_config, 'gui', 'guiClientSecret', provide_gui_secret)
-    op = output_client_prompt(cli_config, 'operator', 'operatorClientSecret', provide_operator_secret)
+def output_keycloak_clients(cli_config, gui_secret_source, operator_secret_source):
+    gui = output_client_prompt(cli_config, 'guiClientSecret', gui_secret_source)
+    op = output_client_prompt(cli_config, 'operatorClientSecret', operator_secret_source)
     return f'{gui}\n{op}'
 
 
-def output_client_prompt(cli_config, client_name, secret_name, provide_secret):
-    prompt = f'{phrases.service_account_secret.format(name=client_name)} [y/N]: {provide_secret}'
-    save = phrases.persist_config.format(name=secret_name, file=cli_config)
-    if provide_secret == 'y':
-        get_secret = f'{phrases.secret_entry}: \n{phrases.password_reenter}: '
-    else:
-        get_secret = phrases.service_account_random.format(name=client_name)
+def output_client_prompt(cli_config, secret_name, secret_source):
+    source = ''
+    persist = ''
+    if secret_source == 'command-line':
+        source =  f'Using {secret_name} from command line option'
+    elif secret_source == 'config': 
+        source = f'Using {secret_name} from config file {cli_config}'
+    if not secret_source == 'config':
+        persist = phrases.persist_config.format(name=secret_name, file=cli_config)
+    return append_message(source, persist)
 
-    return f'{prompt}\n{get_secret}\n{save}'
 
 def output_keycloak(
     cli_config,
@@ -357,13 +355,13 @@ def output_keycloak(
     pg_secret_exists,
     pg_secret_is_valid,
     pg_secret_overwrite,
-    provide_gui_secret,
-    provide_operator_secret
+    gui_secret_source,
+    operator_secret_source
 ):
     header = phrases.header_keycloak
     kc_secret = output_keycloak_secret(kc_secret_exists, kc_secret_is_valid, kc_secret_overwrite)
     pg_secret = output_postgresql_secret(pg_secret_exists, pg_secret_is_valid, pg_secret_overwrite)
-    clients = output_keycloak_clients(cli_config, provide_gui_secret, provide_operator_secret)
+    clients = output_keycloak_clients(cli_config, gui_secret_source, operator_secret_source)
 
     if deploy:
         str = f'{header}\n{kc_secret}\n{pg_secret}\n{clients}'

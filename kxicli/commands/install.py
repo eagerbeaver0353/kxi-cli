@@ -2,8 +2,6 @@ import base64
 import datetime
 import json
 import os
-import random
-import string
 import subprocess
 import sys
 from pathlib import Path
@@ -32,7 +30,7 @@ from kxicli.commands.common.arg import arg_force, arg_filepath, arg_version, arg
     arg_install_config_secret
 from kxicli.commands.common.helm import helm_uninstall, helm_install
 from kxicli.commands.common.namespace import create_namespace
-from kxicli.common import get_default_val as default_val
+from kxicli.common import get_default_val as default_val, key_gui_client_secret, key_operator_client_secret
 from kxicli.resources import secret, helm
 
 DOCKER_CONFIG_FILE_PATH = str(Path.home() / '.docker' / 'config.json')
@@ -163,15 +161,14 @@ def setup(namespace, chart_repo_name, chart_repo_url, chart_repo_username,
         keycloak_secret = ensure_secret(keycloak_secret, populate_keycloak_secret)
         keycloak_postgresql_secret = ensure_secret(keycloak_postgresql_secret, populate_postgresql_secret)
 
-    if not gui_client_secret:
-        gui_client_secret = prompt_for_client_secret('gui')
-        common.config.append_config(profile=common.config.config.default_section, name='guiClientSecret',
-                                    value=gui_client_secret)
+    gui_client_secret = options.gui_client_secret.prompt(gui_client_secret)
+    common.config.update_config(profile=common.config.config.default_section, name=key_gui_client_secret,
+                                        value=gui_client_secret)
 
-    if not operator_client_secret:
-        operator_client_secret = prompt_for_client_secret('operator')
-        common.config.append_config(profile=common.config.config.default_section, name='operatorClientSecret',
-                                    value=operator_client_secret)
+    operator_client_secret = options.operator_client_secret.prompt(operator_client_secret)
+    common.config.update_config(profile=common.config.config.default_section, name=key_operator_client_secret,
+                                        value=operator_client_secret)
+
 
     # These keys must all exist, conditionally defined
     # keys like the self-managed ingress cert are handled afterwards
@@ -973,16 +970,6 @@ def copy_secret(name, from_ns, to_ns):
         if not exception.status == 409:
             log.error(f'Exception when trying to create secret {exception}')
             sys.exit(1)
-
-
-def prompt_for_client_secret(client_name):
-    if click.confirm(phrases.service_account_secret.format(name=client_name)):
-        client_secret = common.enter_password(phrases.secret_entry)
-    else:
-        click.echo(phrases.service_account_random.format(name=client_name))
-        client_secret = ''.join(random.SystemRandom().choice(string.ascii_letters + string.digits) for _ in range(10))
-
-    return client_secret
 
 
 def insights_installed(release, namespace):

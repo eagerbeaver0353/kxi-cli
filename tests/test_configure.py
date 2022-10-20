@@ -25,17 +25,24 @@ def temp_config_file(prefix: str = 'kxicli-config-', file_name='test-cli-config'
         if inited:
             shutil.rmtree(dir_name)
 
-
-def test_append_config_parameter_appends_to_file_default():
+def run_config_test(func, profile, name, value, expected_result):
     config.load_config('default')
     with temp_config_file() as config_file_name:
         shutil.copyfile(config.config_file, config_file_name)
         config.config_file = config_file_name
 
-        config.append_config(profile='default', name='test-name', value='test-value')
+        func(profile, name, value)
 
         with open(config.config_file, "r") as f:
-            assert f.read() == """[default]
+            assert f.read() == expected_result
+
+    # restore
+    config.config_file = str(Path(__file__).parent / 'files' / 'test-cli-config')
+    config.load_config('default')
+
+
+def test_append_config_parameter_appends_to_file_default():
+    expected_result = """[default]
 hostname = https://test.kx.com
 namespace = test
 client.id = client
@@ -43,21 +50,11 @@ client.secret = secret
 test-name = test-value
 
 """
-    # restore
-    config.config_file = str(Path(__file__).parent / 'files' / 'test-cli-config')
-    config.load_config('default')
+    run_config_test(func=config.append_config, profile='default', name='test-name', value='test-value', expected_result=expected_result)
 
 
 def test_append_config_parameter_appends_to_file_new_profile():
-    config.load_config('default')
-    with temp_config_file() as config_file_name:
-        shutil.copyfile(config.config_file, config_file_name)
-        config.config_file = config_file_name
-
-        config.append_config(profile='test-profile', name='test-name', value='test-value')
-
-        with open(config.config_file, "r") as f:
-            assert f.read() == """[default]
+    expected_result = """[default]
 hostname = https://test.kx.com
 namespace = test
 client.id = client
@@ -67,9 +64,41 @@ client.secret = secret
 test-name = test-value
 
 """
-    # restore
-    config.config_file = str(Path(__file__).parent / 'files' / 'test-cli-config')
-    config.load_config('default')
+    run_config_test(func=config.append_config, profile='test-profile', name='test-name', value='test-value', expected_result=expected_result)
+
+
+def test_update_config_parameter_appends_to_file_default():
+    expected_result = """[default]
+hostname = https://test.kx.com
+namespace = test
+client.id = client
+client.secret = secret
+test-name = test-value
+
+"""
+    run_config_test(func=config.update_config, profile='default', name='test-name', value='test-value', expected_result=expected_result)
+
+
+def test_update_config_updates_existing_option():
+    expected_result = """[default]
+hostname = https://test.kx.com
+namespace = test
+client.id = client
+client.secret = test-value
+
+"""
+    run_config_test(func=config.update_config, profile='default', name='client.secret', value='test-value', expected_result=expected_result)
+
+
+def test_update_config_has_no_effect_on_unchanged_option():
+    expected_result = """[default]
+hostname = https://test.kx.com
+namespace = test
+client.id = client
+client.secret = secret
+
+"""
+    run_config_test(func=config.update_config, profile='default', name='client.secret', value='secret', expected_result=expected_result)
 
 
 def test_configure_output_is_correct():

@@ -1,4 +1,6 @@
 import click
+import random
+import string
 import sys
 import kubernetes as k8s
 import kxicli.common
@@ -67,11 +69,17 @@ def prompt_error_message(self):
 
     return error_message
 
+
+def generate_password():
+    return ''.join(random.SystemRandom().choice(string.ascii_letters + string.digits) for _ in range(10))
+
+
 class Option():
-    def __init__(self, *click_option_args , config_name=None, force=False, password=False, prompt_message='', **click_option_kwargs):
+    def __init__(self, *click_option_args , config_name=None, fallback=None, force=False, password=False, prompt_message='', **click_option_kwargs):
         self._click_option_args = click_option_args
         self._click_option_kwargs = click_option_kwargs
         self._config_name = config_name
+        self._fallback = fallback
         self._force = force
         self._password = password
         self._prompt_message = prompt_message
@@ -87,6 +95,10 @@ class Option():
     @property
     def config_name(self):
         return self._config_name
+
+    @property
+    def fallback(self):
+        return self._fallback
 
     @property
     def force(self):
@@ -121,6 +133,8 @@ class Option():
         elif self.config_name in kxicli.common.DEFAULT_VALUES:
             val = kxicli.common.DEFAULT_VALUES[self.config_name]
             print_option_source(f'Using {self.config_name} from embedded default values', val, self.password, silent)
+        elif self.fallback:
+            val = self.fallback()
         else:
             raise click.ClickException(prompt_error_message(self))
 
@@ -285,15 +299,17 @@ image_pull_secret = Option (
 gui_client_secret = Option (
     '--gui-client-secret',
     config_name = key_gui_client_secret,
-    default=lambda: default_val(key_gui_client_secret),
-    help=help_text(key_gui_client_secret)
+    fallback = lambda: generate_password(),
+    help = help_text(key_gui_client_secret),
+    password = True
 )
 
 operator_client_secret = Option (
     '--operator-client-secret',
     config_name = key_operator_client_secret,
-    default=lambda: default_val(key_operator_client_secret),
-    help=help_text(key_operator_client_secret)
+    fallback = lambda: generate_password(),
+    help = help_text(key_operator_client_secret),
+    password = True
 )
 
 keycloak_secret = Option (

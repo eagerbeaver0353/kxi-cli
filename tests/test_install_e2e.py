@@ -39,12 +39,14 @@ test_operator_chart = 'kx-insights/kxi-operator'
 test_install_secret = 'test-install-secret'
 
 test_k8s_config = str(Path(__file__).parent / 'files' / 'test-kube-config')
-test_cli_config_static = str(Path(__file__).parent / 'files' / 'test-cli-config')
+test_cli_config_static = common.config.config_file
 expected_test_output_file = str(Path(__file__).parent / 'files' / 'output-values.yaml')
 test_output_file_lic_env_var = str(Path(__file__).parent / 'files' / 'output-values-license-as-env-var.yaml')
 test_output_file_lic_on_demand = str(Path(__file__).parent / 'files' / 'output-values-license-on-demand.yaml')
 test_output_file_manual_ingress = str(Path(__file__).parent / 'files' / 'output-values-manual-ingress-secret.yaml')
 test_output_file_updated_hostname = str(Path(__file__).parent / 'files' / 'output-values-updated-hostname.yaml')
+test_output_file_updated_passwords_config = str(Path(__file__).parent / 'files' / 'output-values-updated-client-passwords.yaml')
+test_output_file_updated_passwords_cmd_line = str(Path(__file__).parent / 'files' / 'output-values-updated-client-passwords-from-command-line.yaml')
 test_val_file_shared_keycloak = str(Path(__file__).parent / 'files' / 'test-values-shared-keycloak.yaml')
 test_asm_file = str(Path(__file__).parent / 'files' / 'assembly-v1.yaml')
 test_asm_file2 = str(Path(__file__).parent / 'files' / 'assembly2-v1.yaml')
@@ -313,6 +315,19 @@ def mock__delete_assembly(namespace, name, wait, force):
     return True
 
 
+def mocked_generate_password():
+    return 'aRandomPassword'
+
+
+def mock_generate_password(mocker):
+    mocker.patch('kxicli.options.generate_password', mocked_generate_password)
+
+
+def setup_mocks(mocker):
+    mock_secret_helm_add(mocker)
+    mock_create_namespace(mocker)
+    mock_generate_password(mocker)
+
 def upgrades_mocks(mocker):
     mock_subprocess_run(mocker)
     mock_create_namespace(mocker)
@@ -326,11 +341,12 @@ def upgrades_mocks(mocker):
 
 
 def install_setup_output_check(mocker, test_cfg, expected_exit_code):
-    mock_secret_helm_add(mocker)
-    mock_create_namespace(mocker)
+    setup_mocks(mocker)
     with temp_test_output_file() as test_output_file, temp_config_file() as test_cli_config:
         cmd = ['install', 'setup', '--output-file', test_output_file]
-        run_cli(cmd, test_cfg, test_cli_config, test_output_file, expected_exit_code)                            
+        run_cli(cmd, test_cfg, test_cli_config, test_output_file, expected_exit_code)
+
+
 def run_cli(cmd, test_cfg, cli_config = None, output_file = None, expected_exit_code = 0):
     runner = CliRunner()
     with runner.isolated_filesystem():
@@ -353,12 +369,58 @@ def test_install_setup_when_using_existing_docker_creds(mocker):
     }
     install_setup_output_check(mocker, test_cfg, 0)
 
-def test_install_setup_when_generating_random_passwords(mocker):
+
+def test_install_setup_when_reading_client_passwords_from_cli_config(mocker):
+    setup_mocks(mocker)
+
+    common.config.config_file = os.path.dirname(__file__) + '/files/test-cli-config-client-secrets'
     test_cfg = {
-        'provide_gui_secret': 'n',
-        'provide_operator_secret': 'n'
+        'gui_secret_source': 'config',
+        'operator_secret_source': 'config'
     }
-    install_setup_output_check(mocker, test_cfg, 0)
+    with temp_test_output_file() as test_output_file, temp_config_file() as test_cli_config:
+        cmd = ['install', 'setup', '--output-file', test_output_file]
+        run_cli(cmd, test_cfg, test_cli_config, test_output_file, 0)
+
+        assert compare_files(test_output_file, test_output_file_updated_passwords_config)
+        with open(test_cli_config, "r") as f:
+            assert f.read() == """[default]
+hostname = https://test.kx.com
+namespace = test
+client.id = client
+client.secret = secret
+guiClientSecret = gui-secret
+operatorClientSecret = operator-secret
+"""    
+    common.config.load_config("default")
+
+
+def test_install_setup_when_reading_client_passwords_from_command_line(mocker):
+    setup_mocks(mocker)
+
+    common.config.config_file = os.path.dirname(__file__) + '/files/test-cli-config-client-secrets'
+    test_cfg = {
+        'gui_secret_source': 'command-line',
+        'operator_secret_source': 'command-line'
+    }
+    with temp_test_output_file() as test_output_file, temp_config_file() as test_cli_config:
+        cmd = ['install', 'setup', '--output-file', test_output_file, '--gui-client-secret',
+            'gui-secret-command-line', '--operator-client-secret', 'operator-secret-command-line']
+        run_cli(cmd, test_cfg, test_cli_config, test_output_file, 0)
+
+        assert compare_files(test_output_file, test_output_file_updated_passwords_cmd_line)
+        with open(test_cli_config, "r") as f:
+            assert f.read() == """[default]
+hostname = https://test.kx.com
+namespace = test
+client.id = client
+client.secret = secret
+guiClientSecret = gui-secret-command-line
+operatorClientSecret = operator-secret-command-line
+
+"""    
+    common.config.load_config("default")
+
 
 def test_install_setup_when_secret_exists_but_is_invalid(mocker):
     test_cfg = {
@@ -378,8 +440,7 @@ def test_install_setup_when_secret_exists_but_is_invalid(mocker):
 
 
 def test_install_setup_when_secrets_exist_and_are_valid(mocker):
-    mock_secret_helm_add(mocker)
-    mock_create_namespace(mocker)
+    setup_mocks(mocker)
     mock_validate_secret(mocker)
     with temp_test_output_file() as test_output_file, temp_config_file() as test_cli_config:
         cmd = ['install', 'setup', '--output-file', test_output_file]
@@ -399,15 +460,14 @@ hostname = https://test.kx.com
 namespace = test
 client.id = client
 client.secret = secret
-guiClientSecret = gui-secret
-operatorClientSecret = operator-secret
+guiClientSecret = aRandomPassword
+operatorClientSecret = aRandomPassword
 
 """
 
 
 def test_install_setup_check_output_values_file(mocker):
-    mock_secret_helm_add(mocker)
-    mock_create_namespace(mocker)
+    setup_mocks(mocker)
     with temp_test_output_file() as test_output_file, temp_config_file() as test_cli_config:
         cmd = ['install', 'setup', '--output-file', test_output_file]
         run_cli(cmd, {}, test_cli_config, test_output_file, 0)
@@ -415,8 +475,7 @@ def test_install_setup_check_output_values_file(mocker):
 
 
 def test_install_setup_when_hostname_provided_from_command_line(mocker):
-    mock_secret_helm_add(mocker)
-    mock_create_namespace(mocker)
+    setup_mocks(mocker)
     with temp_test_output_file() as test_output_file, temp_config_file() as test_cli_config:
         cmd = ['install', 'setup', '--output-file', test_output_file, '--hostname', 'https://a-test-hostname.kx.com'] 
         test_cfg = {
@@ -428,8 +487,7 @@ def test_install_setup_when_hostname_provided_from_command_line(mocker):
 
 
 def test_install_setup_ingress_host_is_an_alias_for_hostname(mocker):
-    mock_secret_helm_add(mocker)
-    mock_create_namespace(mocker)
+    setup_mocks(mocker)
     with temp_test_output_file() as test_output_file, temp_config_file() as test_cli_config:
         cmd = ['install', 'setup', '--output-file', test_output_file, '--ingress-host', 'https://a-test-hostname.kx.com'] 
         test_cfg = {
@@ -440,8 +498,7 @@ def test_install_setup_ingress_host_is_an_alias_for_hostname(mocker):
         assert compare_files(test_output_file, test_output_file_updated_hostname)
 
 def test_install_setup_when_chart_repo_provided_from_command_line(mocker):
-    mock_secret_helm_add(mocker)
-    mock_create_namespace(mocker)
+    setup_mocks(mocker)
     test_repo_name='test-repo-command-line'
     test_repo_url='https://test-repo-command-line.kx.com/repository/kx-insights-charts'
     test_repo_username='test-repo-username-command-line'
@@ -463,7 +520,7 @@ def test_install_setup_when_chart_repo_provided_from_command_line(mocker):
 
 
 def test_install_setup_does_not_prompt_when_chart_repo_already_exists(mocker):
-    mock_create_namespace(mocker)
+    setup_mocks(mocker)
     mock_kube_secret_api(mocker, read=raise_not_found)
     mock_helm_repo_list(mocker, name=test_chart_repo_name)
     helm_add_repo_params = ()
@@ -483,8 +540,7 @@ def test_install_setup_does_not_prompt_when_chart_repo_already_exists(mocker):
         assert helm_add_repo_params == ()
 
 def test_install_setup_when_ingress_cert_secret_provided_on_command_line(mocker):
-    mock_secret_helm_add(mocker)
-    mock_create_namespace(mocker)
+    setup_mocks(mocker)
     with temp_test_output_file() as test_output_file, temp_config_file() as test_cli_config:
         cmd = ['install', 'setup', '--output-file', test_output_file, '--ingress-cert-secret', test_ingress_cert_secret] 
         test_cfg = {
@@ -495,8 +551,7 @@ def test_install_setup_when_ingress_cert_secret_provided_on_command_line(mocker)
 
 
 def test_install_setup_when_ingress_cert_and_key_files_provided_on_command_line(mocker):
-    mock_secret_helm_add(mocker)
-    mock_create_namespace(mocker)
+    setup_mocks(mocker)
     with temp_test_output_file() as test_output_file, temp_test_output_file(file_name='tls_crt') as test_cert_filepath, \
         temp_test_output_file(file_name='tls_key') as test_key_filepath, temp_config_file() as test_cli_config:
         shutil.copyfile(test_cert, test_cert_filepath)
@@ -514,8 +569,7 @@ def test_install_setup_when_ingress_cert_and_key_files_provided_on_command_line(
 
 
 def test_install_setup_when_ingress_cert_file_provided_on_command_line(mocker):
-    mock_secret_helm_add(mocker)
-    mock_create_namespace(mocker)
+    setup_mocks(mocker)
     with temp_test_output_file() as test_output_file, temp_test_output_file(file_name='tls_crt') as test_cert_filepath, \
         temp_test_output_file(file_name='tls_key') as test_key_filepath, temp_config_file() as test_cli_config:
         shutil.copyfile(test_cert, test_cert_filepath)
@@ -533,8 +587,7 @@ def test_install_setup_when_ingress_cert_file_provided_on_command_line(mocker):
 
 
 def test_install_setup_when_passed_license_env_var_in_command_line(mocker):
-    mock_secret_helm_add(mocker)
-    mock_create_namespace(mocker)
+    setup_mocks(mocker)
     mock_validate_secret(mocker)
     with temp_test_output_file() as test_output_file, temp_config_file() as test_cli_config:
         cmd = ['install', 'setup', '--output-file', test_output_file, '--license-as-env-var', 'True']
@@ -551,8 +604,7 @@ def test_install_setup_when_passed_license_env_var_in_command_line(mocker):
 
 
 def test_install_setup_when_passed_kc_license_filename(mocker):
-    mock_secret_helm_add(mocker)
-    mock_create_namespace(mocker)
+    setup_mocks(mocker)
     with temp_test_output_file() as test_output_file, temp_config_file() as test_cli_config, temp_test_output_file(
             file_name='kc.lic') as test_kc_lic:
         with open(test_kc_lic, 'w') as f:
@@ -567,8 +619,7 @@ def test_install_setup_when_passed_kc_license_filename(mocker):
 
 
 def test_install_setup_when_providing_license_secret(mocker):
-    mock_secret_helm_add(mocker)
-    mock_create_namespace(mocker)
+    setup_mocks(mocker)
     mock_validate_secret(mocker)
     with temp_test_output_file() as test_output_file, temp_config_file() as test_cli_config:
         cmd = ['install', 'setup', '--output-file', test_output_file, '--license-secret', common.get_default_val('license.secret')]
@@ -585,8 +636,7 @@ def test_install_setup_when_providing_license_secret(mocker):
 
 
 def test_install_setup_overwrites_when_values_file_exists(mocker):
-    mock_secret_helm_add(mocker)
-    mock_create_namespace(mocker)
+    setup_mocks(mocker)
     with temp_test_output_file() as test_output_file, temp_config_file() as test_cli_config:
         with open(test_output_file, 'w') as f:
             f.write(TEST_VALUES_FILE)
@@ -602,8 +652,7 @@ def test_install_setup_overwrites_when_values_file_exists(mocker):
 
 
 def test_install_setup_creates_new_when_values_file_exists(mocker):
-    mock_secret_helm_add(mocker)
-    mock_create_namespace(mocker)
+    setup_mocks(mocker)
     with temp_test_output_file() as test_output_file, temp_config_file() as test_cli_config:
         with open(test_output_file, 'w') as f:
             f.write(TEST_VALUES_FILE)
@@ -629,9 +678,9 @@ def test_install_setup_creates_new_when_values_file_exists(mocker):
 
 
 def test_install_setup_errors_with_no_kube_context(mocker):
+    setup_mocks(mocker)
     mock_list_kube_config_contexts(mocker)
     mock_load_kube_config_incluster(mocker)
-    mock_create_namespace(mocker)
     with temp_test_output_file() as test_output_file, temp_config_file() as test_cli_config:
         runner = CliRunner()
         with runner.isolated_filesystem():
@@ -644,10 +693,10 @@ Error: Kubernetes cluster config not found
 
 
 def test_install_setup_runs_in_cluster(mocker):
+    setup_mocks(mocker)
     mock_list_kube_config_contexts(mocker)
     mocker.patch('kubernetes.config.load_incluster_config')
     mocker.patch('kxicli.options.get_namespace', lambda: 'test')
-    mock_create_namespace(mocker)
     test_cfg = {
         'incluster': True
     }
@@ -685,12 +734,12 @@ Installing chart kx-insights/insights version 1.2.3 with values file from {test_
 
 
 def test_install_run_when_no_file_provided(mocker):
+    setup_mocks(mocker)
     mock_helm_repo_list(mocker, name=test_chart_repo_name)
     mock_kube_secret_api(mocker, read=mocked_read_namespaced_secret_return_values)
     mock_subprocess_run(mocker)
     mocker.patch('subprocess.check_output', mocked_helm_list_returns_empty_json)
     mock_set_insights_operator_and_crd_installed_state(mocker, False, False, False)
-    mock_create_namespace(mocker)
     mock_get_operator_version(mocker)
     mock_validate_secret(mocker)
     with temp_test_output_file() as test_output_file, temp_config_file() as test_cli_config:
@@ -1373,8 +1422,7 @@ KX Insights installation not found
 
 
 def test_install_when_not_deploying_keycloak(mocker):
-    mock_secret_helm_add(mocker)
-    mock_create_namespace(mocker)
+    setup_mocks(mocker)
     with temp_test_output_file() as test_output_file, temp_config_file() as test_cli_config:
         shutil.copyfile(expected_test_output_file, test_output_file)
         # Ideally would patch sys.argv with args but can't find a way to get this to stick
