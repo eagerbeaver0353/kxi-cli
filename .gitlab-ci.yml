@@ -43,7 +43,7 @@ build dist:
     - python3 -m pip config set install.extra-index-url "${KX_PIP_EXTRA_INSTALL_URL}"
     - python3 -m pip install --upgrade build
   script:
-    - python3 -m build
+    - SETUPTOOLS_SCM_DEBUG=1 python3 -m build
   artifacts:
     paths:
       - dist
