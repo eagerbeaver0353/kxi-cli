@@ -149,7 +149,6 @@ pages:
   rules:
     - if: '$CI_COMMIT_BRANCH == "$CI_DEFAULT_BRANCH"'
       when: always
-    - when: never
 
 sonarqube-check:
   stage: sonarqube
