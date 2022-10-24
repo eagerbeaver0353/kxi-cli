@@ -45,13 +45,7 @@ markdown_extensions:
       permalink: false
   - mkdocs-click
 
-plugins:
-  - search
-
 theme:
-  # This theme dir is the same as the custom_theme dir from documentation/code-kx-com
-  # It's copied in here directly until it can be replaced with a submodule or another mechanism for doingt this
-  custom_dir: custom_theme
   favicon: https://code.kx.com/favicon.ico
   font: false
   name: 'material'

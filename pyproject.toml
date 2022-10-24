@@ -36,6 +36,9 @@ dev = [
 ]
 doc = [
     "mkdocs>1.2.4",
+    "mkdocs-material",
+    "mkdocs-material-extensions",
+    "pymdown-extensions",
     "mkdocs-click"
 ]
 
