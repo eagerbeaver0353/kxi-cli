@@ -134,9 +134,36 @@ publish package external kxi-pypi-public:
     - if: $CI_COMMIT_TAG
       when: manual
 
+pages:merge-request:
+  image: python:3.8
+  stage: docs
+  variables:
+    PREVIEW_ROOT: "https://kxdev.gitlab.io/-/kxinsights/kxi-cli"
+  environment:
+    name: review/$CI_COMMIT_REF_NAME
+    url: "$PREVIEW_ROOT/-/jobs/$CI_JOB_ID/artifacts/public/cli/index.html"
+    auto_stop_in: 3 days
+  before_script:
+    - python3 -m pip config set install.extra-index-url "${KX_PIP_EXTRA_INSTALL_URL}"
+    - pip install .[doc]
+  script:
+    - mkdocs build --strict
+    - mv site public/
+  artifacts:
+    paths:
+      - public
+  rules:
+    # Run job on Merge Request
+    - if: $CI_MERGE_REQUEST_ID
+
 pages:
   image: python:3.8
   stage: docs
+  variables:
+    PREVIEW_ROOT: "https://kxdev.gitlab.io/-/kxinsights/kxi-cli"
+  environment:
+    name: main
+    url: "$PREVIEW_ROOT/-/jobs/$CI_JOB_ID/artifacts/public/cli/index.html"
   before_script:
     - python3 -m pip config set install.extra-index-url "${KX_PIP_EXTRA_INSTALL_URL}"
     - pip install .[doc]
@@ -148,7 +175,6 @@ pages:
       - public
   rules:
     - if: '$CI_COMMIT_BRANCH == "$CI_DEFAULT_BRANCH"'
-      when: always
 
 sonarqube-check:
   stage: sonarqube
