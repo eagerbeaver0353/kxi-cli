@@ -5,6 +5,7 @@ import io
 import json
 import kubernetes as k8s
 import pytest
+import subprocess
 import yaml
 import click
 
@@ -365,6 +366,18 @@ def test_insights_installed_returns_false_when_does_not_exist(mocker):
     assert install.insights_installed('insights', test_ns) == False
 
 
+def test_helm_repo_list_when_repo_exists(mocker):
+    expected_result = mocked_helm_repo_list(test_chart_repo_name, test_chart_repo_url)
+    helm_response = subprocess.CompletedProcess(args=['helm', 'repo', 'list', '--output', 'json'], returncode=0, stdout=json.dumps(expected_result))
+    mocker.patch('subprocess.run').return_value = helm_response
+    assert install.helm_repo_list() == expected_result
+
+
+def test_helm_repo_list_returns_empty_list_when_repo_search_errors(mocker):
+    mocker.patch('subprocess.run').side_effect = subprocess.CalledProcessError(1, ['helm', 'repo', 'list'])
+    assert install.helm_repo_list() == []
+
+
 def test_insights_check_helm_repo_exists(mocker):
     mocker.patch('kxicli.commands.install.helm_repo_list', lambda: mocked_helm_repo_list(test_chart_repo_name, test_chart_repo_url))
     assert install.check_helm_repo_exists(test_chart_repo_name) == None
@@ -373,6 +386,13 @@ def test_insights_check_helm_repo_exists(mocker):
     assert isinstance(e.value, click.ClickException)
     assert 'Cannot find local chart repo a-different-repo' in e.value.message
 
+
+def test_insights_check_helm_repo_exists_returns_error_when_repo_does_not_exist(mocker):
+    mocker.patch('subprocess.run').side_effect = subprocess.CalledProcessError(1, ['helm', 'repo', 'list'])
+    with pytest.raises(Exception) as e:
+        install.check_helm_repo_exists(test_chart_repo_name)
+    assert isinstance(e.value, click.ClickException)
+    assert f'Cannot find local chart repo {test_chart_repo_name}' in e.value.message
 
 
 def test_operator_installed_returns_true_when_already_exists(mocker):

@@ -931,9 +931,10 @@ def helm_repo_list():
     try:
         res = subprocess.run(
             ['helm', 'repo', 'list', '--output', 'json'], check=True, capture_output=True, text=True)
+        return json.loads(res.stdout)
     except subprocess.CalledProcessError as e:
         click.echo(e)
-    return json.loads(res.stdout)
+        return []
 
 
 def check_helm_repo_exists(chart_repo_name):
