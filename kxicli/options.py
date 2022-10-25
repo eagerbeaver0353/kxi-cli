@@ -389,3 +389,16 @@ install_config_secret = Option (
     config_name = key_install_config_secret,
     help=help_text(key_install_config_secret)
 )
+
+assembly_name = Option (
+    '--name',
+    help='Name of the assembly',
+    required=True
+)
+
+assembly_wait = Option (
+    '--wait',
+    '--wait-for-ready',
+    help='Wait for all pods',
+    is_flag=True
+)

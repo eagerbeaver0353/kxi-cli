@@ -30,6 +30,10 @@ arg_assembly_backup_filepath = partial(
     type=click.STRING
 )
 
+arg_assembly_name = options.assembly_name.decorator()
+
+arg_assembly_wait = options.assembly_wait.decorator()
+
 arg_output_file = options.output_file.decorator()
 
 arg_license_secret = options.license_secret.decorator()
