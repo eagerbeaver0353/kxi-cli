@@ -12,7 +12,8 @@ import yaml
 
 from kxicli import common
 from kxicli import log
-from kxicli.commands.common.arg import arg_force, arg_namespace
+from kxicli.commands.common.arg import arg_assembly_name, arg_assembly_wait, \
+    arg_force, arg_namespace
 from kxicli.common import get_default_val as default_val
 from kxicli.common import get_help_text as help_text
 from kxicli.options import namespace as options_namespace
@@ -323,7 +324,7 @@ def backup(namespace, filepath, force):
 @assembly.command()
 @arg_namespace()
 @arg_filepath()
-@click.option('--wait', is_flag=True, help='Wait for all pods to be running')
+@arg_assembly_wait()
 def create(namespace, filepath, wait):
     """Create an assembly given an assembly file"""
 
@@ -334,14 +335,14 @@ def create(namespace, filepath, wait):
 
 @assembly.command()
 @arg_namespace()
-@click.option('--name', required=True, help='Name of the assembly get the status of')
-@click.option('--wait-for-ready', is_flag=True, help='Wait for assembly to reach "Ready" state')
-def status(namespace, name, wait_for_ready):
+@arg_assembly_name()
+@arg_assembly_wait()
+def status(namespace, name, wait):
     """Print status of the assembly"""
 
     namespace = options_namespace.prompt(namespace)
 
-    if wait_for_ready:
+    if wait:
         with click.progressbar(range(10), label='Waiting for assembly to enter "Ready" state') as bar:
             for n in bar:
                 time.sleep((2 ** n) + (random.randint(0, 1000) / 1000))
@@ -366,8 +367,8 @@ def list(namespace):
 
 @assembly.command()
 @arg_namespace()
-@click.option('--name', required=True, help='Name of the assembly to torn down')
-@click.option('--wait', is_flag=True, help='Wait for all pods to be torn down')
+@arg_assembly_name()
+@arg_assembly_wait()
 @arg_force()
 def teardown(namespace, name, wait, force):
     """Tears down an assembly given its name"""
@@ -379,8 +380,8 @@ def teardown(namespace, name, wait, force):
 
 @assembly.command()
 @arg_namespace()
-@click.option('--name', required=True, help='Name of the assembly to torn down')
-@click.option('--wait', is_flag=True, help='Wait for all pods to be torn down')
+@arg_assembly_name()
+@arg_assembly_wait()
 @arg_force()
 def delete(namespace, name, wait, force):
     """Deletes an assembly given its name"""
