@@ -301,7 +301,7 @@ def run(ctx, namespace, chart_repo_name, chart_repo_url, chart_repo_username,
     insights_installed_charts = get_installed_charts(release, namespace)
     if len(insights_installed_charts) > 0:
         if click.confirm(f'KX Insights is already installed with version {insights_installed_charts[0]["chart"]}. Would you like to upgrade to version {version}?'):
-            return perform_upgrade(namespace, release, chart_repo_name, default_val('assembly.backup.file'), version,
+            return perform_upgrade(namespace, release, chart_repo_name, None, version,
                                    operator_version, image_pull_secret, license_secret, install_config_secret,
                                    filepath, force)
         else:
@@ -386,7 +386,8 @@ def perform_upgrade(namespace, release, chart_repo_name, assembly_backup_filepat
         raise e
 
     click.secho(phrases.upgrade_asm_reapply, bold=True)
-    assembly._create_assemblies_from_file(namespace=namespace, filepath=assembly_backup_filepath)
+    if all(assembly._create_assemblies_from_file(namespace=namespace, filepath=assembly_backup_filepath)):
+        os.remove(assembly_backup_filepath)
 
     if upgraded:
         click.secho(str.format(phrases.upgrade_complete, version=version), bold=True)

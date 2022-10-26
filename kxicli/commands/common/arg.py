@@ -24,11 +24,9 @@ arg_release = partial(
 
 arg_namespace = options.namespace.decorator()
 
-arg_assembly_backup_filepath = partial(
-    click.option, '--assembly-backup-filepath', default=lambda: default_val('assembly.backup.file'),
-    help=help_text('assembly.backup.file'),
-    type=click.STRING
-)
+arg_assembly_backup_filepath = options.assembly_backup_filepath.decorator()
+
+arg_assembly_filepath = options.assembly_filepath.decorator()
 
 arg_assembly_name = options.assembly_name.decorator()
 

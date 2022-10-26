@@ -194,6 +194,12 @@ def test_options_chart_repo_name_decorator():
     assert options.chart_repo_name.decorator().keywords == {'help': 'Name for chart repository'}
 
 
+def test_assembly_backup_filepath_decorator():
+    assert options.assembly_backup_filepath.decorator().func == click.option
+    assert options.assembly_backup_filepath.decorator().args == ('--assembly-backup-filepath',)
+    assert options.assembly_backup_filepath.decorator().keywords == {'help': 'Filepath to store state of running assemblies'}
+
+
 def test_options_chart_repo_username_prompt_from_command_line():
     # Result retrieved from --chart-repo-username command line option when provided
     assert options.chart_repo_username.prompt('test-repo-user') == 'test-repo-user'

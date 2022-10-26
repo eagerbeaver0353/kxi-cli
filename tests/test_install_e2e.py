@@ -308,6 +308,7 @@ def mock_create_assembly(namespace, body, wait=None):
     asm_name = body['metadata']['name']
     print(f'Custom assembly resource {asm_name} created!')
     running_assembly[asm_name] = True
+    return True
 
 def mock__delete_assembly(namespace, name, wait, force):
     global delete_assembly_args
@@ -1526,9 +1527,6 @@ Upgrade to version 1.2.3 complete
 """
     assert result.exit_code == 0
     assert result.output == expected_output
-    with open(test_asm_backup) as f:
-        expect = yaml.safe_load(f)
-        assert expect == {'items': [test_asm_file_contents]}
     assert subprocess_run_command == [
         ['helm', 'repo', 'update'],
         ['helm', 'upgrade', '--install', '-f', '-', 'insights', test_operator_chart, '--version', '1.2.3', '--namespace',
@@ -1541,7 +1539,45 @@ Upgrade to version 1.2.3 complete
     assert operator_installed_flag == True
     assert crd_exists_flag == True
     assert running_assembly[test_asm_name] == True
-    os.remove(test_asm_backup)
+    assert not os.path.isfile(test_asm_backup)
+
+
+def test_upgrade_without_backup_filepath(mocker):
+    upgrades_mocks(mocker)
+    mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
+    mock_get_operator_version(mocker)
+    mock_validate_secret(mocker)
+    mock_helm_env(mocker)
+    mock_helm_fetch(mocker)
+    mock_kube_crd_api(mocker)
+    with open(test_val_file, 'r') as values_file:
+        values = str(values_file.read())
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        # these are responses to the various prompts
+        user_input = f"""y
+y
+y
+y
+y
+"""
+        result = runner.invoke(main.cli,
+            ['install', 'upgrade', '--version', '1.2.3', '--install-config-secret', test_install_secret],
+            input=user_input
+        )
+    assert result.exit_code == 0
+    assert subprocess_run_command == [
+        ['helm', 'repo', 'update'],
+        ['helm', 'upgrade', '--install', '-f', '-', 'insights', test_operator_chart, '--version', '1.2.3', '--namespace',
+         'kxi-operator'],
+        ['helm', 'upgrade', '--install', '-f', '-', 'insights', test_chart, '--version', '1.2.3', '--namespace', test_namespace]
+    ]
+    assert subprocess_run_args == (True, values, True)
+    assert delete_crd_params == []
+    assert insights_installed_flag == True
+    assert operator_installed_flag == True
+    assert crd_exists_flag == True
+    assert running_assembly[test_asm_name] == True
 
 
 def test_upgrade_skips_to_install_when_not_running(mocker):
@@ -1587,15 +1623,6 @@ def test_upgrade_when_user_declines_to_teardown_assembly(mocker):
 
     if os.path.exists(test_asm_backup):
         os.remove(test_asm_backup)
-    with open(test_asm_file) as f:
-        file = yaml.safe_load(f)
-        last_applied = file['metadata']['annotations'][CONFIG_ANNOTATION]
-        test_asm_file_contents = json.loads(last_applied)
-    
-    with open(test_asm_file2) as f:
-        file = yaml.safe_load(f)
-        last_applied = file['metadata']['annotations'][CONFIG_ANNOTATION]
-        test_asm_file_contents2 = json.loads(last_applied)
 
     runner = CliRunner()
     with runner.isolated_filesystem():
@@ -1631,14 +1658,6 @@ Submitting assembly {test_asm_name2}
 Custom assembly resource {test_asm_name2} created!
 """
     assert result.exit_code == 0
-    with open(test_asm_backup) as f:
-        expect = yaml.safe_load(f)
-        assert expect == {'items':
-            [
-                test_asm_file_contents,
-                test_asm_file_contents2
-            ]
-        }
     assert subprocess_run_command == []
     assert delete_crd_params == []
     assert insights_installed_flag == True
@@ -1647,7 +1666,7 @@ Custom assembly resource {test_asm_name2} created!
     assert running_assembly[test_asm_name] == True
     assert running_assembly[test_asm_name2] == True
     assert result.output == expected_output
-    os.remove(test_asm_backup)
+    assert not os.path.isfile(test_asm_backup)
 
 
 def test_upgrade_reapplies_assemblies_when_upgrade_fails(mocker):
@@ -1712,6 +1731,7 @@ Custom assembly resource {test_asm_name} created!
     assert operator_installed_flag == True
     assert crd_exists_flag == True
     assert running_assembly[test_asm_name] == True
+    assert os.path.isfile(test_asm_backup)
     os.remove(test_asm_backup)
 
 def test_install_run_upgrades_when_already_installed(mocker):
@@ -1723,7 +1743,7 @@ def test_install_run_upgrades_when_already_installed(mocker):
     mock_kube_crd_api(mocker)
     mock_helm_env(mocker)
     mock_helm_fetch(mocker)
-    test_asm_backup = common.get_default_val('assembly.backup.file')
+    mocker.patch('kxicli.commands.assembly._backup_filepath', lambda filepath, force: test_asm_backup)
 
     runner = CliRunner()
     user_input = f"""y
