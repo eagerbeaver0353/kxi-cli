@@ -141,13 +141,16 @@ class Option():
         return val
 
 
-    def decorator(self):
+    def decorator(self, click_option_args=None):
         if self.force:
             self.click_option_kwargs['default'] = lambda: default_val(self.config_name)
+
+        if not click_option_args:
+            click_option_args = self.click_option_args
         
         return partial(
             click.option,
-            *self.click_option_args,
+            *click_option_args,
             **self.click_option_kwargs
         )
 
@@ -390,6 +393,12 @@ install_config_secret = Option (
     help=help_text(key_install_config_secret)
 )
 
+assembly_backup_filepath = Option (
+    '--assembly-backup-filepath',
+    config_name = key_assembly_backup_file,
+    help = help_text(key_assembly_backup_file),
+    )
+
 assembly_name = Option (
     '--name',
     help='Name of the assembly',
@@ -401,4 +410,11 @@ assembly_wait = Option (
     '--wait-for-ready',
     help='Wait for all pods',
     is_flag=True
+)
+
+assembly_filepath = Option (
+    '--filepath',
+    config_name = 'assembly.filepath',
+    help='Path to the assembly file',
+    prompt_message = 'Please enter a path to the assembly file'
 )

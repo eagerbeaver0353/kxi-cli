@@ -250,7 +250,7 @@ def test_create_assembly_submits_to_k8s_api(mocker):
     with open(test_asm_file) as f:
         test_asm = yaml.safe_load(f)
 
-    assembly._create_assembly(namespace='test_ns', body=test_asm)
+    assert assembly._create_assembly(namespace='test_ns', body=test_asm)
 
     assert appended_args == [
         {'group': assembly.API_GROUP, 'version': PREFERRED_VERSION, 'namespace': 'test_ns', 'plural': 'assemblies',
@@ -262,7 +262,7 @@ def test_create_assemblies_from_file_creates_one_assembly(mocker):
     with open(test_asm_file) as f:
         test_asm = yaml.safe_load(f)
 
-    assembly._create_assemblies_from_file(namespace='test_ns', filepath=test_asm_file)
+    assert assembly._create_assemblies_from_file(namespace='test_ns', filepath=test_asm_file)
 
     assert appended_args == [
         {'group': assembly.API_GROUP, 'version': PREFERRED_VERSION, 'namespace': 'test_ns', 'plural': 'assemblies',
@@ -276,8 +276,8 @@ def test_create_assemblies_from_file_creates_two_assemblies(mocker):
 
     # Call _backup_assemblies to create file
     with temp_asm_file() as test_asm_list_file:
-        assembly._backup_assemblies(namespace='test_ns', filepath=test_asm_list_file, force=False)
-        assembly._create_assemblies_from_file(namespace='test_ns', filepath=test_asm_list_file)
+        assert assembly._backup_assemblies(namespace='test_ns', filepath=test_asm_list_file, force=False) == test_asm_list_file
+        assert assembly._create_assemblies_from_file(namespace='test_ns', filepath=test_asm_list_file)
 
         with open(test_asm_list_file, 'rb') as f:
             assert yaml.full_load(f) == ASSEMBLY_BACKUP_LIST
@@ -300,8 +300,8 @@ def test_create_assemblies_from_file_removes_resourceVersion(mocker):
 
     # Call _backup_assemblies to create file
     with temp_asm_file() as test_asm_list_file:
-        assembly._backup_assemblies(namespace='test_ns', filepath=test_asm_list_file, force=False)
-        assembly._create_assemblies_from_file(namespace='test_ns', filepath=test_asm_list_file)
+        assert assembly._backup_assemblies(namespace='test_ns', filepath=test_asm_list_file, force=False) == test_asm_list_file
+        assert assembly._create_assemblies_from_file(namespace='test_ns', filepath=test_asm_list_file)
 
         assert appended_args == [
             {'group': assembly.API_GROUP, 'version': PREFERRED_VERSION, 'namespace': 'test_ns', 'plural': 'assemblies',
@@ -319,8 +319,8 @@ def test_create_assemblies_from_file_creates_when_one_already_exists(mocker):
 
     # Call _backup_assemblies to create file
     with temp_asm_file() as test_asm_list_file:
-        assembly._backup_assemblies(namespace='test_ns', filepath=test_asm_list_file, force=False)
-        assembly._create_assemblies_from_file(namespace='test_ns', filepath=test_asm_list_file)
+        assert assembly._backup_assemblies(namespace='test_ns', filepath=test_asm_list_file, force=False)  == test_asm_list_file
+        assert assembly._create_assemblies_from_file(namespace='test_ns', filepath=test_asm_list_file)
 
         with open(test_asm_list_file, 'rb') as f:
             assert yaml.full_load(f) == ASSEMBLY_BACKUP_LIST
@@ -565,7 +565,8 @@ def test_cli_assembly_create_from_file(mocker):
     result = TEST_CLI.invoke(main.cli, ['assembly', 'create', '--filepath', test_asm_file])
 
     assert result.exit_code == 0
-    assert result.output == f"""Submitting assembly from {test_asm_file}
+    assert result.output == f"""Using assembly.filepath from command line option: {test_asm_file}
+Submitting assembly from {test_asm_file}
 Custom assembly resource basic-assembly created!
 """
     current_ns = appended_args[0]['namespace']
@@ -585,6 +586,7 @@ def test_cli_assembly_create_with_context_not_set(mocker):
 
     assert result.exit_code == 0
     assert result.output == f"""Using namespace from config file {common.config.config_file}: test
+Using assembly.filepath from command line option: {test_asm_file}
 Submitting assembly from {test_asm_file}
 Custom assembly resource basic-assembly created!
 """
@@ -603,8 +605,35 @@ def test_cli_assembly_create_and_wait(mocker):
     result = TEST_CLI.invoke(main.cli, ['assembly', 'create', '--filepath', test_asm_file, '--wait'])
 
     assert result.exit_code == 0
-    assert result.output == f"""Submitting assembly from {test_asm_file}
+    assert result.output == f"""Using assembly.filepath from command line option: {test_asm_file}
+Submitting assembly from {test_asm_file}
 Waiting for assembly to enter "Ready" state
+Custom assembly resource basic-assembly created!
+"""
+    current_ns = appended_args[0]['namespace']
+    assert appended_args == [
+        {'group': assembly.API_GROUP, 'version': PREFERRED_VERSION, 'namespace': current_ns, 'plural': 'assemblies',
+         'body': assembly._add_last_applied_configuration_annotation(test_asm)}]
+
+
+def test_cli_assembly_create_without_filepath(mocker):
+    mocker.patch('kxicli.options._is_interactive_session', return_false)
+    result = TEST_CLI.invoke(main.cli, ['assembly', 'create'])
+    assert result.exit_code == 1
+    assert result.output == f'Error: Could not find expected option. Please set command line argument --filepath or configuration value assembly.filepath in config file {common.config.config_file}\n'
+
+
+def test_cli_assembly_create_without_filepath_interactive_session(mocker):
+    with open(test_asm_file) as f:
+        test_asm = yaml.safe_load(f)
+    mock_create_assemblies(mocker.patch(CUSTOM_OBJECT_API).return_value)
+    mocker.patch('kxicli.options._is_interactive_session', return_true)
+
+    result = TEST_CLI.invoke(main.cli, ['assembly', 'create'], input=test_asm_file)
+
+    assert result.exit_code == 0
+    assert result.output == f"""Please enter a path to the assembly file: {test_asm_file}
+Submitting assembly from {test_asm_file}
 Custom assembly resource basic-assembly created!
 """
     current_ns = appended_args[0]['namespace']
