@@ -1,3 +1,4 @@
+import click
 import sys
 
 import kubernetes as k8s
@@ -15,5 +16,4 @@ def create_namespace(name):
     except k8s.client.rest.ApiException as exception:
         # 409 is a conflict, this occurs if the namespace already exists
         if not exception.status == 409:
-            log.error(f'Exception when trying to create namespace {exception}')
-            sys.exit(1)
+            raise click.ClickException(f'Exception when trying to create namespace {exception}')

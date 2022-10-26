@@ -147,9 +147,7 @@ def get_access_token(hostname, client_id, client_secret, realm):
     if r:
         return r.json()['access_token']
 
-    log.error('Failed to request access token')
-    click.echo(r.text)
-    sys.exit(1)
+    raise click.ClickException('Failed to request access token')
 
 
 def get_admin_token(hostname, username, password):
@@ -170,9 +168,7 @@ def get_admin_token(hostname, username, password):
     if r:
         return r.json()['access_token']
 
-    log.error('Failed to request admin access token')
-    click.echo(r.text)
-    sys.exit(1)
+    raise click.ClickException('Failed to request admin access token')
 
 
 def load_kube_config():

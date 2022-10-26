@@ -186,3 +186,17 @@ def test_load_incluster_pass_load_fails(mocker, capsys):
     mock_load_kube_config(mocker)
     res = common.load_kube_config()         
     assert res is None  
+
+def test_get_access_token_raises_exception(mocker):
+    mocker.patch('requests.post', return_none)
+    with pytest.raises(Exception) as e:
+        common.get_access_token(hostname='test_host', client_id='1234', client_secret='super-secret', realm='test')
+    assert isinstance(e.value, click.ClickException)
+    assert e.value.message == 'Failed to request access token'
+
+def test_get_admin_token_raises_exception(mocker):
+    mocker.patch('requests.post', return_none)
+    with pytest.raises(Exception) as e:
+        common.get_admin_token(hostname='test_host', username='username', password='password')
+    assert isinstance(e.value, click.ClickException)
+    assert e.value.message == 'Failed to request admin access token'

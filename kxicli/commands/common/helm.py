@@ -130,8 +130,7 @@ def helm_install(release, chart, values_file, values_secret, version=None, names
         if values_secret:
             click.echo(f'Installing chart {chart}{version_msg} with values from secret')
         else:
-            click.echo(f'Must provide one of values file or secret. Exiting install')
-            sys.exit(1)
+            raise click.ClickException(f'Must provide one of values file or secret. Exiting install')
 
     if namespace:
         base_command = base_command + ['--namespace', namespace]

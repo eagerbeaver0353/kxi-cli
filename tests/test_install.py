@@ -12,9 +12,9 @@ import click
 from kxicli import common
 from kxicli.commands import install
 from kxicli.resources import secret
-from utils import IPATH_KUBE_COREV1API, test_secret_data, test_secret_type, test_secret_key, \
+from utils import IPATH_KUBE_COREV1API, temp_file, test_secret_data, test_secret_type, test_secret_key, \
     mock_kube_deployment_api, mocked_kube_deployment_list, mock_kube_secret_api, mocked_read_namespaced_secret, \
-    raise_not_found, test_val_file, mock_validate_secret, mock_helm_env, mocked_helm_repo_list
+    raise_conflict, raise_not_found, test_val_file, mock_validate_secret, mock_helm_env, mocked_helm_repo_list
 from test_install_e2e import mocked_read_namespaced_secret_return_values, test_vals
 from const import test_user, test_pass, test_lic_file, test_chart_repo_name, test_chart_repo_url
 
@@ -222,6 +222,35 @@ def test_read_secret_returns_empty_when_does_not_exist(mocker):
     assert res == None
 
 
+def test_copy_secret(mocker):
+    mock = mocker.patch(IPATH_KUBE_COREV1API)
+    assert install.copy_secret(test_secret, test_ns, 'to_ns') == None
+
+
+def test_copy_secret_404_exception_when_reading_secret(mocker):
+    mock = mocker.patch(IPATH_KUBE_COREV1API)
+    mock.return_value.read_namespaced_secret.side_effect = raise_not_found
+    with pytest.raises(Exception) as e:
+        install.copy_secret(test_secret, test_ns, 'to_ns')
+    assert isinstance(e.value, click.ClickException)
+    assert 'Exception when trying to get secret (404)\nReason: None\n' in e.value.message
+
+
+def test_copy_secret_404_exception_when_creating_secret(mocker):
+    mock = mocker.patch(IPATH_KUBE_COREV1API)
+    mock.return_value.create_namespaced_secret.side_effect = raise_not_found
+    with pytest.raises(Exception) as e:
+        install.copy_secret(test_secret, test_ns, 'to_ns')
+    assert isinstance(e.value, click.ClickException)
+    assert 'Exception when trying to create secret (404)\nReason: None\n' in e.value.message
+
+
+def test_copy_secret_409_exception_when_creating_secret_does_not_raise_exception(mocker):
+    mock = mocker.patch(IPATH_KUBE_COREV1API)
+    mock.return_value.create_namespaced_secret.side_effect = raise_conflict
+    assert install.copy_secret(test_secret, test_ns, 'to_ns') == None
+
+
 def test_get_install_config_secret_returns_decoded_secret(mocker):
     mock_kube_secret_api(mocker, read=mocked_read_namespaced_secret_return_values)
 
@@ -322,10 +351,10 @@ def test_get_install_values_returns_values_from_secret(mocker):
 def test_get_install_values_exits_when_secret_not_found(mocker):
     mock = mocker.patch(IPATH_KUBE_COREV1API)
     mock.return_value.read_namespaced_secret.side_effect = raise_not_found
-    with pytest.raises(SystemExit) as pytest_wrapped_e:
+    with pytest.raises(Exception) as e:
         install.get_install_values(secret.Secret(test_ns, test_secret))
-    assert pytest_wrapped_e.type == SystemExit
-    assert pytest_wrapped_e.value.code == 1
+    assert isinstance(e.value, click.ClickException)
+    assert f'Cannot find values secret {test_secret}. Exiting Install\n' in e.value.message
 
 
 def test_get_operator_version_returns_operator_version_if_passed_regardless_of_rc():
@@ -452,17 +481,17 @@ def test_get_image_and_license_secret_from_values_args_overrides_secret_and_file
 
 
 def test_get_image_and_license_secret_returns_error_when_invalid_secret_passed():
-    with pytest.raises(SystemExit) as pytest_wrapped_e:
+    with pytest.raises(Exception) as e:
         install.get_image_and_license_secret_from_values(test_lic_file, None, None, None)
-    assert pytest_wrapped_e.type == SystemExit
-    assert pytest_wrapped_e.value.code == 1
+    assert isinstance(e.value, click.ClickException)
+    assert 'Invalid values secret' in e.value.message
 
 
 def test_get_image_and_license_secret_returns_error_when_invalid_file_passed():
-    with pytest.raises(SystemExit) as pytest_wrapped_e:
+    with pytest.raises(Exception) as e:
         install.get_image_and_license_secret_from_values(None, test_lic_file, None, None)
-    assert pytest_wrapped_e.type == SystemExit
-    assert pytest_wrapped_e.value.code == 1
+    assert isinstance(e.value, click.ClickException)
+    assert f'Invalid values file' in e.value.message
 
 
 def test_get_missing_key_with_no_dict_returns_all_keys():
@@ -665,3 +694,30 @@ def test_check_for_operator_install_when_provided_insights_and_operators_not_com
         install.check_for_operator_install('kx-insights', 'insights', '1.3.0', '1.4.0', True)
     assert isinstance(e.value, click.ClickException)
     assert 'kxi-operator version 1.4.0 is incompatible with insights version 1.3.0' in e.value.message
+
+
+def test_upgrade_exception_when_filepath_or_install_secret_not_provided(mocker):
+    mocker.patch('kxicli.commands.install.helm_repo_list', lambda: mocked_helm_repo_list(test_chart_repo_name, test_chart_repo_url))
+    with pytest.raises(Exception) as e:
+        install.perform_upgrade(test_ns, test_repo, test_chart_repo_name, 'test-asm-backup.yaml', '1.3.0', 
+                                   '1.3.0', image_pull_secret=None, license_secret=None, install_config_secret=None,
+                                   filepath=None, force=False)
+    assert isinstance(e.value, click.ClickException)
+    assert 'At least one of --install-config-secret and --filepath options must be provided' in e.value.message
+
+
+def test_load_values_stores_exception_when_values_file_does_not_exist():
+    with pytest.raises(Exception) as e:
+        install.load_values_stores(test_secret, 'a-non-existant-file')
+    assert isinstance(e.value, click.ClickException)
+    assert 'File not found: a-non-existant-file. Exiting' in e.value.message
+
+
+def test_load_values_stores_exception_when_invalid_values_file_provided():
+    with temp_file(file_name='new_file') as new_file:
+        with open(new_file, 'w') as f:
+            f.write('test: {this is not a yaml')
+        with pytest.raises(Exception) as e:
+            install.load_values_stores(test_secret, new_file)
+        assert isinstance(e.value, click.ClickException)
+        assert f'Invalid values file {new_file}' in e.value.message

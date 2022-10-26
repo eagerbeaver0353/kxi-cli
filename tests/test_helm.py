@@ -3,6 +3,7 @@ import click
 import pytest
 
 from kxicli.resources import helm
+from kxicli.commands.common import helm as common_helm
 
 HELM_BIN_KEY = 'HELM_BIN'
 HELM_BIN_VAL = 'helm'
@@ -68,3 +69,17 @@ def test_fetch_raises_exception(mocker):
 
     assert isinstance(e.value, click.ClickException)
     assert isinstance(e.value.message, subprocess.CalledProcessError)
+
+def test_helm_install_without_file_or_secret_raises_exception():
+    with pytest.raises(Exception) as e:
+        common_helm.helm_install('test_release', 'test_chart', None, None)
+
+    assert isinstance(e.value, click.ClickException)
+    assert e.value.message == 'Must provide one of values file or secret. Exiting install'
+
+def test_helm_install_error_raises_exception(mocker):
+    mocker.patch('subprocess.run').side_effect = subprocess.CalledProcessError(1, ['helm', 'upgrade'])
+    with pytest.raises(Exception) as e:
+        common_helm.helm_install('test_release', 'test_chart', 'test-values-file.yaml', None)
+    assert isinstance(e.value, click.ClickException)
+    assert e.value.message == "Command '['helm', 'upgrade']' returned non-zero exit status 1."
