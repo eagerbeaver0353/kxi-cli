@@ -41,8 +41,7 @@ def enrol(hostname, name, insert_topic, client_id, client_secret, realm):
     if r:
         click.echo(json.dumps(r.json(), indent=2))
     else:
-        log.error(r.text)
-        sys.exit(1)
+        raise click.ClickException('Failed to enrol client')
 
 
 @client.command()
@@ -68,8 +67,7 @@ def remove(hostname, name, client_id, client_secret, realm):
     if r:
         click.echo(json.dumps(r.json(), indent=2))
     else:
-        log.error(r.text)
-        sys.exit(1)
+        raise click.ClickException('Failed to remove client')
 
 
 @client.command()
@@ -82,8 +80,7 @@ def info(hostname, uid):
     if r:
         click.echo(json.dumps(r.json(), indent=2))
     else:
-        log.error(r.text)
-        sys.exit(1)
+        raise click.ClickException('Failed to get client info')
 
 
 @client.command('list')
@@ -104,5 +101,4 @@ def list_clients(hostname, realm, username, password):
     if r:
         click.echo(json.dumps(r.json(), indent=2))
     else:
-        log.error(r.text)
-        sys.exit(1)
+        raise click.ClickException('Failed to list clients')

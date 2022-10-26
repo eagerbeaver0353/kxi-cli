@@ -1,3 +1,4 @@
+import click
 import copy
 import json
 import os
@@ -372,20 +373,29 @@ def test_read_assembly_file_returns_contents():
 
 
 def test_read_assembly_file_errors_when_file_does_not_exist():
-    with pytest.raises(SystemExit) as pytest_wrapped_e:
+    with pytest.raises(Exception) as e:
         assembly._read_assembly_file('a_bad_file_name.yaml')
-    assert pytest_wrapped_e.type == SystemExit
-    assert pytest_wrapped_e.value.code == 1
+    assert isinstance(e.value, click.ClickException)
+    assert 'File not found: a_bad_file_name.yaml' in e.value.message
 
 
 def test_read_assembly_file_errors_when_file_is_invalid():
     with temp_asm_file(file_name='new_file') as new_file:
         with open(new_file, 'w') as f:
             f.write('test: {this is not a yaml')
-        with pytest.raises(SystemExit) as pytest_wrapped_e:
+        with pytest.raises(Exception) as e:
             assembly._read_assembly_file(new_file)
-        assert pytest_wrapped_e.type == SystemExit
-        assert pytest_wrapped_e.value.code == 1
+        assert isinstance(e.value, click.ClickException)
+        assert f'Invalid assembly file {new_file}' in e.value.message
+
+
+def test_get_preferred_api_version_raises_exception_with_no_version(mocker):
+    mock = mocker.patch('kubernetes.client.ApisApi')
+    mock.get_api_versions.return_value = {}
+    with pytest.raises(Exception) as e:
+        assembly.get_preferred_api_version(PREFERRED_VERSION)
+    assert isinstance(e.value, click.ClickException)
+    assert f'Could not find preferred API version for group {PREFERRED_VERSION}' in e.value.message
 
 
 # CLI invoked tests
@@ -397,7 +407,7 @@ def test_cli_assembly_status_if_assembly_not_deployed(mocker):
     instance.get_namespaced_custom_object.return_value = {}
 
     result = TEST_CLI.invoke(main.cli, ['assembly', 'status', '--name', 'test_asm'])
-    assert result.output == 'Assembly not yet deployed\n'
+    assert result.output == 'Error: Assembly not yet deployed\n'
     assert result.exit_code == 1
 
 
@@ -438,7 +448,7 @@ def test_cli_assembly_status_with_not_found_exception(mocker):
     result = TEST_CLI.invoke(main.cli, ['assembly', 'status', '--name', ASM_NAME])
 
     assert result.exit_code == 1
-    assert result.output == f'Assembly {ASM_NAME} not found\n'
+    assert result.output == f'Error: Assembly {ASM_NAME} not found\n'
 
 
 def test_cli_assembly_status_with_wait_for_ready(mocker):

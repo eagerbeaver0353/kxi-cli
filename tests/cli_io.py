@@ -408,23 +408,23 @@ def input_image(user, use_existing_creds):
 
 
 def output_run_required_secrets_invalid():
-    return """Validating values...
+    return f"""Validating values...
 error=Required secret kxi-license has an invalid format, expected type Opaque and keys ('license',)
 error=Required secret kxi-certificate has an invalid format, expected type kubernetes.io/tls and keys ('tls.crt', 'tls.key')
 error=Required secret kxi-nexus-pull-secret has an invalid format, expected type kubernetes.io/dockerconfigjson and keys ('.dockerconfigjson',)
 error=Required secret kxi-keycloak has an invalid format, expected type Opaque and keys ('admin-password', 'management-password')
 error=Required secret kxi-postgresql has an invalid format, expected type Opaque and keys ('postgres-password', 'password')
-Validation failed, run "kxi install setup" to fix
+Error: {phrases.values_validation_fail}
 """
 
 def output_run_required_secrets_dont_exist():
-    return"""Validating values...
+    return f"""Validating values...
 error=Required secret kxi-license does not exist
 error=Required secret kxi-certificate does not exist
 error=Required secret kxi-nexus-pull-secret does not exist
 error=Required secret kxi-keycloak does not exist
 error=Required secret kxi-postgresql does not exist
-Validation failed, run "kxi install setup" to fix
+Error: {phrases.values_validation_fail}
 """
 
 def output_upgrade_required_secrets_invalid():

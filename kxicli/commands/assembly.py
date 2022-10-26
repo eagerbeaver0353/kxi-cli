@@ -67,8 +67,7 @@ def _assembly_status(namespace, name, print_status=False):
         )
     except k8s.client.rest.ApiException as exception:
         if exception.status == 404:
-            click.echo(f'Assembly {name} not found')
-            sys.exit(1)
+            raise click.ClickException(f'Assembly {name} not found')
         else:
             click.echo(f'Exception when calling CustomObjectsApi->get_namespaced_custom_object: {exception}\n')
 
@@ -76,8 +75,7 @@ def _assembly_status(namespace, name, print_status=False):
 
     if print_status:
         if len(assembly_status) == 0:
-            click.echo('Assembly not yet deployed')
-            sys.exit(1)
+            raise click.ClickException('Assembly not yet deployed')
         else:
             click.echo(json.dumps(assembly_status, indent=2))
 
@@ -171,16 +169,13 @@ def _backup_assemblies(namespace, filepath, force):
 
 def _read_assembly_file(filepath):
     if not os.path.exists(filepath):
-        log.error(f'File not found: {filepath}')
-        sys.exit(1)
+        raise click.ClickException(f'File not found: {filepath}')
 
     with open(filepath) as f:
         try:
             body = yaml.safe_load(f)
         except yaml.YAMLError as e:
-            log.error(f'Invalid assembly file {filepath}')
-            click.echo(e)
-            sys.exit(1)
+            raise click.ClickException(f'Invalid assembly file {filepath}')
 
     return body
 
@@ -347,7 +342,7 @@ def status(namespace, name, wait):
             for n in bar:
                 time.sleep((2 ** n) + (random.randint(0, 1000) / 1000))
                 if _assembly_status(namespace, name, print_status=True):
-                    sys.exit(0)
+                    break
     else:
         _assembly_status(namespace, name, print_status=True)
 
@@ -401,7 +396,6 @@ def get_preferred_api_version(group_name):
             version = api.preferred_version.version
 
     if version == None:
-        log.error(f'Could not find preferred API version for group {group_name}')
-        sys.exit(1)
+        raise click.ClickException(f'Could not find preferred API version for group {group_name}')
 
     return version

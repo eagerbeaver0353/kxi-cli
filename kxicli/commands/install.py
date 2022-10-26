@@ -305,7 +305,7 @@ def run(ctx, namespace, chart_repo_name, chart_repo_url, chart_repo_username,
                                    operator_version, image_pull_secret, license_secret, install_config_secret,
                                    filepath, force)
         else:
-            sys.exit(0)
+            return
 
     install_operator, is_op_upgrade, operator_version, crd_data = check_for_operator_install(release,
         chart_repo_name, version, operator_version, force)
@@ -344,8 +344,7 @@ def perform_upgrade(namespace, release, chart_repo_name, assembly_backup_filepat
 
     # Read install values
     if filepath is None and install_config_secret is None:
-        log.error('At least one of --install-config-secret and --filepath options must be provided')
-        sys.exit(1)
+        raise click.ClickException('At least one of --install-config-secret and --filepath options must be provided')
 
     if not isinstance(install_config_secret, secret.Secret):
         install_config_secret = secret.Secret(namespace, install_config_secret, SECRET_TYPE_OPAQUE, INSTALL_CONFIG_KEYS)
@@ -365,7 +364,7 @@ def perform_upgrade(namespace, release, chart_repo_name, assembly_backup_filepat
                                  image_pull_secret, license_secret, chart_repo_name,
                                  install_operator, is_op_upgrade, crd_data)
         click.secho(str.format(phrases.upgrade_complete, version=version), bold=True)
-        sys.exit(0)
+        return
 
     click.secho(phrases.upgrade_asm_backup, bold=True)
     assembly_backup_filepath = assembly._backup_assemblies(namespace, assembly_backup_filepath, force)
@@ -709,8 +708,7 @@ def get_install_values(install_config_secret: secret.Secret):
     if install_config_secret.name:
         values_secret = get_install_config_secret(install_config_secret)
         if not values_secret:
-            click.echo(f'Cannot find values secret {install_config_secret.name}. Exiting Install\n')
-            sys.exit(1)
+            raise click.ClickException(f'Cannot find values secret {install_config_secret.name}. Exiting Install\n')
 
     return values_secret
 
@@ -736,16 +734,13 @@ def load_values_stores(values_secret, values_file):
     values_file_dict = {}
     if values_file:
         if not os.path.exists(values_file):
-            log.error(f'File not found: {values_file}. Exiting')
-            sys.exit(1)
+            raise click.ClickException(f'File not found: {values_file}. Exiting')
         else:
             with open(values_file) as f:
                 try:
                     values_file_dict = yaml.safe_load(f)
                 except yaml.YAMLError as e:
-                    log.error(f'Invalid values file {values_file}')
-                    click.echo(e)
-                    sys.exit(1)
+                    raise click.ClickException(f'Invalid values file {values_file}')
 
     return values_secret_dict, values_file_dict
 
@@ -765,13 +760,9 @@ def get_from_values_store(key, values_secret_dict, values_file_dict, default):
             val = default
             log.debug(f'Cannot find key {key} in values file or secret. Using default {default}')
         except BaseException as e:
-            log.error(f'Invalid values secret')
-            log.error(e)
-            sys.exit(1)
+            raise click.ClickException(f'Invalid values secret')
     except BaseException as e:
-        log.error(f'Invalid values file')
-        log.error(e)
-        sys.exit(1)
+        raise click.ClickException(f'Invalid values file')
 
     return val
 
@@ -960,8 +951,7 @@ def copy_secret(name, from_ns, to_ns):
     try:
         secret = api.read_namespaced_secret(namespace=from_ns, name=name)
     except k8s.client.rest.ApiException as exception:
-        log.error(f'Exception when trying to get secret {exception}')
-        sys.exit(1)
+        raise click.ClickException(f'Exception when trying to get secret {exception}')
 
     secret.metadata = k8s.client.V1ObjectMeta(namespace=to_ns, name=name)
 
@@ -969,8 +959,7 @@ def copy_secret(name, from_ns, to_ns):
         secret = api.create_namespaced_secret(namespace=to_ns, body=secret)
     except k8s.client.rest.ApiException as exception:
         if not exception.status == 409:
-            log.error(f'Exception when trying to create secret {exception}')
-            sys.exit(1)
+            raise click.ClickException(f'Exception when trying to create secret {exception}')
 
 
 def insights_installed(release, namespace):
@@ -1039,8 +1028,7 @@ def validate_values(namespace, values_secret, values_file):
                 log.error(phrases.secret_validation_invalid.format(name=name, type=v[1], keys=v[2]))
                 exit_execution = True
     if exit_execution:
-        click.echo(phrases.values_validation_fail)
-        sys.exit(1)
+        raise click.ClickException(phrases.values_validation_fail)
 
 
 def lookup_secret(namespace, arg, values_secret, values_file, default_key):
