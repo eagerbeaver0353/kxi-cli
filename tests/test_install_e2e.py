@@ -1668,8 +1668,7 @@ Custom assembly resource {test_asm_name2} created!
     assert result.output == expected_output
     assert not os.path.isfile(test_asm_backup)
 
-
-def test_upgrade_reapplies_assemblies_when_upgrade_fails(mocker):
+def test_upgrade_does_not_reapply_assemblies_when_upgrade_fails(mocker):
     upgrades_mocks(mocker)
     mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
     mock_get_operator_version(mocker)
@@ -1717,10 +1716,6 @@ Are you sure you want to teardown {test_asm_name} [y/N]: y
 Waiting for assembly to be torn down
 
 Upgrading insights
-error={phrases.upgrade_error}
-Submitting assembly from {test_asm_backup}
-Submitting assembly {test_asm_name}
-Custom assembly resource {test_asm_name} created!
 """
     assert result.exit_code == 1
     assert result.output == expected_output

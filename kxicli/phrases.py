@@ -79,7 +79,6 @@ upgrade_asm_backup = '\nBacking up assemblies'
 upgrade_asm_teardown = '\nTearing down assemblies'
 upgrade_asm_reapply = '\nReapplying assemblies'
 upgrade_asm_persist = 'Assembly data will be persisted and state will be recovered post-upgrade'
-upgrade_error =  'Error occurred during upgrade. Attempting to reapply assemblies'
 upgrade_insights= '\nUpgrading insights'
 upgrade_complete = '\nUpgrade to version {version} complete'
 

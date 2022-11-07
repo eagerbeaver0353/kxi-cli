@@ -371,19 +371,13 @@ def perform_upgrade(namespace, release, chart_repo_name, assembly_backup_filepat
 
     click.secho(phrases.upgrade_asm_teardown, bold=True)
     click.secho(phrases.upgrade_asm_persist)
+    deleted = assembly._delete_running_assemblies(namespace=namespace, wait=True, force=force)
 
-    try:
-        deleted = assembly._delete_running_assemblies(namespace=namespace, wait=True, force=force)
-
-        if all(deleted):
-            click.secho(phrases.upgrade_insights, bold=True)
-            upgraded =  install_operator_and_release(release, namespace, version, operator_version, filepath, values_secret,
-                                                    image_pull_secret, license_secret, chart_repo_name,
-                                                    install_operator, is_op_upgrade, crd_data)
-    except BaseException as e:
-        log.error(phrases.upgrade_error)
-        assembly._create_assemblies_from_file(namespace=namespace, filepath=assembly_backup_filepath)
-        raise e
+    if all(deleted):
+        click.secho(phrases.upgrade_insights, bold=True)
+        upgraded =  install_operator_and_release(release, namespace, version, operator_version, filepath, values_secret,
+                                                image_pull_secret, license_secret, chart_repo_name,
+                                                install_operator, is_op_upgrade, crd_data)
 
     click.secho(phrases.upgrade_asm_reapply, bold=True)
     if all(assembly._create_assemblies_from_file(namespace=namespace, filepath=assembly_backup_filepath)):
