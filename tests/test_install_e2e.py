@@ -44,6 +44,7 @@ expected_test_output_file = str(Path(__file__).parent / 'files' / 'output-values
 test_output_file_lic_env_var = str(Path(__file__).parent / 'files' / 'output-values-license-as-env-var.yaml')
 test_output_file_lic_on_demand = str(Path(__file__).parent / 'files' / 'output-values-license-on-demand.yaml')
 test_output_file_manual_ingress = str(Path(__file__).parent / 'files' / 'output-values-manual-ingress-secret.yaml')
+test_output_file_external_certmanager = str(Path(__file__).parent / 'files' / 'output-values-external-certmanager.yaml')
 test_output_file_updated_hostname = str(Path(__file__).parent / 'files' / 'output-values-updated-hostname.yaml')
 test_output_file_updated_passwords_config = str(Path(__file__).parent / 'files' / 'output-values-updated-client-passwords.yaml')
 test_output_file_updated_passwords_cmd_line = str(Path(__file__).parent / 'files' / 'output-values-updated-client-passwords-from-command-line.yaml')
@@ -542,17 +543,25 @@ def test_install_setup_does_not_prompt_when_chart_repo_already_exists(mocker):
 
 def test_install_setup_when_ingress_cert_secret_provided_on_command_line(mocker):
     setup_mocks(mocker)
+    mock_validate_secret(mocker, exists=True, is_valid=True)
     with temp_test_output_file() as test_output_file, temp_config_file() as test_cli_config:
-        cmd = ['install', 'setup', '--output-file', test_output_file, '--ingress-cert-secret', test_ingress_cert_secret] 
+        cmd = ['install', 'setup', '--output-file', test_output_file,  '--ingress-cert-secret', test_ingress_cert_secret] 
         test_cfg = {
-            'provide_ingress_cert': None
-        }
+            'provide_ingress_cert': None,
+            'ingress_sec_exists': True,
+            'lic_sec_exists': True,
+            'image_sec_exists': True,
+            'client_sec_exists': True,
+            'kc_secret_exists': True,
+            'pg_secret_exists': True,
+        }        
         run_cli(cmd, test_cfg, test_cli_config, test_output_file, 0)
         assert compare_files(test_output_file, test_output_file_manual_ingress)
 
 
 def test_install_setup_when_ingress_cert_and_key_files_provided_on_command_line(mocker):
     setup_mocks(mocker)
+    mock_validate_secret(mocker, exists=False, is_valid=True)
     with temp_test_output_file() as test_output_file, temp_test_output_file(file_name='tls_crt') as test_cert_filepath, \
         temp_test_output_file(file_name='tls_key') as test_key_filepath, temp_config_file() as test_cli_config:
         shutil.copyfile(test_cert, test_cert_filepath)
@@ -563,7 +572,7 @@ def test_install_setup_when_ingress_cert_and_key_files_provided_on_command_line(
             'ingress_cert': test_cert_filepath,
             'ingress_cert_source': 'command-line',
             'ingress_key': test_key_filepath,
-            'ingress_key_source': 'command-line'
+            'ingress_key_source': 'command-line',
         }
         run_cli(cmd, test_cfg, test_cli_config, test_output_file, 0)
         assert compare_files(test_output_file, test_output_file_manual_ingress)
@@ -571,6 +580,7 @@ def test_install_setup_when_ingress_cert_and_key_files_provided_on_command_line(
 
 def test_install_setup_when_ingress_cert_file_provided_on_command_line(mocker):
     setup_mocks(mocker)
+    mock_validate_secret(mocker, exists=False, is_valid=True)
     with temp_test_output_file() as test_output_file, temp_test_output_file(file_name='tls_crt') as test_cert_filepath, \
         temp_test_output_file(file_name='tls_key') as test_key_filepath, temp_config_file() as test_cli_config:
         shutil.copyfile(test_cert, test_cert_filepath)
@@ -585,6 +595,17 @@ def test_install_setup_when_ingress_cert_file_provided_on_command_line(mocker):
         }
         run_cli(cmd, test_cfg, test_cli_config, test_output_file, 0)
         assert compare_files(test_output_file, test_output_file_manual_ingress)
+
+
+def test_install_setup_with_external_ingress_certmanager(mocker):
+    setup_mocks(mocker)
+    with temp_test_output_file() as test_output_file, temp_config_file() as test_cli_config:
+        cmd = ['install', 'setup', '--output-file', test_output_file,  '--ingress-certmanager-disabled']
+        test_cfg = {
+            'provide_ingress_cert': None,
+        }        
+        run_cli(cmd, test_cfg, test_cli_config, test_output_file, 0)
+        assert compare_files(test_output_file, test_output_file_external_certmanager)
 
 
 def test_install_setup_when_passed_license_env_var_in_command_line(mocker):

@@ -74,4 +74,6 @@ arg_ingress_cert = options.ingress_cert.decorator()
 
 arg_ingress_key = options.ingress_key.decorator()
 
+arg_ingress_certmanager_disabled = options.ingress_certmanager_disabled.decorator()
+
 arg_install_config_secret = options.install_config_secret.decorator()

@@ -14,6 +14,7 @@ def cli_input(
     verb,
     output_file = None,
     incluster = False,
+    ingress_sec_exists = False,
     provide_ingress_cert = 'n',
     ingress_cert = None,
     ingress_cert_source = None,
@@ -118,6 +119,7 @@ def cli_output(
     cli_config,
     output_file = None,
     incluster = False,
+    ingress_sec_exists = False,
     provide_ingress_cert = 'n',
     ingress_cert = None,
     ingress_cert_source = 'prompt',
@@ -173,7 +175,7 @@ def cli_output(
         elif not lic_sec_is_valid:
             return output_upgrade_required_secrets_invalid()
 
-    ingress = output_ingress(hostname, hostname_source, provide_ingress_cert, ingress_cert, ingress_cert_source, ingress_key, ingress_key_source, cli_config)
+    ingress = output_ingress(hostname, hostname_source, ingress_sec_exists, provide_ingress_cert, ingress_cert, ingress_cert_source, ingress_key, ingress_key_source, cli_config)
     chart = output_chart(chart_repo_existing, chart_repo_name, chart_repo_name_source, chart_repo_url, chart_repo_url_source, chart_user, chart_user_source, chart_pass, cli_config)
     license = output_license(lic, lic_sec_exists, lic_sec_is_valid, lic_sec_overwrite)
     image = output_image(repo, user, image_sec_exists, image_sec_is_valid, use_existing_creds, image_sec_overwrite)
@@ -299,17 +301,19 @@ def output_image(repo, user, exists, is_valid, use_existing_creds, overwrite):
 {output_secret(secret_name, exists, is_valid, prompt, overwrite)}"""
 
 
-def output_ingress(hostname, hostname_source, provide_ingress_cert, ingress_cert, ingress_cert_source, ingress_key, ingress_key_source, cli_config):
+def output_ingress(hostname, hostname_source, ingress_sec_exists, provide_ingress_cert, ingress_cert, ingress_cert_source, ingress_key, ingress_key_source, cli_config):
+    secret_name = common.get_default_val('ingress.cert.secret')
     str = phrases.header_ingress
     str = output_option(str, 'hostname', hostname_source, cli_config, phrases.hostname_entry, test_host, hostname)
     str = output_option(str, 'ingress.cert', ingress_cert_source, cli_config, phrases.ingress_tls_cert, '', ingress_cert)
     str = output_option(str, 'ingress.key', ingress_key_source, cli_config, phrases.ingress_tls_key, '', ingress_key)
+    if ingress_sec_exists:
+        str = append_message(str, phrases.secret_use_existing.format(name=secret_name))
     if provide_ingress_cert == 'y':
-        secret_name = common.get_default_val('ingress.cert.secret')
         str = append_message(str, phrases.secret_created.format(name=secret_name))
     elif provide_ingress_cert == 'n':
         str = append_message(str, phrases.ingress_lets_encrypt)
-    
+
     return str
 
 
