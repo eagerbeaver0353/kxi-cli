@@ -26,7 +26,7 @@ from kxicli.commands.common.arg import arg_force, arg_filepath, arg_version, arg
     arg_chart_repo_password, arg_license_secret, arg_license_as_env_var, arg_license_filepath, arg_client_cert_secret, \
     arg_image_repo, arg_image_repo_user, arg_image_pull_secret, arg_gui_client_secret, arg_operator_client_secret, \
     arg_keycloak_secret, arg_keycloak_postgresql_secret, arg_keycloak_auth_url, \
-    arg_ingress_cert_secret, arg_ingress_cert, arg_ingress_key, \
+    arg_ingress_cert_secret, arg_ingress_cert, arg_ingress_key, arg_ingress_certmanager_disabled,  \
     arg_install_config_secret
 from kxicli.commands.common.helm import helm_uninstall, helm_install
 from kxicli.commands.common.namespace import create_namespace
@@ -93,13 +93,14 @@ def install():
 @arg_ingress_cert_secret()
 @arg_ingress_cert()
 @arg_ingress_key()
+@arg_ingress_certmanager_disabled()
 @arg_output_file()
 @arg_install_config_secret()
 def setup(namespace, chart_repo_name, chart_repo_url, chart_repo_username, 
           license_secret, license_as_env_var, license_filepath,
           client_cert_secret, image_repo, image_repo_user, image_pull_secret, gui_client_secret, operator_client_secret,
           keycloak_secret, keycloak_postgresql_secret, keycloak_auth_url, hostname, 
-          ingress_cert_secret, ingress_cert, ingress_key,
+          ingress_cert_secret, ingress_cert, ingress_key, ingress_certmanager_disabled,
           output_file, install_config_secret, **kwargs):
     """Perform necessary setup steps to install Insights"""
     
@@ -135,7 +136,8 @@ def setup(namespace, chart_repo_name, chart_repo_url, chart_repo_username,
 
     click.secho(phrases.header_ingress, bold=True)
     hostname = sanitize_ingress_host(options.hostname.prompt(hostname))
-    ingress_self_managed, ingress_cert_secret_object = prompt_for_ingress_cert(ingress_cert_secret_object, ingress_cert_secret, ingress_cert, ingress_key)
+    ingress_certmanager_disabled, use_tls_secret, ingress_cert_secret_object = \
+        prompt_for_ingress_cert(ingress_cert_secret_object, ingress_cert_secret, ingress_cert, ingress_key, ingress_certmanager_disabled)
 
     click.secho(phrases.header_chart, bold=True)
     chart_repo_name = options.chart_repo_name.prompt(chart_repo_name)
@@ -216,8 +218,10 @@ def setup(namespace, chart_repo_name, chart_repo_url, chart_repo_username,
         install_file['keycloak'] = {'enabled': False}
         install_file['keycloak-config-cli'] = {'enabled': True}
 
-    if ingress_self_managed:
+    if ingress_certmanager_disabled:
         install_file['global']['ingress']['certmanager'] = False
+
+    if use_tls_secret:
         install_file['global']['ingress']['tlsSecret'] = ingress_cert_secret_object.name
 
     if license_as_env_var:
@@ -581,22 +585,22 @@ def populate_postgresql_secret(secret: secret.Secret, **kwargs):
     return secret
 
 
-def prompt_for_ingress_cert(secret: secret.Secret, name, ingress_cert, ingress_key):
-    if name:
-        ingress_self_managed = True
-    elif ingress_cert or ingress_key:
-        ingress_self_managed = True
+def prompt_for_ingress_cert(secret: secret.Secret, name, ingress_cert, ingress_key, ingress_certmanager_disabled):
+    use_tls_secret = False
+    if name or ingress_cert or ingress_key:
+        use_tls_secret = True
+        ingress_certmanager_disabled = True
         secret = ensure_secret(secret, populate_ingress_cert,
             {
                 'ingress_cert':ingress_cert, 
                 'ingress_key': ingress_key
             }
         )
-    else:
+    elif not ingress_certmanager_disabled:
         click.echo(phrases.ingress_lets_encrypt)
-        ingress_self_managed = False
 
-    return ingress_self_managed, secret
+
+    return ingress_certmanager_disabled, use_tls_secret, secret
 
 
 def populate_ingress_cert(secret: secret.Secret, **kwargs):

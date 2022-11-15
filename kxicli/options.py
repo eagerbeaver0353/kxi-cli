@@ -12,7 +12,7 @@ from kxicli.common import get_default_val as default_val
 from kxicli.common import get_help_text as help_text
 from kxicli.common import key_install_outputFile, key_chart_repo_name, key_install_config_secret, \
     key_image_repository, key_image_repository_user, key_image_repository_password, key_image_pullSecret, \
-    key_ingress_cert_secret, key_ingress_self_managed, key_ingress_cert, key_ingress_key, \
+    key_ingress_cert_secret, key_ingress_certmanager_disabled, key_ingress_cert, key_ingress_key, \
     key_keycloak_secret, key_keycloak_admin_password, key_keycloak_management_password, \
     key_keycloak_postgresqlSecret, key_postgresql_postgres_password, key_postgresql_user_password, \
     key_keycloak_authURL, key_keycloak_realm, key_install_outputFile, key_install_config_secret, \
@@ -385,6 +385,13 @@ ingress_key = Option (
     config_name = key_ingress_key,
     prompt_message = phrases.ingress_tls_key,
     help=help_text(key_ingress_key)
+)
+
+ingress_certmanager_disabled = Option (
+    '--ingress-certmanager-disabled',
+    config_name = key_ingress_certmanager_disabled,
+    help = help_text(key_ingress_certmanager_disabled),
+    is_flag = True
 )
 
 install_config_secret = Option (

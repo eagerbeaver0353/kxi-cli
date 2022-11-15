@@ -19,9 +19,9 @@ key_chart_repo_password = 'chart.repo.password'
 key_client_cert_secret = 'client.cert.secret'
 key_install_config_secret = 'install.configSecret'
 key_ingress_cert_secret = 'ingress.cert.secret'
-key_ingress_self_managed = 'ingress.self-managed'
 key_ingress_cert = 'ingress.cert'
 key_ingress_key ='ingress.key'
+key_ingress_certmanager_disabled = 'ingress.certmanager.disabled'
 key_image_repository = 'image.repository'
 key_image_repository_user = 'image.repository.user'
 key_image_repository_password = 'image.repository.password'
@@ -71,9 +71,9 @@ HELP_TEXT = {
     key_postgresql_user_password: 'Postgresql user password',
     key_keycloak_authURL: 'Auth URL for Keycloak',
     key_ingress_cert_secret: 'Secret containing self-managed TLS cert and key for the ingress',
-    key_ingress_self_managed: 'Whether a self managed self-managed TLS cert should be used',
     key_ingress_cert: 'File path to TLS certificate for the ingress',
     key_ingress_key: 'File path to TLS private key for the ingress',
+    key_ingress_certmanager_disabled: 'Flag to disable usage of TLS certmanager',
     key_install_outputFile: 'Name for the generated values file',
     key_install_config_secret: 'Secret containing helm install values',
     key_install_filepath: 'Values file to install with',
@@ -98,7 +98,6 @@ DEFAULT_VALUES = {
     key_keycloak_secret: 'kxi-keycloak',
     key_keycloak_postgresqlSecret: 'kxi-postgresql',
     key_ingress_cert_secret: 'kxi-ingress-cert',
-    key_ingress_self_managed: False,
     key_install_outputFile: 'values.yaml',
     key_install_config_secret: 'kxi-install-config',
     key_assembly_backup_file: 'kxi-assembly-state.yaml',
