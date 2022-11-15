@@ -128,6 +128,8 @@ def get_default_val(option):
 
     return None
 
+def is_interactive_session():
+    return sys.stdout.isatty() and '--force' not in sys.argv
 
 def get_access_token(hostname, client_id, client_secret, realm):
     """Get Keycloak client access token"""

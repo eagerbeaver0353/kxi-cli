@@ -136,7 +136,7 @@ def test_options_namespace_prompt_with_k8s_context(mocker):
 def test_options_namespace_prompt_non_interactrive_without_k8s_context(mocker):
     # When context is not set, assert that value from cli-config is used
     mock_k8s_list_empty_config(mocker)
-    mocker.patch('kxicli.options._is_interactive_session', return_false)
+    mocker.patch('kxicli.common.is_interactive_session', return_false)
     common.config.config['default']['namespace'] = 'test-namespace-from-config'
     assert options.namespace.prompt() == 'test-namespace-from-config'
     # When neither context nor cli-config is set, assert that default is used
@@ -149,7 +149,7 @@ def test_options_namespace_prompt_prompts_user_without_k8s_context(capsys, mocke
     # When neither context nor cli-config is set, assert user is prompted
     mock_k8s_list_empty_config(mocker)
     common.config.config['default'].pop('namespace')
-    mocker.patch('kxicli.options._is_interactive_session', return_true)
+    mocker.patch('kxicli.common.is_interactive_session', return_true)
     monkeypatch.setattr(SYS_STDIN, io.StringIO('test-namespace-from-prompt'))
     assert options.namespace.prompt() == 'test-namespace-from-prompt'
     assert capsys.readouterr().out == '\nPlease enter a namespace to run in [kxi]: '
@@ -207,7 +207,7 @@ def test_options_chart_repo_username_prompt_from_command_line():
 
 def test_options_chart_repo_username_prompt_retrieves_from_config_in_non_interactive(mocker):
     # Result retrieved from config when entry exists
-    mocker.patch('kxicli.options._is_interactive_session', return_false)
+    mocker.patch('kxicli.common.is_interactive_session', return_false)
     common.config.config['default']['chart.repo.username'] = 'test-repo-user-from-config'
     assert options.chart_repo_username.prompt() == 'test-repo-user-from-config'
     common.config.load_config("default")
@@ -215,7 +215,7 @@ def test_options_chart_repo_username_prompt_retrieves_from_config_in_non_interac
 
 def test_options_chart_repo_username_prompts_in_interactive(capsys, mocker, monkeypatch):
     # Assert that user is prompted in an interactive session when no config entry exists
-    mocker.patch('kxicli.options._is_interactive_session', return_true)    
+    mocker.patch('kxicli.common.is_interactive_session', return_true)
     monkeypatch.setattr(SYS_STDIN, io.StringIO('test-repo-user-from-prompt'))
     assert options.chart_repo_username.prompt() == 'test-repo-user-from-prompt'
     message = capsys.readouterr()
@@ -224,7 +224,7 @@ def test_options_chart_repo_username_prompts_in_interactive(capsys, mocker, monk
 
 def test_options_chart_repo_username_prompt_errors_in_non_interactive(mocker):
     # Exception is raised when no tty is attached, and no entry exists in config
-    mocker.patch('kxicli.options._is_interactive_session', return_false)
+    mocker.patch('kxicli.common.is_interactive_session', return_false)
     with pytest.raises(Exception) as e:
         options.chart_repo_username.prompt()
     assert isinstance(e.value, click.ClickException)
@@ -233,14 +233,14 @@ def test_options_chart_repo_username_prompt_errors_in_non_interactive(mocker):
 
 def test_options_chart_repo_username_prompt_custom_message(capsys, mocker, monkeypatch):
     # Assert that user is prompted with a custom message in an interactive session
-    mocker.patch('kxicli.options._is_interactive_session', return_true)    
+    mocker.patch('kxicli.common.is_interactive_session', return_true)
     monkeypatch.setattr(SYS_STDIN, io.StringIO('test-repo-user-from-custom-prompt'))
     assert options.chart_repo_username.prompt(prompt_message='A custom prompt message') == 'test-repo-user-from-custom-prompt'
     assert capsys.readouterr().out == 'A custom prompt message: '
 
 
 def test_options_chart_repo_password_prompt(mocker):
-    mocker.patch('kxicli.options._is_interactive_session', return_false)
+    mocker.patch('kxicli.common.is_interactive_session', return_false)
 
     # Exception is raised when no tty is attached
     with pytest.raises(Exception) as e:
@@ -249,7 +249,7 @@ def test_options_chart_repo_password_prompt(mocker):
     assert f"Could not find expected option. Please set configuration value chart.repo.password in config file {common.config.config_file}" in e.value.message
 
     # Assert that user is prompted in an interactive session
-    mocker.patch('kxicli.options._is_interactive_session', return_true)
+    mocker.patch('kxicli.common.is_interactive_session', return_true)
     mock = mocker.patch('click.prompt', return_value='test-repo-password-from-prompt')
     assert options.chart_repo_password.prompt() == 'test-repo-password-from-prompt'
     assert mock.call_count == 2
@@ -288,7 +288,7 @@ def test_options_hostname_prompt(capsys, mocker, monkeypatch):
 
 def test_options_hostname_prompts_in_interactive(capsys, mocker, monkeypatch):
     # Assert that user is prompted for ingress host in an interactive session when hostname is not configured
-    mocker.patch('kxicli.options._is_interactive_session', return_true)    
+    mocker.patch('kxicli.common.is_interactive_session', return_true)
     # Remove hostname entry from config.
     common.config.config['default'].pop('hostname')
     monkeypatch.setattr(SYS_STDIN, io.StringIO('a-new-ingress-host'))
@@ -300,7 +300,7 @@ def test_options_hostname_prompts_in_interactive(capsys, mocker, monkeypatch):
 
 def test_options_hostname_prompt_returns_error_in_non_interactive(mocker):
     # Assert that error is returned in an interactive session when hostname is not configured
-    mocker.patch('kxicli.options._is_interactive_session', return_false)
+    mocker.patch('kxicli.common.is_interactive_session', return_false)
     # Remove hostname entry from config.
     common.config.config['default'].pop('hostname')
     # Exception is raised when no tty is attached
