@@ -35,6 +35,7 @@ from kxicli.resources import secret, helm
 
 DOCKER_CONFIG_FILE_PATH = str(Path.home() / '.docker' / 'config.json')
 operator_namespace = 'kxi-operator'
+operator_release_name = 'meta.helm.sh/release-name'
 
 SECRET_TYPE_TLS = 'kubernetes.io/tls'
 SECRET_TYPE_DOCKERCONFIG_JSON = 'kubernetes.io/dockerconfigjson'
@@ -311,10 +312,10 @@ def run(ctx, namespace, chart_repo_name, chart_repo_url, chart_repo_username,
         else:
             return
 
-    install_operator, is_op_upgrade, operator_version, crd_data = check_for_operator_install(release,
+    install_operator, is_op_upgrade, operator_version, operator_release, crd_data = check_for_operator_install(release,
         chart_repo_name, version, operator_version, force)
 
-    install_operator_and_release(release, namespace, version, operator_version, filepath, values_secret,
+    install_operator_and_release(release, namespace, version, operator_version, operator_release, filepath, values_secret,
                                  image_pull_secret, license_secret, chart_repo_name,
                                  install_operator, is_op_upgrade, crd_data)
 
@@ -359,14 +360,14 @@ def perform_upgrade(namespace, release, chart_repo_name, assembly_backup_filepat
 
     validate_values(namespace, values_secret, filepath)
 
-    install_operator, is_op_upgrade, operator_version, crd_data = check_for_operator_install(release,
+    install_operator, is_op_upgrade, operator_version, operator_release, crd_data = check_for_operator_install(release,
         chart_repo_name, version, operator_version, force)
 
     if not insights_installed(release, namespace):
         click.echo(phrases.upgrade_skip_to_install)
-        install_operator_and_release(release, namespace, version, operator_version, filepath, values_secret,
-                                 image_pull_secret, license_secret, chart_repo_name,
-                                 install_operator, is_op_upgrade, crd_data)
+        install_operator_and_release(release, namespace, version, operator_version, operator_release, 
+                                 filepath, values_secret, image_pull_secret, license_secret,
+                                 chart_repo_name, install_operator, is_op_upgrade, crd_data)
         click.secho(str.format(phrases.upgrade_complete, version=version), bold=True)
         return
 
@@ -379,9 +380,9 @@ def perform_upgrade(namespace, release, chart_repo_name, assembly_backup_filepat
 
     if all(deleted):
         click.secho(phrases.upgrade_insights, bold=True)
-        upgraded =  install_operator_and_release(release, namespace, version, operator_version, filepath, values_secret,
-                                                image_pull_secret, license_secret, chart_repo_name,
-                                                install_operator, is_op_upgrade, crd_data)
+        upgraded =  install_operator_and_release(release, namespace, version, operator_version, operator_release, 
+                                                filepath, values_secret, image_pull_secret, license_secret, 
+                                                chart_repo_name, install_operator, is_op_upgrade, crd_data)
 
     click.secho(phrases.upgrade_asm_reapply, bold=True)
     if all(assembly._create_assemblies_from_file(namespace=namespace, filepath=assembly_backup_filepath)):
@@ -810,17 +811,26 @@ def check_for_operator_install(release, chart_repo_name, insights_ver, op_ver, f
     This all happens prior to install / upgrade so we can exit cleanly in the event of an exception
     """
     installed_operator_version = None
-    operator_installed_charts = get_installed_operator_versions(operator_namespace)
+    operator_installed_charts, operator_installed_releases = get_installed_operator_versions(operator_namespace)
     is_upgrade = len(operator_installed_charts) > 0
 
     if is_upgrade:
         installed_operator_version = operator_installed_charts[0]
+        release = operator_installed_releases[0]
         click.echo(f'\nkxi-operator already installed with version {installed_operator_version}')
 
     insights_version_minor = get_minor_version(insights_ver)
     operator_version_to_install = get_operator_version(chart_repo_name, insights_ver, op_ver)
     installed_operator_compatible = insights_version_minor == get_minor_version(installed_operator_version)
     operator_version_to_install_compatible = insights_version_minor == get_minor_version(operator_version_to_install)
+
+    if is_upgrade and not release:
+        log.warn('kxi-operator already installed, but not managed by helm')
+        if installed_operator_compatible:
+            click.echo(f'Not installing kxi-operator')
+            return False, False, None, None, []
+        else:
+            raise ClickException(f'Installed kxi-operator version {installed_operator_version} is incompatible with insights version {insights_ver}')
 
     if op_ver and not operator_version_to_install_compatible: 
         raise ClickException(f'kxi-operator version {op_ver} is incompatible with insights version {insights_ver}')
@@ -840,7 +850,7 @@ def check_for_operator_install(release, chart_repo_name, insights_ver, op_ver, f
         helm.fetch(chart_repo_name, 'kxi-operator', cache, operator_version_to_install)
         crd_data = read_cached_crd_files(operator_version_to_install)
 
-    return install_operator, is_upgrade, operator_version_to_install, crd_data
+    return install_operator, is_upgrade, operator_version_to_install, release, crd_data
 
 
 def install_operator_and_release(
@@ -848,6 +858,7 @@ def install_operator_and_release(
     namespace,
     version,
     operator_version,
+    operator_release,
     values_file,
     values_secret,
     image_pull_secret,
@@ -867,7 +878,7 @@ def install_operator_and_release(
         copy_secret(image_pull_secret, namespace, operator_namespace)
         copy_secret(license_secret, namespace, operator_namespace)
 
-        helm_install(release, chart=f'{chart_repo_name}/kxi-operator', values_file=values_file, values_secret=values_secret,
+        helm_install(operator_release, chart=f'{chart_repo_name}/kxi-operator', values_file=values_file, values_secret=values_secret,
                      version=operator_version, namespace=operator_namespace)
 
         if is_operator_upgrade:
@@ -968,7 +979,7 @@ def insights_installed(release, namespace):
 
 def operator_installed(release, namespace: str = operator_namespace):
     """Check if a helm release of the operator exists"""
-    return len(get_installed_operator_versions(namespace)) > 0
+    return len(get_installed_operator_versions(namespace)[0]) > 0
 
 
 def get_installed_charts(release, namespace):
@@ -987,9 +998,11 @@ def get_installed_operator_versions(namespace: str = operator_namespace):
     api_instance = k8s.client.AppsV1Api(k8s.client.ApiClient())
     operators = api_instance.list_namespaced_deployment(namespace, label_selector='app.kubernetes.io/name=kxi-operator')
     operator_versions = []
+    operator_releases = []
     for item in operators.items:
-        operator_versions.append(item.metadata.labels["helm.sh/chart"].lstrip("kxi-operator-"))
-    return operator_versions
+        operator_versions.append(item.metadata.labels.get("helm.sh/chart").lstrip("kxi-operator-"))
+        operator_releases.append(item.metadata.annotations.get(operator_release_name))
+    return (operator_versions, operator_releases)
 
 # Check if Keycloak is being deployed with Insights
 def deploy_keycloak():

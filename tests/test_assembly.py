@@ -14,7 +14,6 @@ from click.testing import CliRunner
 
 from kxicli import common
 from kxicli import main
-from kxicli import options
 from kxicli.commands import assembly
 from utils import return_true, return_false
 
@@ -627,7 +626,7 @@ Custom assembly resource basic-assembly created!
 
 
 def test_cli_assembly_create_without_filepath(mocker):
-    mocker.patch('kxicli.options._is_interactive_session', return_false)
+    mocker.patch('kxicli.common.is_interactive_session', return_false)
     result = TEST_CLI.invoke(main.cli, ['assembly', 'create'])
     assert result.exit_code == 1
     assert result.output == f'Error: Could not find expected option. Please set command line argument --filepath or configuration value assembly.filepath in config file {common.config.config_file}\n'
@@ -637,7 +636,7 @@ def test_cli_assembly_create_without_filepath_interactive_session(mocker):
     with open(test_asm_file) as f:
         test_asm = yaml.safe_load(f)
     mock_create_assemblies(mocker.patch(CUSTOM_OBJECT_API).return_value)
-    mocker.patch('kxicli.options._is_interactive_session', return_true)
+    mocker.patch('kxicli.common.is_interactive_session', return_true)
 
     result = TEST_CLI.invoke(main.cli, ['assembly', 'create'], input=test_asm_file)
 

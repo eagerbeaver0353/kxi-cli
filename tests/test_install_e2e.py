@@ -15,11 +15,10 @@ from click.testing import CliRunner
 from utils import mock_kube_crd_api,mock_load_kube_config, mock_load_kube_config_incluster
 from kxicli import common
 from kxicli import main
-from kxicli import options
 from kxicli import phrases
 from kxicli.resources import secret
 from kxicli.commands.assembly import CONFIG_ANNOTATION
-from utils import mock_kube_secret_api, return_none, return_true, raise_not_found, \
+from utils import mock_kube_secret_api, return_none, return_true, return_false, raise_not_found, \
     test_val_file, mock_validate_secret, mock_kube_crd_api, mock_helm_env, mock_helm_fetch, mock_list_kube_config_contexts, \
     mocked_helm_repo_list, test_helm_repo_cache
 from cli_io import cli_input, cli_output
@@ -36,6 +35,7 @@ TEST_VALUES_FILE="a test values file"
 test_auth_url = 'http://keycloak.keycloak.svc.cluster.local/auth/'
 test_chart = 'kx-insights/insights'
 test_operator_chart = 'kx-insights/kxi-operator'
+test_operator_helm_name = 'test-op-helm'
 test_install_secret = 'test-install-secret'
 
 test_k8s_config = str(Path(__file__).parent / 'files' / 'test-kube-config')
@@ -73,7 +73,7 @@ copy_secret_params = []
 main.install.DOCKER_CONFIG_FILE_PATH = test_docker_config_json
 
 # Tell cli that this is an interactive session
-options._is_interactive_session = return_true
+common.is_interactive_session = return_true
 
 @contextmanager
 def temp_test_output_file(prefix: str = 'kxicli-e2e-', file_name='output-values.yaml'):
@@ -213,9 +213,13 @@ def mocked_helm_list_returns_valid_json(release, namespace):
 
 def mocked_get_installed_operator_versions(namespace):
     if operator_installed_flag:
-        return ['1.2.0']
+        return (['1.2.0'], [test_operator_helm_name])
     else:
-        return []
+        return ([], [])
+
+
+def mocked_get_installed_operator_versions_without_release(namespace):
+        return (['1.2.0'], [None])
 
 
 def mocked_subprocess_run(base_command, check=True, input=None, text=None, **kwargs):
@@ -1550,7 +1554,7 @@ Upgrade to version 1.2.3 complete
     assert result.output == expected_output
     assert subprocess_run_command == [
         ['helm', 'repo', 'update'],
-        ['helm', 'upgrade', '--install', '-f', '-', 'insights', test_operator_chart, '--version', '1.2.3', '--namespace',
+        ['helm', 'upgrade', '--install', '-f', '-', test_operator_helm_name, test_operator_chart, '--version', '1.2.3', '--namespace',
          'kxi-operator'],
         ['helm', 'upgrade', '--install', '-f', '-', 'insights', test_chart, '--version', '1.2.3', '--namespace', test_namespace]
     ]
@@ -1589,7 +1593,7 @@ y
     assert result.exit_code == 0
     assert subprocess_run_command == [
         ['helm', 'repo', 'update'],
-        ['helm', 'upgrade', '--install', '-f', '-', 'insights', test_operator_chart, '--version', '1.2.3', '--namespace',
+        ['helm', 'upgrade', '--install', '-f', '-', test_operator_helm_name, test_operator_chart, '--version', '1.2.3', '--namespace',
          'kxi-operator'],
         ['helm', 'upgrade', '--install', '-f', '-', 'insights', test_chart, '--version', '1.2.3', '--namespace', test_namespace]
     ]
@@ -1805,12 +1809,85 @@ Upgrade to version 1.2.3 complete
     assert result.output == expected_output
     assert subprocess_run_command == [
         ['helm', 'repo', 'update'],
-        ['helm', 'upgrade', '--install', '-f', test_val_file, 'insights', test_operator_chart, '--version', '1.2.3', '--namespace', 'kxi-operator'],
+        ['helm', 'upgrade', '--install', '-f', test_val_file, test_operator_helm_name, test_operator_chart, '--version', '1.2.3', '--namespace', 'kxi-operator'],
         ['helm', 'upgrade', '--install', '-f', test_val_file, 'insights', test_chart, '--version', '1.2.3', '--namespace', test_namespace]
     ]
     assert insights_installed_flag == True
     assert operator_installed_flag ==True
     assert crd_exists_flag == True
+
+
+def test_upgrade_without_op_name_prompts_to_skip_operator_install(mocker):
+    upgrades_mocks(mocker)
+    mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
+    mock_get_operator_version(mocker)
+    mocker.patch('kxicli.commands.install.get_installed_operator_versions', mocked_get_installed_operator_versions_without_release)
+    mock_validate_secret(mocker)
+    mock_helm_env(mocker)
+    mock_helm_fetch(mocker)
+    mock_kube_crd_api(mocker)
+    if os.path.exists(test_asm_backup):
+        os.remove(test_asm_backup)
+    with open(test_asm_file) as f:
+        file = yaml.safe_load(f)
+        last_applied = file['metadata']['annotations'][CONFIG_ANNOTATION]
+        test_asm_file_contents = json.loads(last_applied)
+    with open(test_val_file, 'r') as values_file:
+        values = str(values_file.read())
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        # these are responses to the various prompts
+        user_input = f"""y
+y
+y
+y
+"""
+        result = runner.invoke(main.cli,
+            ['install', 'upgrade', '--version', '1.2.3', '--install-config-secret',
+                    test_install_secret, '--assembly-backup-filepath', test_asm_backup],
+            input=user_input
+        )
+        expected_output = f"""Upgrading KX Insights
+{phrases.values_validating}
+
+kxi-operator already installed with version 1.2.0
+warn=kxi-operator already installed, but not managed by helm
+Not installing kxi-operator
+
+Backing up assemblies
+Persisted assembly definitions for ['{test_asm_name}'] to {test_asm_backup}
+
+Tearing down assemblies
+Assembly data will be persisted and state will be recovered post-upgrade
+Tearing down assembly {test_asm_name}
+Are you sure you want to teardown {test_asm_name} [y/N]: y
+Waiting for assembly to be torn down
+
+Upgrading insights
+
+KX Insights already installed with version insights-1.2.1
+Installing chart kx-insights/insights version 1.2.3 with values from secret
+
+Reapplying assemblies
+Submitting assembly from {test_asm_backup}
+Submitting assembly {test_asm_name}
+Custom assembly resource {test_asm_name} created!
+
+Upgrade to version 1.2.3 complete
+"""
+    assert result.exit_code == 0
+    assert result.output == expected_output
+    assert subprocess_run_command == [
+        ['helm', 'repo', 'update'],
+        ['helm', 'upgrade', '--install', '-f', '-', 'insights', test_chart, '--version', '1.2.3', '--namespace', test_namespace]
+    ]
+    assert subprocess_run_args == (True, values, True)
+    assert delete_crd_params == []
+    assert insights_installed_flag == True
+    assert operator_installed_flag == True
+    assert crd_exists_flag == True
+    assert running_assembly[test_asm_name] == True
+    assert not os.path.isfile(test_asm_backup)
 
 
 def test_install_upgrade_errors_when_repo_does_not_exist(mocker):

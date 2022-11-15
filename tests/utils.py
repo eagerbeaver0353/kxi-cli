@@ -111,7 +111,8 @@ def mocked_kube_deployment_list(namespace, **kwargs):
             metadata=k8s.client.V1ObjectMeta(
                 name='kxi-operator',
                 namespace=namespace,
-                labels={"helm.sh/chart":'kxi-operator-1.2.3'}
+                labels={"helm.sh/chart":'kxi-operator-1.2.3'},
+                annotations={"meta.helm.sh/release-name": 'test-helm-name'}
             )
         )]
     )

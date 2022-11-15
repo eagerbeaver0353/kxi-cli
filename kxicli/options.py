@@ -23,9 +23,6 @@ from kxicli.common import key_install_outputFile, key_chart_repo_name, key_insta
     key_namespace, key_hostname, key_version, key_operator_version
 from kxicli.common import enter_password
 
-def _is_interactive_session():
-    return sys.stdout.isatty() and '--force' not in sys.argv
-
 
 def print_option_source(message, val, password, silent):
     if silent:
@@ -127,7 +124,7 @@ class Option():
             val = config.config.get(config.config.default_section, self.config_name)
             print_option_source(f'Using {self.config_name} from config file {config.config_file}', val, self.password, silent)
         # check if there's a tty and not explicitly no prompt
-        elif prompt_message and _is_interactive_session() and not silent:
+        elif prompt_message and kxicli.common.is_interactive_session() and not silent:
             val = interactive_prompt(prompt_message, self.password, default_val(self.config_name))
         # embedded default values
         elif self.config_name in kxicli.common.DEFAULT_VALUES:
