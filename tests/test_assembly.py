@@ -331,7 +331,7 @@ def test_create_assemblies_from_file_creates_when_one_already_exists(mocker):
 
 
 def test_create_assemblies_from_file_does_nothing_when_filepath_is_none():
-    assert assembly._create_assemblies_from_file(namespace='test_ns', filepath=None) == None
+    assert assembly._create_assemblies_from_file(namespace='test_ns', filepath=None) == []
 
 
 def test_delete_assembly(mocker):

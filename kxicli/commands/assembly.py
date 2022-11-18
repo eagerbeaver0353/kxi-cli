@@ -191,7 +191,7 @@ def _create_assemblies_from_file(namespace, filepath, wait=None):
     """Apply assemblies from file"""
     if not filepath:
         click.echo('No assemblies to restore')
-        return None
+        return []
 
     asm_list = _read_assembly_file(filepath)
 
