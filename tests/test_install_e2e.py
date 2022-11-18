@@ -1890,6 +1890,37 @@ Upgrade to version 1.2.3 complete
     assert not os.path.isfile(test_asm_backup)
 
 
+def test_upgrade_with_no_assemblies(mocker):
+    upgrades_mocks(mocker)
+    mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
+    mock_get_operator_version(mocker)
+    mock_validate_secret(mocker)
+    mock_helm_env(mocker)
+    mock_helm_fetch(mocker)
+    mock_kube_crd_api(mocker)
+    mocker.patch(GET_ASSEMBLIES_LIST_FUNC, mock_list_assembly_none)
+    running_assembly[test_asm_name] = False
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        result = runner.invoke(main.cli,
+            ['install', 'upgrade', '--version', '1.2.3', '--install-config-secret',
+                    test_install_secret, '--assembly-backup-filepath', test_asm_backup],
+            input="y"
+        )
+    assert result.exit_code == 0
+    assert subprocess_run_command == [
+        ['helm', 'repo', 'update'],
+        ['helm', 'upgrade', '--install', '-f', '-', test_operator_helm_name, test_operator_chart, '--version', '1.2.3', '--namespace',
+         'kxi-operator'],
+        ['helm', 'upgrade', '--install', '-f', '-', 'insights', test_chart, '--version', '1.2.3', '--namespace', test_namespace]
+    ]
+    assert insights_installed_flag == True
+    assert operator_installed_flag == True
+    assert crd_exists_flag == True
+    assert running_assembly[test_asm_name] == False
+    assert not os.path.isfile(test_asm_backup)
+
+
 def test_install_upgrade_errors_when_repo_does_not_exist(mocker):
     mock_empty_helm_repo_list(mocker)
     runner = CliRunner()
