@@ -134,6 +134,7 @@ def is_interactive_session():
 def get_access_token(hostname, client_id, client_secret, realm):
     """Get Keycloak client access token"""
     log.debug('Requesting access token')
+    hostname = hostname.rstrip('/')
     url = f'{hostname}/auth/realms/{realm}/protocol/openid-connect/token'
     headers = {
         'Content-Type': 'application/x-www-form-urlencoded'
