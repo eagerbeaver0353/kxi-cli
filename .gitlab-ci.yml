@@ -89,6 +89,22 @@ whitesource-dep-scan:
     WS_PROJECTNAME: "$CI_PROJECT_NAME"
     WS_PROJECTVERSION: "$CI_DEFAULT_BRANCH"
 
+whitesource-release-dep-scan:
+  stage: test
+  extends:
+    - .whitesource-scan
+  rules:
+    - if: $CI_COMMIT_REF_NAME =~ /release\/.*/
+  before_script:
+      - |
+        export WS_PRODUCTVERSION="${CI_COMMIT_REF_NAME#*/}"
+        export WS_PROJECTVERSION="${CI_COMMIT_REF_NAME#*/}"
+  variables:
+    WS_PRODUCTNAME: "insights"
+    WS_PROJECTNAME: "$CI_PROJECT_NAME"
+    KUBERNETES_MEMORY_REQUEST: "600Mi"
+    KUBERNETES_MEMORY_LIMIT: "1Gi"
+
 run tests 3.7:
   extends: .run-tests
   image: python:3.7
