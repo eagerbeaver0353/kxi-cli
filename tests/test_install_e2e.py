@@ -309,13 +309,13 @@ def mock_delete_assembly(mocker):
     mock_instance.get_namespaced_custom_object.side_effect = raise_not_found
 
 
-def mock_create_assembly(namespace, body, wait=None):
+def mock_create_assembly(hostname, client_id, client_secret, realm, namespace, body, use_kubeconfig, wait=None):
     asm_name = body['metadata']['name']
     print(f'Custom assembly resource {asm_name} created!')
     running_assembly[asm_name] = True
     return True
 
-def mock__delete_assembly(namespace, name, wait, force):
+def mock__delete_assembly(namespace, name, wait, force, **kwargs):
     global delete_assembly_args
     delete_assembly_args.append({'name':name, 'namespace':namespace})
     return True

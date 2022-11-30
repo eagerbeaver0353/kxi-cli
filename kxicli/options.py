@@ -20,7 +20,8 @@ from kxicli.common import key_install_outputFile, key_chart_repo_name, key_insta
     key_chart_repo_url, key_chart_repo_username, key_chart_repo_password, \
     key_client_cert_secret, key_gui_client_secret, key_operator_client_secret, \
     key_install_filepath, key_assembly_backup_file, key_release_name, \
-    key_namespace, key_hostname, key_version, key_operator_version
+    key_namespace, key_hostname, key_version, key_operator_version, \
+    key_client_id, key_client_secret
 from kxicli.common import enter_password
 
 
@@ -421,4 +422,35 @@ assembly_filepath = Option (
     config_name = 'assembly.filepath',
     help='Path to the assembly file',
     prompt_message = 'Please enter a path to the assembly file'
+)
+
+client_id = Option (
+    '--client-id',
+    config_name = key_client_id,
+    help = help_text(key_client_id),
+    default = lambda: default_val(key_client_id),
+    prompt_message = 'Please enter a client id to connect with',
+)
+
+client_secret = Option (
+    '--client-secret',
+    config_name = key_client_secret,
+    help = help_text(key_client_secret),
+    default = lambda: default_val(key_client_secret),
+    prompt_message = 'Please enter a client secret to connect with',
+    password = True
+)
+
+realm = Option (
+    '--realm',
+    config_name = key_keycloak_realm,
+    help = help_text(key_keycloak_realm),
+    default = lambda: default_val(key_keycloak_realm),
+    prompt_message = 'Please enter a keycloak realm to connect with',
+)
+
+use_kubeconfig = Option (
+    '--use-kubeconfig',
+    help = 'Communicate directly with kubernetes plane',
+    is_flag=True
 )

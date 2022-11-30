@@ -2,6 +2,7 @@ import click
 import copy
 import json
 import os
+import requests_mock
 import shutil
 from contextlib import contextmanager
 from pathlib import Path
@@ -15,7 +16,8 @@ from click.testing import CliRunner
 from kxicli import common
 from kxicli import main
 from kxicli.commands import assembly
-from utils import return_true, return_false
+from utils import return_true, return_false, return_none
+from test_assembly_kxicontroller import build_assembly_object_kxic
 
 ASM_NAME = 'test_asm'
 ASM_NAME2 = 'test_asm2'
@@ -26,6 +28,8 @@ PREFERRED_VERSION_FUNC = 'kxicli.commands.assembly.get_preferred_api_version'
 PREFERRED_VERSION = 'v1'
 TEST_NS = 'test_ns'
 test_asm_file = os.path.dirname(__file__) + '/files/assembly-v1.yaml'
+with open(test_asm_file) as f:
+    test_asm = yaml.safe_load(f)
 
 common.config.config_file = os.path.dirname(__file__) + '/files/test-cli-config'
 common.config.load_config("default")
@@ -173,13 +177,42 @@ def test_format_assembly_status_with_message_and_reason():
 
 
 def test_status_with_true_status(mocker):
+    with requests_mock.Mocker() as m:
+        mocker.patch('kxicli.common.get_access_token', return_none)
+        m.get(f'https://test.kx.com/kxicontroller/assembly/cli/{ASM_NAME}', text=json.dumps(build_assembly_object_kxic(ASM_NAME)))
+        assert assembly._assembly_status(hostname='https://test.kx.com',
+            client_id='client',
+            client_secret='secret',
+            realm='insights',
+            name=ASM_NAME,
+            use_kubeconfig=False,
+        )
+
+
+def test_status_with_true_status_k8s_api(mocker):
     mock = mocker.patch(CUSTOM_OBJECT_API)
     instance = mock.return_value
     instance.get_namespaced_custom_object.return_value = build_assembly_object(ASM_NAME, True)
-    assert assembly._assembly_status(namespace='test_ns', name='test_asm')
+    assert assembly._assembly_status(namespace='test_ns', name='test_asm', use_kubeconfig=True)
 
 
 def test_status_with_false_status(mocker):
+    # set False status in assembly
+    asm = build_assembly_object_kxic(ASM_NAME, ready=False)
+    
+    with requests_mock.Mocker() as m:
+        mocker.patch('kxicli.common.get_access_token', return_none)
+        m.get(f'https://test.kx.com/kxicontroller/assembly/cli/{ASM_NAME}', text=json.dumps(asm))
+        assert assembly._assembly_status(hostname='https://test.kx.com',
+            client_id='client',
+            client_secret='secret',
+            realm='insights',
+            name=ASM_NAME,
+            use_kubeconfig=False,
+        ) == False
+
+
+def test_status_with_false_status_k8s_api(mocker):
     # set False status
     asm = build_assembly_object(ASM_NAME, True)
     asm['status']['conditions'][0]['status'] = 'False'
@@ -189,23 +222,10 @@ def test_status_with_false_status(mocker):
     instance = mock.return_value
     instance.get_namespaced_custom_object.return_value = asm
 
-    assert assembly._assembly_status(namespace='test_ns', name='test_asm', print_status=True) == False
+    assert assembly._assembly_status(namespace='test_ns', name='test_asm', use_kubeconfig=True, print_status=True) == False
 
 
-def test_create_with_false_status(mocker):
-    # set False status
-    asm = build_assembly_object(ASM_NAME, True)
-    asm['status']['conditions'][0]['status'] = 'False'
-
-    # mock the Kubernetes function to return asm above
-    mock = mocker.patch(CUSTOM_OBJECT_API)
-    instance = mock.return_value
-    instance.get_namespaced_custom_object.return_value = asm
-
-    assert assembly._assembly_status(namespace='test_ns', name='test_asm', print_status=True) == False
-
-
-def test_get_assemblies_list(mocker):
+def test_get_assemblies_list_k8s_api(mocker):
     mock_list_assemblies(mocker.patch(CUSTOM_OBJECT_API).return_value)
     assert assembly._get_assemblies_list(namespace='test_ns') == ASSEMBLY_LIST
 
@@ -245,31 +265,64 @@ def test_add_last_applied_configuration_annotation():
     assert res['metadata']['annotations'][assembly.CONFIG_ANNOTATION] == '\n' + json.dumps(test_assembly)
 
 
+def test_create_assembly_submits_to_kxic_api(mocker):
+    with requests_mock.Mocker() as m:
+        mocker.patch('kxicli.common.get_access_token', return_none)
+        m.post('https://test.kx.com/kxicontroller/assembly/cli/deploy')
+        assert assembly._create_assembly('https://test.kx.com', 'client', 'secret', 'insights', \
+                                  namespace='test_ns', body=test_asm, use_kubeconfig=False)
+        m.last_request.json() == assembly._add_last_applied_configuration_annotation(test_asm)
+
+
 def test_create_assembly_submits_to_k8s_api(mocker):
     mock_create_assemblies(mocker.patch(CUSTOM_OBJECT_API).return_value)
-    with open(test_asm_file) as f:
-        test_asm = yaml.safe_load(f)
-
-    assert assembly._create_assembly(namespace='test_ns', body=test_asm)
-
+    assert assembly._create_assembly(None, None, None, None, namespace='test_ns', body=test_asm, use_kubeconfig=True)
     assert appended_args == [
         {'group': assembly.API_GROUP, 'version': PREFERRED_VERSION, 'namespace': 'test_ns', 'plural': 'assemblies',
          'body': assembly._add_last_applied_configuration_annotation(test_asm)}]
 
 
 def test_create_assemblies_from_file_creates_one_assembly(mocker):
+    with requests_mock.Mocker() as m:
+        mocker.patch('kxicli.common.get_access_token', return_none)
+        m.post('https://test.kx.com/kxicontroller/assembly/cli/deploy')
+        assert assembly._create_assemblies_from_file('https://test.kx.com', 'client', 'secret', 'insights', None, \
+                                              filepath=test_asm_file, use_kubeconfig=False)
+        assert m.last_request.json() == assembly._add_last_applied_configuration_annotation(test_asm)
+
+
+def test_create_assemblies_from_file_creates_one_assembly_k8s_api(mocker):
     mock_create_assemblies(mocker.patch(CUSTOM_OBJECT_API).return_value)
     with open(test_asm_file) as f:
         test_asm = yaml.safe_load(f)
 
-    assert assembly._create_assemblies_from_file(namespace='test_ns', filepath=test_asm_file)
+    assert assembly._create_assemblies_from_file(None, None, None, None, namespace='test_ns', filepath=test_asm_file, use_kubeconfig=True)
 
     assert appended_args == [
         {'group': assembly.API_GROUP, 'version': PREFERRED_VERSION, 'namespace': 'test_ns', 'plural': 'assemblies',
          'body': assembly._add_last_applied_configuration_annotation(test_asm)}]
 
-
 def test_create_assemblies_from_file_creates_two_assemblies(mocker):
+    mocker.patch('kxicli.common.get_access_token', return_none)
+    mock_instance = mocker.patch(CUSTOM_OBJECT_API).return_value
+    mock_list_assemblies(mock_instance)
+
+    # Call _backup_assemblies to create file
+    with temp_asm_file() as test_asm_list_file, requests_mock.Mocker() as m:
+        m.post('https://test.kx.com/kxicontroller/assembly/cli/deploy')
+        assert assembly._backup_assemblies(namespace='test_ns', filepath=test_asm_list_file, force=False) == test_asm_list_file
+        assert assembly._create_assemblies_from_file('https://test.kx.com', 'client', 'secret', 'insights', None, \
+                                              filepath=test_asm_list_file, use_kubeconfig=False)
+
+        with open(test_asm_list_file, 'rb') as f:
+            assert yaml.full_load(f) == ASSEMBLY_BACKUP_LIST
+        history = m.request_history
+        assert len(m.request_history) == 2
+        assert history[0].json() == assembly._add_last_applied_configuration_annotation(build_assembly_object(ASM_NAME, False))
+        assert history[1].json() == assembly._add_last_applied_configuration_annotation(build_assembly_object(ASM_NAME2, False))
+
+
+def test_create_assemblies_from_file_creates_two_assemblies_k8s_api(mocker):
     mock_instance = mocker.patch(CUSTOM_OBJECT_API).return_value
     mock_list_assemblies(mock_instance)
     mock_create_assemblies(mock_instance)
@@ -277,7 +330,7 @@ def test_create_assemblies_from_file_creates_two_assemblies(mocker):
     # Call _backup_assemblies to create file
     with temp_asm_file() as test_asm_list_file:
         assert assembly._backup_assemblies(namespace='test_ns', filepath=test_asm_list_file, force=False) == test_asm_list_file
-        assert assembly._create_assemblies_from_file(namespace='test_ns', filepath=test_asm_list_file)
+        assert assembly._create_assemblies_from_file(None, None, None, None, namespace='test_ns', filepath=test_asm_list_file, use_kubeconfig=True)
 
         with open(test_asm_list_file, 'rb') as f:
             assert yaml.full_load(f) == ASSEMBLY_BACKUP_LIST
@@ -294,6 +347,24 @@ def test_create_assemblies_from_file_removes_resourceVersion(mocker):
     TEST_ASSEMBLY_WITH_resourceVersion['metadata']['resourceVersion'] = '01234'
 
     assembly_list = {'items': [TEST_ASSEMBLY_WITH_resourceVersion]}
+    mocker.patch('kxicli.common.get_access_token', return_none)
+    mock_instance = mocker.patch(CUSTOM_OBJECT_API).return_value
+    mock_list_assemblies(mock_instance=mock_instance, response=assembly_list)
+
+    # Call _backup_assemblies to create file
+    with temp_asm_file() as test_asm_list_file, requests_mock.Mocker() as m:
+        m.post('https://test.kx.com/kxicontroller/assembly/cli/deploy')
+        assert assembly._backup_assemblies(namespace='test_ns', filepath=test_asm_list_file, force=False) == test_asm_list_file
+        assembly._create_assemblies_from_file('https://test.kx.com', 'client', 'secret', 'insights', None, \
+                                              filepath=test_asm_list_file, use_kubeconfig=False)
+        assert m.last_request.json() == assembly._add_last_applied_configuration_annotation(build_assembly_object(ASM_NAME, False))
+
+
+def test_create_assemblies_from_file_removes_resourceVersion_k8s_api(mocker):
+    TEST_ASSEMBLY_WITH_resourceVersion = build_assembly_object(ASM_NAME, True)
+    TEST_ASSEMBLY_WITH_resourceVersion['metadata']['resourceVersion'] = '01234'
+
+    assembly_list = {'items': [TEST_ASSEMBLY_WITH_resourceVersion]}
     mock_instance = mocker.patch(CUSTOM_OBJECT_API).return_value
     mock_list_assemblies(mock_instance=mock_instance, response=assembly_list)
     mock_create_assemblies(mock_instance)
@@ -301,14 +372,14 @@ def test_create_assemblies_from_file_removes_resourceVersion(mocker):
     # Call _backup_assemblies to create file
     with temp_asm_file() as test_asm_list_file:
         assert assembly._backup_assemblies(namespace='test_ns', filepath=test_asm_list_file, force=False) == test_asm_list_file
-        assert assembly._create_assemblies_from_file(namespace='test_ns', filepath=test_asm_list_file)
+        assert assembly._create_assemblies_from_file(None, None, None, None, namespace='test_ns', filepath=test_asm_list_file, use_kubeconfig=True) == [True]
 
         assert appended_args == [
             {'group': assembly.API_GROUP, 'version': PREFERRED_VERSION, 'namespace': 'test_ns', 'plural': 'assemblies',
              'body': assembly._add_last_applied_configuration_annotation(build_assembly_object(ASM_NAME, False))}]
 
 
-def test_create_assemblies_from_file_creates_when_one_already_exists(mocker):
+def test_create_assemblies_from_file_creates_when_one_already_exists_k8s_api(mocker):
     # when applying one assembly fails, applying others proceeds uninterrupted
     mock_instance = mocker.patch(CUSTOM_OBJECT_API).return_value
     mock_list_assemblies(mock_instance)
@@ -320,7 +391,7 @@ def test_create_assemblies_from_file_creates_when_one_already_exists(mocker):
     # Call _backup_assemblies to create file
     with temp_asm_file() as test_asm_list_file:
         assert assembly._backup_assemblies(namespace='test_ns', filepath=test_asm_list_file, force=False)  == test_asm_list_file
-        assert assembly._create_assemblies_from_file(namespace='test_ns', filepath=test_asm_list_file)
+        assert assembly._create_assemblies_from_file(None, None, None, None, namespace='test_ns', filepath=test_asm_list_file, use_kubeconfig=True)
 
         with open(test_asm_list_file, 'rb') as f:
             assert yaml.full_load(f) == ASSEMBLY_BACKUP_LIST
@@ -331,15 +402,35 @@ def test_create_assemblies_from_file_creates_when_one_already_exists(mocker):
 
 
 def test_create_assemblies_from_file_does_nothing_when_filepath_is_none():
-    assert assembly._create_assemblies_from_file(namespace='test_ns', filepath=None) == []
+    assert assembly._create_assemblies_from_file(None, None, None, None, namespace='test_ns', filepath=None, use_kubeconfig=False) == []
 
 
 def test_delete_assembly(mocker):
+    with requests_mock.Mocker() as m:
+        mocker.patch('kxicli.common.get_access_token', return_none)
+        m.post(f'https://test.kx.com/kxicontroller/assembly/cli/{ASM_NAME}/teardown')
+        assert assembly._delete_assembly(hostname='https://test.kx.com',
+            client_id='client',
+            client_secret='secret',
+            realm='insights',
+            name=ASM_NAME,
+            use_kubeconfig=False,
+            force=True
+        ) == True
+
+
+def test_delete_assembly_k8s_api(mocker):
     mock_instance = mocker.patch(CUSTOM_OBJECT_API).return_value
     mocker.patch(PREFERRED_VERSION_FUNC, return_value=PREFERRED_VERSION)
     mock_delete_assemblies(mock_instance)
 
-    assert assembly._delete_assembly(namespace='test_ns', name=ASM_NAME, wait=False, force=True) == True
+    assert assembly._delete_assembly(
+        namespace='test_ns',
+        name=ASM_NAME,
+        wait=False,
+        force=True,
+        use_kubeconfig=True
+    ) == True
 
     assert appended_args == [
         {'group': assembly.API_GROUP, 'version': PREFERRED_VERSION, 'namespace': 'test_ns', 'plural': 'assemblies',
@@ -366,8 +457,6 @@ def test_delete_running_assemblies(mocker):
 
 
 def test_read_assembly_file_returns_contents():
-    with open(test_asm_file) as f:
-        test_asm = yaml.safe_load(f)
     assert assembly._read_assembly_file(test_asm_file) == test_asm
 
 
@@ -400,29 +489,65 @@ def test_get_preferred_api_version_raises_exception_with_no_version(mocker):
 # CLI invoked tests
 
 def test_cli_assembly_status_if_assembly_not_deployed(mocker):
+    # mock the kxic API to return an empty assembly
+    with requests_mock.Mocker() as m:
+        mocker.patch('kxicli.common.get_access_token', return_none)
+        m.get(f'https://test.kx.com/kxicontroller/assembly/cli/{ASM_NAME}')
+        result = TEST_CLI.invoke(main.cli, ['assembly', 'status', '--name', ASM_NAME])
+
+    assert result.output == 'Error: Assembly not yet deployed\n'
+    assert result.exit_code == 1
+
+
+def test_cli_assembly_status_if_assembly_not_deployed_k8s_api(mocker):
     # mock the Kubernetes function to return an empty assembly
     mock = mocker.patch(CUSTOM_OBJECT_API)
     instance = mock.return_value
     instance.get_namespaced_custom_object.return_value = {}
 
-    result = TEST_CLI.invoke(main.cli, ['assembly', 'status', '--name', 'test_asm'])
+    result = TEST_CLI.invoke(main.cli, ['assembly', 'status', '--name', 'test_asm', '--use-kubeconfig'])
     assert result.output == 'Error: Assembly not yet deployed\n'
     assert result.exit_code == 1
 
 
 def test_cli_assembly_status_if_assembly_deployed(mocker):
     # mock the Kubernetes function to return TEST_ASSEMBLY
+    with requests_mock.Mocker() as m:
+        mocker.patch('kxicli.common.get_access_token', return_none)
+        m.get(f'https://test.kx.com/kxicontroller/assembly/cli/{ASM_NAME}', text=json.dumps(build_assembly_object_kxic(ASM_NAME)))
+        result = TEST_CLI.invoke(main.cli, ['assembly', 'status', '--name', ASM_NAME])
+
+    assert result.exit_code == 0
+    assert result.output == f'{json.dumps(build_assembly_object_kxic(ASM_NAME),indent=2)}\n'
+
+
+def test_cli_assembly_status_if_assembly_deployed_k8s_api(mocker):
+    # mock the Kubernetes function to return TEST_ASSEMBLY
     mock = mocker.patch(CUSTOM_OBJECT_API)
     instance = mock.return_value
     instance.get_namespaced_custom_object.return_value = build_assembly_object(ASM_NAME, True)
 
-    result = TEST_CLI.invoke(main.cli, ['assembly', 'status', '--name', 'test_asm'])
+    result = TEST_CLI.invoke(main.cli, ['assembly', 'status', '--name', 'test_asm', '--use-kubeconfig'])
 
     assert result.exit_code == 0
     assert result.output == f'{json.dumps(TRUE_STATUS, indent=2)}\n'
 
 
 def test_cli_assembly_status_with_false_status(mocker):
+    # set False status
+    asm = build_assembly_object_kxic(ASM_NAME, ready=False)
+
+    # mock the kxic API function to return asm above
+    with requests_mock.Mocker() as m:
+        mocker.patch('kxicli.common.get_access_token', return_none)
+        m.get(f'https://test.kx.com/kxicontroller/assembly/cli/{ASM_NAME}', text=json.dumps(asm))
+        result = TEST_CLI.invoke(main.cli, ['assembly', 'status', '--name', ASM_NAME])
+
+    assert result.exit_code == 0
+    assert result.output == f'{json.dumps(asm, indent=2)}\n'
+
+
+def test_cli_assembly_status_with_false_status_k8s_api(mocker):
     # set False status
     asm = build_assembly_object(ASM_NAME, True)
     asm['status']['conditions'][0]['status'] = 'False'
@@ -432,31 +557,53 @@ def test_cli_assembly_status_with_false_status(mocker):
     instance = mock.return_value
     instance.get_namespaced_custom_object.return_value = asm
 
-    result = TEST_CLI.invoke(main.cli, ['assembly', 'status', '--name', 'test_asm'])
+    result = TEST_CLI.invoke(main.cli, ['assembly', 'status', '--name', 'test_asm', '--use-kubeconfig'])
 
     assert result.exit_code == 0
     assert result.output == f'{json.dumps(FALSE_STATUS, indent=2)}\n'
 
 
 def test_cli_assembly_status_with_not_found_exception(mocker):
+    # mock kxic API to return a not found status
+    with requests_mock.Mocker() as m:
+        mocker.patch('kxicli.common.get_access_token', return_none)
+        m.get(f'https://test.kx.com/kxicontroller/assembly/cli/{ASM_NAME}', status_code=404)
+        result = TEST_CLI.invoke(main.cli, ['assembly', 'status', '--name', ASM_NAME])
+
+    assert result.exit_code == 1
+    assert result.output == f'Error: Assembly {ASM_NAME} not found\n'
+
+
+def test_cli_assembly_status_with_not_found_exception_k8s_api(mocker):
     # mock Kubernetes get API to raise a not found exception
     mock = mocker.patch(CUSTOM_OBJECT_API)
     instance = mock.return_value
     instance.get_namespaced_custom_object.side_effect = raise_not_found
 
-    result = TEST_CLI.invoke(main.cli, ['assembly', 'status', '--name', ASM_NAME])
+    result = TEST_CLI.invoke(main.cli, ['assembly', 'status', '--name', ASM_NAME, '--use-kubeconfig'])
 
     assert result.exit_code == 1
     assert result.output == f'Error: Assembly {ASM_NAME} not found\n'
 
 
 def test_cli_assembly_status_with_wait_for_ready(mocker):
+    with requests_mock.Mocker() as m:
+        mocker.patch('kxicli.common.get_access_token', return_none)
+        m.get(f'https://test.kx.com/kxicontroller/assembly/cli/{ASM_NAME}', text=json.dumps(build_assembly_object_kxic(ASM_NAME)))
+        result = TEST_CLI.invoke(main.cli, ['assembly', 'status', '--name', ASM_NAME, '--wait-for-ready'])
+
+    assert result.exit_code == 0
+    assert result.output == f"""Waiting for assembly to enter "Ready" state
+{json.dumps(build_assembly_object_kxic(ASM_NAME), indent=2)}
+"""
+
+
+def test_cli_assembly_status_with_wait_for_ready_k8s_api(mocker):
     mock = mocker.patch(CUSTOM_OBJECT_API)
     instance = mock.return_value
     instance.get_namespaced_custom_object.return_value = build_assembly_object(ASM_NAME, True)
 
-    # answer 'y' to the prompt asking to confirm you want to delete the assembly
-    result = TEST_CLI.invoke(main.cli, ['assembly', 'status', '--name', ASM_NAME, '--wait-for-ready'])
+    result = TEST_CLI.invoke(main.cli, ['assembly', 'status', '--name', ASM_NAME, '--wait-for-ready', '--use-kubeconfig'])
 
     assert result.exit_code == 0
     assert result.output == f"""Waiting for assembly to enter "Ready" state
@@ -474,6 +621,18 @@ Not tearing down assembly {ASM_NAME}\n"""
 
 
 def test_cli_assembly_teardown_with_confirm(mocker):
+    # API response to do nothing
+    with requests_mock.Mocker() as m:
+        mocker.patch('kxicli.common.get_access_token', return_none)
+        m.post(f'https://test.kx.com/kxicontroller/assembly/cli/{ASM_NAME}/teardown')
+        result = TEST_CLI.invoke(main.cli, ['assembly', 'teardown', '--name', ASM_NAME], input='y')
+
+    assert result.exit_code == 0
+    assert result.output == f"""Tearing down assembly {ASM_NAME}
+Are you sure you want to teardown {ASM_NAME} [y/N]: y
+"""
+
+def test_cli_assembly_teardown_with_confirm_k8s_api(mocker):
     # mock Kubernetes delete API to do nothing
     mock = mocker.patch(CUSTOM_OBJECT_API)
     instance = mock.return_value
@@ -482,7 +641,7 @@ def test_cli_assembly_teardown_with_confirm(mocker):
     mocker.patch(PREFERRED_VERSION_FUNC, return_value=PREFERRED_VERSION)
 
     # answer 'y' to the prompt asking to confirm you want to delete the assembly
-    result = TEST_CLI.invoke(main.cli, ['assembly', 'delete', '--name', ASM_NAME], input='y')
+    result = TEST_CLI.invoke(main.cli, ['assembly', 'teardown', '--name', ASM_NAME, '--use-kubeconfig'], input='y')
 
     assert stored_args == {'group': assembly.API_GROUP, 'version': PREFERRED_VERSION, 'namespace': 'test',
                            'plural': 'assemblies', 'name': ASM_NAME}
@@ -490,36 +649,13 @@ def test_cli_assembly_teardown_with_confirm(mocker):
     assert result.output == f"""Tearing down assembly {ASM_NAME}
 Are you sure you want to teardown {ASM_NAME} [y/N]: y
 """
-
-
-def test_cli_assembly_teardown_with_confirm(mocker):
-    # mock Kubernetes delete API to do nothing
-    mock = mocker.patch(CUSTOM_OBJECT_API)
-    instance = mock.return_value
-    instance.delete_namespaced_custom_object.return_value = {}
-    instance.delete_namespaced_custom_object.side_effect = store_args
-    mocker.patch(PREFERRED_VERSION_FUNC, return_value=PREFERRED_VERSION)
-
-    # answer 'y' to the prompt asking to confirm you want to delete the assembly
-    result = TEST_CLI.invoke(main.cli, ['assembly', 'teardown', '--name', ASM_NAME], input='y')
-
-    assert stored_args == {'group': assembly.API_GROUP, 'version': PREFERRED_VERSION, 'namespace': 'test',
-                           'plural': 'assemblies', 'name': ASM_NAME}
-    assert result.exit_code == 0
-    assert result.output == f"""Tearing down assembly {ASM_NAME}
-Are you sure you want to teardown {ASM_NAME} [y/N]: y
-"""
-
 
 def test_cli_assembly_teardown_with_not_found_exception(mocker):
-    # mock Kubernetes delete API to raise a not found exception
-    mock = mocker.patch(CUSTOM_OBJECT_API)
-    instance = mock.return_value
-    instance.delete_namespaced_custom_object.side_effect = raise_not_found
-    mocker.patch(PREFERRED_VERSION_FUNC, return_value=PREFERRED_VERSION)
-
-    # answer 'y' to the prompt asking to confirm you want to delete the assembly
-    result = TEST_CLI.invoke(main.cli, ['assembly', 'teardown', '--name', ASM_NAME], input='y')
+    # mock kxi API to return a not found exception
+    with requests_mock.Mocker() as m:
+        mocker.patch('kxicli.common.get_access_token', return_none)
+        m.post(f'https://test.kx.com/kxicontroller/assembly/cli/{ASM_NAME}/teardown', status_code=404)
+        result = TEST_CLI.invoke(main.cli, ['assembly', 'teardown', '--name', ASM_NAME], input='y')
 
     assert result.exit_code == 0
     assert result.output == f"""Tearing down assembly {ASM_NAME}
@@ -528,7 +664,39 @@ Ignoring teardown, {ASM_NAME} not found
 """
 
 
+def test_cli_assembly_teardown_with_not_found_exception_k8s_api(mocker):
+    # mock Kubernetes delete API to raise a not found exception
+    mock = mocker.patch(CUSTOM_OBJECT_API)
+    instance = mock.return_value
+    instance.delete_namespaced_custom_object.side_effect = raise_not_found
+    mocker.patch(PREFERRED_VERSION_FUNC, return_value=PREFERRED_VERSION)
+
+    # answer 'y' to the prompt asking to confirm you want to delete the assembly
+    result = TEST_CLI.invoke(main.cli, ['assembly', 'teardown', '--name', ASM_NAME, '--use-kubeconfig'], input='y')
+
+    assert result.exit_code == 0
+    assert result.output == f"""Tearing down assembly {ASM_NAME}
+Are you sure you want to teardown {ASM_NAME} [y/N]: y
+Ignoring teardown, {ASM_NAME} not found
+"""
+
 def test_cli_assembly_teardown_with_force_and_wait(mocker):
+    # mock kxi teardown API to do nothing and the get status api to return a not found exception
+    # i.e that the deleted assembly no longer exists
+    with requests_mock.Mocker() as m:
+        mocker.patch('kxicli.common.get_access_token', return_none)
+        m.post(f'https://test.kx.com/kxicontroller/assembly/cli/{ASM_NAME}/teardown')
+        m.get(f'https://test.kx.com/kxicontroller/assembly/cli/{ASM_NAME}', status_code=404)
+
+        result = TEST_CLI.invoke(main.cli, ['assembly', 'teardown', '--name', ASM_NAME, '--force', '--wait'])
+
+    assert result.exit_code == 0
+    assert result.output == f"""Tearing down assembly {ASM_NAME}
+Waiting for assembly to be torn down
+"""
+
+
+def test_cli_assembly_teardown_with_force_and_wait_k8s_api(mocker):
     # mock Kubernetes delete API to do nothing and the get api to raise a not found exception
     # i.e that the deleted assembly no longer exists
     mock = mocker.patch(CUSTOM_OBJECT_API)
@@ -538,7 +706,7 @@ def test_cli_assembly_teardown_with_force_and_wait(mocker):
     mocker.patch(PREFERRED_VERSION_FUNC, return_value=PREFERRED_VERSION)
 
     # answer 'y' to the prompt asking to confirm you want to delete the assembly
-    result = TEST_CLI.invoke(main.cli, ['assembly', 'teardown', '--name', ASM_NAME, '--force', '--wait'])
+    result = TEST_CLI.invoke(main.cli, ['assembly', 'teardown', '--name', ASM_NAME, '--force', '--wait', '--use-kubeconfig'])
 
     assert result.exit_code == 0
     assert result.output == f"""Tearing down assembly {ASM_NAME}
@@ -547,12 +715,31 @@ Waiting for assembly to be torn down
 
 
 def test_cli_assembly_list_if_assembly_deployed(mocker):
+    # mock the requests API return TEST_ASSEMBLY
+    with requests_mock.Mocker() as m:
+        mocker.patch('kxicli.common.get_access_token', return_none)
+        m.get('https://test.kx.com/kxicontroller/assembly/', 
+            text=json.dumps([
+                build_assembly_object_kxic(ASM_NAME, ready=True),
+                build_assembly_object_kxic(ASM_NAME2, ready=False)
+                ]
+            )
+        )
+        result = TEST_CLI.invoke(main.cli, ['assembly', 'list'])
+
+    assert result.exit_code == 0
+    assert result.output == f"""ASSEMBLY NAME  READY
+{ASM_NAME}       True
+{ASM_NAME2}      False
+"""
+
+def test_cli_assembly_list_if_assembly_deployed_k8s_api(mocker):
     # mock the Kubernetes function to return TEST_ASSEMBLY
     mock = mocker.patch(CUSTOM_OBJECT_API)
     instance = mock.return_value
     instance.list_namespaced_custom_object.return_value = {'items': [build_assembly_object(ASM_NAME, True)]}
 
-    result = TEST_CLI.invoke(main.cli, ['assembly', 'list'])
+    result = TEST_CLI.invoke(main.cli, ['assembly', 'list', '--use-kubeconfig'])
 
     assert result.exit_code == 0
     assert result.output == f"""ASSEMBLY NAME  NAMESPACE
@@ -566,12 +753,28 @@ def test_cli_assembly_list_error_response(mocker):
     assert result.exit_code == 1
 
 
-def test_cli_assembly_create_from_file(mocker):
-    with open(test_asm_file) as f:
-        test_asm = yaml.safe_load(f)
+def test_cli_assembly_deploy_from_file(mocker):
+    global appended_args
+    appended_args = []
+    # mock requests post to capture payload
+    with requests_mock.Mocker() as m:
+        mocker.patch('kxicli.common.get_access_token', return_none)
+        m.post('https://test.kx.com/kxicontroller/assembly/cli/deploy')
+        
+        result = TEST_CLI.invoke(main.cli, ['assembly', 'deploy', '--filepath', test_asm_file])
+        m.last_request.json() == assembly._add_last_applied_configuration_annotation(test_asm)
+
+    assert result.exit_code == 0
+    assert result.output == f"""Using assembly.filepath from command line option: {test_asm_file}
+Submitting assembly from {test_asm_file}
+Custom assembly resource basic-assembly created!
+"""
+
+
+def test_cli_assembly_deploy_from_file_k8s_api(mocker):
     mock_create_assemblies(mocker.patch(CUSTOM_OBJECT_API).return_value)
 
-    result = TEST_CLI.invoke(main.cli, ['assembly', 'create', '--filepath', test_asm_file])
+    result = TEST_CLI.invoke(main.cli, ['assembly', 'deploy', '--filepath', test_asm_file, '--use-kubeconfig'])
 
     assert result.exit_code == 0
     assert result.output == f"""Using assembly.filepath from command line option: {test_asm_file}
@@ -584,19 +787,50 @@ Custom assembly resource basic-assembly created!
          'body': assembly._add_last_applied_configuration_annotation(test_asm)}]
 
 
-def test_cli_assembly_create_with_context_not_set(mocker):
+def test_cli_assembly_create_from_file(mocker):
+    # Test the 'create' alias of the 'deploy' command
+    global appended_args
+    appended_args = []
+    # mock requests post to capture payload
+    with requests_mock.Mocker() as m:
+        mocker.patch('kxicli.common.get_access_token', return_none)
+        m.post('https://test.kx.com/kxicontroller/assembly/cli/deploy')
+        
+        result = TEST_CLI.invoke(main.cli, ['assembly', 'create', '--filepath', test_asm_file])
+        m.last_request.json() == assembly._add_last_applied_configuration_annotation(test_asm)
+
+    assert result.exit_code == 0
+    assert result.output == f"""Using assembly.filepath from command line option: {test_asm_file}
+Submitting assembly from {test_asm_file}
+Custom assembly resource basic-assembly created!
+"""
+
+def test_cli_assembly_deploy_with_context_not_set(mocker):
     # When context is not set, the default namespace is taken from cli-config
-    with open(test_asm_file) as f:
-        test_asm = yaml.safe_load(f)
+    with requests_mock.Mocker() as m:
+        mocker.patch('kxicli.common.get_access_token', return_none)
+        m.post('https://test.kx.com/kxicontroller/assembly/cli/deploy')
+        result = TEST_CLI.invoke(main.cli, ['assembly', 'deploy', '--filepath', test_asm_file])
+        assert m.last_request.json() == assembly._add_last_applied_configuration_annotation(test_asm)
+
+    assert result.exit_code == 0
+    assert result.output == f"""Using assembly.filepath from command line option: {test_asm_file}
+Submitting assembly from {test_asm_file}
+Custom assembly resource basic-assembly created!
+"""
+
+
+def test_cli_assembly_deploy_with_context_not_set_k8s_api(mocker):
+    # When context is not set, the default namespace is taken from cli-config
     mock_create_assemblies(mocker.patch(CUSTOM_OBJECT_API).return_value)
     mocker.patch('kubernetes.config.list_kube_config_contexts', mocked_k8s_list_empty_config)
 
-    result = TEST_CLI.invoke(main.cli, ['assembly', 'create', '--filepath', test_asm_file])
+    result = TEST_CLI.invoke(main.cli, ['assembly', 'deploy', '--filepath', test_asm_file, '--use-kubeconfig'])
 
     assert result.exit_code == 0
-    assert result.output == f"""Using namespace from config file {common.config.config_file}: test
-Using assembly.filepath from command line option: {test_asm_file}
+    assert result.output == f"""Using assembly.filepath from command line option: {test_asm_file}
 Submitting assembly from {test_asm_file}
+Using namespace from config file {common.config.config_file}: test
 Custom assembly resource basic-assembly created!
 """
     assert appended_args == [
@@ -604,14 +838,28 @@ Custom assembly resource basic-assembly created!
          'plural': 'assemblies', 'body': assembly._add_last_applied_configuration_annotation(test_asm)}]
 
 
-def test_cli_assembly_create_and_wait(mocker):
-    with open(test_asm_file) as f:
-        test_asm = yaml.safe_load(f)
+def test_cli_assembly_deploy_and_wait(mocker):
+    mocker.patch('kxicli.common.get_access_token', return_none)
+    mocker.patch('kxicli.commands.assembly._assembly_status', return_true)
+    with requests_mock.Mocker() as m:
+        m.post('https://test.kx.com/kxicontroller/assembly/cli/deploy')
+        result = TEST_CLI.invoke(main.cli, ['assembly', 'deploy', '--filepath', test_asm_file, '--wait'])
+        assert m.last_request.json() == assembly._add_last_applied_configuration_annotation(test_asm)
+    
+    assert result.exit_code == 0
+    assert result.output == f"""Using assembly.filepath from command line option: {test_asm_file}
+Submitting assembly from {test_asm_file}
+Waiting for assembly to enter "Ready" state
+Custom assembly resource basic-assembly created!
+"""
+
+
+def test_cli_assembly_deploy_and_wait_k8s_api(mocker):
     mock_instance = mocker.patch(CUSTOM_OBJECT_API).return_value
     mock_create_assemblies(mock_instance)
     mock_instance.get_namespaced_custom_object.return_value = build_assembly_object(ASM_NAME, True)
 
-    result = TEST_CLI.invoke(main.cli, ['assembly', 'create', '--filepath', test_asm_file, '--wait'])
+    result = TEST_CLI.invoke(main.cli, ['assembly', 'deploy', '--filepath', test_asm_file, '--wait', '--use-kubeconfig'])
 
     assert result.exit_code == 0
     assert result.output == f"""Using assembly.filepath from command line option: {test_asm_file}
@@ -625,30 +873,26 @@ Custom assembly resource basic-assembly created!
          'body': assembly._add_last_applied_configuration_annotation(test_asm)}]
 
 
-def test_cli_assembly_create_without_filepath(mocker):
+def test_cli_assembly_deploy_without_filepath(mocker):
     mocker.patch('kxicli.common.is_interactive_session', return_false)
-    result = TEST_CLI.invoke(main.cli, ['assembly', 'create'])
+    result = TEST_CLI.invoke(main.cli, ['assembly', 'deploy'])
     assert result.exit_code == 1
     assert result.output == f'Error: Could not find expected option. Please set command line argument --filepath or configuration value assembly.filepath in config file {common.config.config_file}\n'
 
 
-def test_cli_assembly_create_without_filepath_interactive_session(mocker):
-    with open(test_asm_file) as f:
-        test_asm = yaml.safe_load(f)
-    mock_create_assemblies(mocker.patch(CUSTOM_OBJECT_API).return_value)
+def test_cli_assembly_deploy_without_filepath_interactive_session(mocker):
     mocker.patch('kxicli.common.is_interactive_session', return_true)
-
-    result = TEST_CLI.invoke(main.cli, ['assembly', 'create'], input=test_asm_file)
+    with requests_mock.Mocker() as m:
+        mocker.patch('kxicli.common.get_access_token', return_none)
+        m.post('https://test.kx.com/kxicontroller/assembly/cli/deploy')
+        result = TEST_CLI.invoke(main.cli, ['assembly', 'deploy'], input=test_asm_file)
+        assert m.last_request.json() == assembly._add_last_applied_configuration_annotation(test_asm)
 
     assert result.exit_code == 0
     assert result.output == f"""Please enter a path to the assembly file: {test_asm_file}
 Submitting assembly from {test_asm_file}
 Custom assembly resource basic-assembly created!
 """
-    current_ns = appended_args[0]['namespace']
-    assert appended_args == [
-        {'group': assembly.API_GROUP, 'version': PREFERRED_VERSION, 'namespace': current_ns, 'plural': 'assemblies',
-         'body': assembly._add_last_applied_configuration_annotation(test_asm)}]
 
 
 def test_cli_assembly_backup_assemblies(mocker):

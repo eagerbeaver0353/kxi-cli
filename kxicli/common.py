@@ -46,11 +46,15 @@ key_namespace = 'namespace'
 key_hostname = 'hostname'
 key_version = 'version'
 key_operator_version = 'operator.version'
+key_client_id = 'client.id'
+key_client_secret = 'client.secret'
 
 # Help text dictionary for commands
 HELP_TEXT = {
     key_hostname: 'Hostname of Insights deployment',
     key_namespace: 'Kubernetes namespace',
+    key_client_id: 'Client ID to request an access token with',
+    key_client_secret: 'Client secret to request an access token with',
     key_chart_repo_name: 'Name for chart repository',
     key_chart_repo_url: 'Repository URL to pull charts from',
     key_chart_repo_username: 'Username for the chart repository',
