@@ -25,6 +25,8 @@
     "kubectl",
     "kubernetes",
     "kxicli",
+    "kxic",
+    "kxicontroller",
     "kxinsightsprod",
     "pakxcli",
     "popenargs",
