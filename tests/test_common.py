@@ -190,13 +190,31 @@ def test_load_incluster_pass_load_fails(mocker, capsys):
 def test_get_access_token_raises_exception(mocker):
     mocker.patch('requests.post', return_none)
     with pytest.raises(Exception) as e:
-        common.get_access_token(hostname='test_host', client_id='1234', client_secret='super-secret', realm='test')
+        common.get_access_token(hostname='https://test.kx.com', client_id='1234', client_secret='super-secret', realm='test')
     assert isinstance(e.value, click.ClickException)
     assert e.value.message == 'Failed to request access token'
 
 def test_get_admin_token_raises_exception(mocker):
     mocker.patch('requests.post', return_none)
     with pytest.raises(Exception) as e:
-        common.get_admin_token(hostname='test_host', username='username', password='password')
+        common.get_admin_token(hostname='https://test.kx.com', username='username', password='password')
     assert isinstance(e.value, click.ClickException)
     assert e.value.message == 'Failed to request admin access token'
+     
+    
+def test_validate_hostname_pass(mocker):    
+    hostname='https://test_host'  
+    res = common.validate_hostname(hostname)    
+    assert res == hostname
+         
+def test_validate_hostname_exception(mocker):    
+    with pytest.raises(Exception) as e:
+        common.validate_hostname('test_host')
+    assert isinstance(e.value, click.ClickException)
+    assert e.value.message == phrases.hostname_prefix.format(hostname='test_host')
+
+def test_validate_hostname_none_exception(mocker):
+    with pytest.raises(Exception) as e:
+        common.validate_hostname(None)
+    assert isinstance(e.value, click.ClickException)
+    assert e.value.message == phrases.hostname_none

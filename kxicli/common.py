@@ -131,14 +131,25 @@ def get_default_val(option):
         return DEFAULT_VALUES[option]
 
     return None
-
+    
+            
+def validate_hostname(hostname): 
+    if hostname is None:
+        raise click.ClickException(phrases.hostname_none)
+    elif not hostname.startswith(('http://', 'https://')):
+        raise click.ClickException(phrases.hostname_prefix.format(hostname=hostname))
+    else:
+        hostname = hostname.rstrip('/')
+    
+    return hostname
+            
 def is_interactive_session():
     return sys.stdout.isatty() and '--force' not in sys.argv
 
 def get_access_token(hostname, client_id, client_secret, realm):
     """Get Keycloak client access token"""
     log.debug('Requesting access token')
-    hostname = hostname.rstrip('/')
+    hostname = validate_hostname(hostname)
     url = f'{hostname}/auth/realms/{realm}/protocol/openid-connect/token'
     headers = {
         'Content-Type': 'application/x-www-form-urlencoded'
@@ -159,6 +170,8 @@ def get_access_token(hostname, client_id, client_secret, realm):
 def get_admin_token(hostname, username, password):
     """Get Keycloak Admin API token from hostname"""
     log.debug('Requesting admin access token')
+    
+    hostname = validate_hostname(hostname)
     url = f'{hostname}/auth/realms/master/protocol/openid-connect/token'
     headers = {
         'Content-Type': 'application/x-www-form-urlencoded'
