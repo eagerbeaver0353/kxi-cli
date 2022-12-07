@@ -85,3 +85,7 @@ upgrade_complete = '\nUpgrade to version {version} complete'
 # Passwords
 password_reenter = 'Re-enter to confirm (input hidden)'
 password_no_match = 'Entered values did not match'
+
+# Common
+hostname_prefix = 'Failed to request access token, hostname missing protocol - specify http or https [{hostname}]'
+hostname_none = 'Hostname is empty'
