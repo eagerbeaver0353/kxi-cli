@@ -522,7 +522,7 @@ def restore_assemblies(insights_namespace: str, assembly_backup_filepath: str, i
             ):
                 click.secho('\nReapplying assemblies', bold=True)
                 assembly_lib._create_assemblies_from_file(
-                    namespace=insights_namespace, filepath=assembly_backup_filepath
+                    namespace=insights_namespace, filepath=assembly_backup_filepath, use_kubeconfig=True
                 )
 
 
