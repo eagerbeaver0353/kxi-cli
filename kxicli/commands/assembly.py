@@ -226,7 +226,7 @@ def _read_assembly_file(filepath):
     return body
 
 
-def _create_assemblies_from_file(hostname, client_id, client_secret, realm, namespace, filepath, use_kubeconfig, wait=None):
+def _create_assemblies_from_file(filepath, hostname=None, client_id=None, client_secret=None, realm=None, namespace=None, use_kubeconfig=False, wait=None):
     """Apply assemblies from file"""
     if not filepath:
         click.echo('No assemblies to restore')
@@ -417,7 +417,16 @@ def deploy(hostname, client_id, client_secret, realm, namespace, filepath, use_k
 
     filepath = assembly_filepath.prompt(filepath)
 
-    _create_assemblies_from_file(hostname, client_id, client_secret, realm, namespace, filepath, use_kubeconfig, wait)
+    _create_assemblies_from_file(
+        filepath,
+        hostname=hostname,
+        client_id=client_id,
+        client_secret=client_secret,
+        realm=realm,
+        namespace=namespace,
+        use_kubeconfig=use_kubeconfig,
+        wait=wait
+    )
 
 
 @assembly.command()

@@ -385,8 +385,10 @@ def perform_upgrade(namespace, release, chart_repo_name, assembly_backup_filepat
                                                 chart_repo_name, install_operator, is_op_upgrade, crd_data)
 
     click.secho(phrases.upgrade_asm_reapply, bold=True)
-    if assembly_backup_filepath and all(assembly._create_assemblies_from_file(None, None, None, None, \
-                                            namespace=namespace, filepath=assembly_backup_filepath, use_kubeconfig=True)):
+    if assembly_backup_filepath and all(assembly._create_assemblies_from_file( 
+                                            namespace=namespace, filepath=assembly_backup_filepath, use_kubeconfig=True
+                                            )
+                                        ):
         os.remove(assembly_backup_filepath)
 
     if upgraded:

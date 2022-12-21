@@ -161,7 +161,7 @@ def click_confirm_no(
     return False
 
 
-def _create_assemblies_from_file(namespace, filepath, wait=None):
+def _create_assemblies_from_file(namespace, filepath, use_kubeconfig, wait=None):
     """tst"""
     pass
 
@@ -336,7 +336,7 @@ def test_restore_assemblies_exists(mocker: MockerFixture):
     asm_file_content: str = 'a test asm file'
     res: dict = {}
 
-    def _create_assemblies_from_file_exists(namespace, filepath, wait=None):
+    def _create_assemblies_from_file_exists(namespace, filepath, use_kubeconfig, wait=None):
         res['filepath'] = filepath
         with open(filepath, 'r') as af:
             res['asm_file_content'] = af.read()
