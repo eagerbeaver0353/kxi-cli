@@ -105,10 +105,6 @@ whitesource-release-dep-scan:
     KUBERNETES_MEMORY_REQUEST: "600Mi"
     KUBERNETES_MEMORY_LIMIT: "1Gi"
 
-run tests 3.7:
-  extends: .run-tests
-  image: python:3.7
-
 run tests 3.8:
   extends: .run-tests
   image: python:3.8
