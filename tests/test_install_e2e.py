@@ -754,7 +754,7 @@ Installing chart kx-insights/insights version 1.2.3 with values file from {test_
     assert result.output == expected_output
     assert subprocess_run_command == [
         ['helm', 'repo', 'update'],
-        ['helm', 'upgrade', '--install', '-f', test_val_file, 'insights', test_chart, '--version', '1.2.3', '--namespace',
+        ['helm', 'upgrade', '--install', '-f', test_val_file, 'insights', test_chart, '--set', 'keycloak.importUsers=true', '--version', '1.2.3', '--namespace',
          test_namespace]
     ]
 
@@ -800,10 +800,54 @@ Installing chart internal-nexus-dev/insights version 1.2.3 with values file from
         assert result.output == expected_output
         assert subprocess_run_command == [
             ['helm', 'repo', 'update'],
-            ['helm', 'upgrade', '--install', '-f', 'values.yaml', 'insights', test_chart_repo_name + '/insights', '--version',
+            ['helm', 'upgrade', '--install', '-f', 'values.yaml', 'insights', test_chart_repo_name + '/insights', '--set', 'keycloak.importUsers=true', '--version',
              '1.2.3', '--namespace', test_namespace]
         ]
 
+def test_install_run_when_no_file_provided_import_users_false(mocker):
+    setup_mocks(mocker)
+    mock_helm_repo_list(mocker, name=test_chart_repo_name)
+    mock_kube_secret_api(mocker, read=mocked_read_namespaced_secret_return_values)
+    mock_subprocess_run(mocker)
+    mocker.patch('subprocess.check_output', mocked_helm_list_returns_empty_json)
+    mock_set_insights_operator_and_crd_installed_state(mocker, False, False, False)
+    mock_get_operator_version(mocker)
+    mock_validate_secret(mocker)
+    with temp_test_output_file() as test_output_file, temp_config_file() as test_cli_config:
+        with open(test_output_file, 'w') as f:
+            f.write(TEST_VALUES_FILE)
+
+        runner = CliRunner()
+        with runner.isolated_filesystem():
+            test_cfg = {
+                'lic_sec_exists': True,
+                'image_sec_exists': True,
+                'client_sec_exists': True,
+                'kc_secret_exists': True,
+                'pg_secret_exists': True,
+                'install_config_exists': True,
+                'chart_repo_existing': test_chart_repo_name,
+                'chart_repo_name': test_chart_repo_name,
+                'chart_repo_url': None,
+                'chart_user_source': None,
+                'chart_pass': None,
+            }
+            user_input = f'{cli_input("setup", **test_cfg)}\nn'
+            result = runner.invoke(main.cli, ['install', 'run', '--version', '1.2.3', '--import-users', 'False'], input=user_input)
+
+            expected_output = f"""{phrases.header_run}
+{cli_output('setup', test_cli_config, 'values.yaml', **test_cfg)}{phrases.values_validating}
+Do you want to install kxi-operator version 1.2.3? [Y/n]: n
+Installing chart internal-nexus-dev/insights version 1.2.3 with values file from values.yaml
+"""
+
+        assert result.exit_code == 0
+        assert result.output == expected_output
+        assert subprocess_run_command == [
+            ['helm', 'repo', 'update'],
+            ['helm', 'upgrade', '--install', '-f', 'values.yaml', 'insights', test_chart_repo_name + '/insights', '--version',
+             '1.2.3', '--namespace', test_namespace]
+        ]        
 
 def test_install_run_when_provided_secret(mocker):
     mock_subprocess_run(mocker)
@@ -832,7 +876,7 @@ Installing chart kx-insights/insights version 1.2.3 with values from secret
     assert result.output == expected_output
     assert subprocess_run_command == [
         ['helm', 'repo', 'update'],
-        ['helm', 'upgrade', '--install', '-f', '-', 'insights', test_chart, '--version', '1.2.3', '--namespace', test_namespace]
+        ['helm', 'upgrade', '--install', '-f', '-', 'insights', test_chart, '--set','keycloak.importUsers=true', '--version', '1.2.3', '--namespace', test_namespace]
     ]
     assert subprocess_run_args == (True, values, True)
 
@@ -865,7 +909,7 @@ Installing chart kx-insights/insights version 1.2.3 with values from secret and 
     assert result.output == expected_output
     assert subprocess_run_command == [
         ['helm', 'repo', 'update'],
-        ['helm', 'upgrade', '--install', '-f', '-', '-f', test_val_file, 'insights', test_chart, '--version', '1.2.3', '--namespace',
+        ['helm', 'upgrade', '--install', '-f', '-', '-f', test_val_file, 'insights', test_chart, '--set', 'keycloak.importUsers=true', '--version', '1.2.3', '--namespace',
          test_namespace]
     ]
     assert subprocess_run_args == (True, values, True)
@@ -902,7 +946,7 @@ Installing chart kx-insights/insights version 1.2.3 with values file from {test_
         ['helm', 'repo', 'update'],
         ['helm', 'upgrade', '--install', '-f', test_val_file, 'insights', test_operator_chart, '--version', '1.2.3', '--namespace',
          'kxi-operator'],
-        ['helm', 'upgrade', '--install', '-f', test_val_file, 'insights', test_chart, '--version', '1.2.3', '--namespace',
+        ['helm', 'upgrade', '--install', '-f', test_val_file, 'insights', test_chart, '--set', 'keycloak.importUsers=true', '--version', '1.2.3', '--namespace',
          test_namespace]
     ]
 
@@ -934,7 +978,7 @@ Installing chart kx-insights/insights version 1.2.3 with values file from {test_
         ['helm', 'repo', 'update'],
         ['helm', 'upgrade', '--install', '-f', test_val_file, 'insights', test_operator_chart, '--version', '1.2.3', '--namespace',
          'kxi-operator'],
-        ['helm', 'upgrade', '--install', '-f', test_val_file, 'insights', test_chart, '--version', '1.2.3', '--namespace',
+        ['helm', 'upgrade', '--install', '-f', test_val_file, 'insights', test_chart, '--set','keycloak.importUsers=true', '--version', '1.2.3', '--namespace',
          test_namespace]
     ]
 
@@ -966,7 +1010,7 @@ Installing chart kx-insights/insights version 1.2.3 with values file from {test_
         ['helm', 'repo', 'update'],
         ['helm', 'upgrade', '--install', '-f', test_val_file, 'insights', test_operator_chart, '--version', '1.2.1', '--namespace',
          'kxi-operator'],
-        ['helm', 'upgrade', '--install', '-f', test_val_file, 'insights', test_chart, '--version', '1.2.3', '--namespace',
+        ['helm', 'upgrade', '--install', '-f', test_val_file, 'insights', test_chart, '--set', 'keycloak.importUsers=true', '--version', '1.2.3', '--namespace',
          test_namespace]
     ]
 
@@ -1018,7 +1062,7 @@ Installing chart kx-insights/insights version 1.2.3 with values file from {test_
     assert copy_secret_params == []
     assert subprocess_run_command == [
         ['helm', 'repo', 'update'],
-        ['helm', 'upgrade', '--install', '-f', test_val_file, 'insights', test_chart, '--version', '1.2.3', '--namespace',
+        ['helm', 'upgrade', '--install', '-f', test_val_file, 'insights', test_chart, '--set','keycloak.importUsers=true', '--version', '1.2.3', '--namespace',
          test_namespace]
     ]
 
@@ -1058,9 +1102,9 @@ Installing chart kx-insights/insights version 1.2.3 with values from secret
                                   ('new-license-secret', test_namespace, 'kxi-operator')]
     assert subprocess_run_command == [
         ['helm', 'repo', 'update'],
-        ['helm', 'upgrade', '--install', '-f', '-', 'insights', test_operator_chart, '--version', '1.2.3', '--namespace',
-         'kxi-operator'],
-        ['helm', 'upgrade', '--install', '-f', '-', 'insights', test_chart, '--version', '1.2.3', '--namespace', test_namespace]
+        ['helm', 'upgrade', '--install', '-f', '-', 'insights', test_operator_chart, '--version', '1.2.3',
+        '--namespace', 'kxi-operator'],
+        ['helm', 'upgrade', '--install', '-f', '-', 'insights', test_chart, '--set', 'keycloak.importUsers=true', '--version', '1.2.3', '--namespace', test_namespace]
     ]
     assert subprocess_run_args == (True, yaml.dump(test_vals), True)
     test_vals = test_vals_backup
@@ -1093,7 +1137,7 @@ Installing chart kx-insights/insights version 1.2.3 with values file from {test_
     assert result.output == expected_output
     assert subprocess_run_command == [
         ['helm', 'repo', 'update'],
-        ['helm', 'upgrade', '--install', '-f', test_val_file, 'insights', test_chart, '--version', '1.2.3', '--namespace', 'test']
+        ['helm', 'upgrade', '--install', '-f', test_val_file, 'insights', test_chart, '--set', 'keycloak.importUsers=true', '--version', '1.2.3', '--namespace', 'test']
     ]
 
 
@@ -1633,7 +1677,7 @@ Upgrade to version 1.2.3 complete
         ['helm', 'repo', 'update'],
         ['helm',  'upgrade', '--install', '-f', '-', 'insights', test_operator_chart, '--version', '1.2.3', '--namespace',
          'kxi-operator'],
-        ['helm',  'upgrade', '--install', '-f', '-', 'insights', test_chart, '--version', '1.2.3', '--namespace', test_namespace]
+        ['helm',  'upgrade', '--install', '-f', '-', 'insights', test_chart, '--set', 'keycloak.importUsers=true', '--version', '1.2.3', '--namespace', test_namespace]
     ]
 
 
@@ -1714,7 +1758,6 @@ def test_upgrade_does_not_reapply_assemblies_when_upgrade_fails(mocker):
     with runner.isolated_filesystem():
         # these are responses to the various prompts
         user_input = f"""y
-y
 y
 y
 y

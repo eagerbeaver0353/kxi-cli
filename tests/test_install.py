@@ -728,7 +728,7 @@ def test_upgrade_exception_when_filepath_or_install_secret_not_provided(mocker):
     with pytest.raises(Exception) as e:
         install.perform_upgrade(test_ns, test_repo, test_chart_repo_name, 'test-asm-backup.yaml', '1.3.0', 
                                    '1.3.0', image_pull_secret=None, license_secret=None, install_config_secret=None,
-                                   filepath=None, force=False)
+                                   filepath=None, force=False, import_users=None)
     assert isinstance(e.value, click.ClickException)
     assert 'At least one of --install-config-secret and --filepath options must be provided' in e.value.message
 

@@ -72,7 +72,7 @@ def test_fetch_raises_exception(mocker):
 
 def test_helm_install_without_file_or_secret_raises_exception():
     with pytest.raises(Exception) as e:
-        common_helm.helm_install('test_release', 'test_chart', None, None)
+        common_helm.helm_install('test_release', 'test_chart', None, None, [])
 
     assert isinstance(e.value, click.ClickException)
     assert e.value.message == 'Must provide one of values file or secret. Exiting install'
@@ -80,6 +80,6 @@ def test_helm_install_without_file_or_secret_raises_exception():
 def test_helm_install_error_raises_exception(mocker):
     mocker.patch('subprocess.run').side_effect = subprocess.CalledProcessError(1, ['helm', 'upgrade'])
     with pytest.raises(Exception) as e:
-        common_helm.helm_install('test_release', 'test_chart', 'test-values-file.yaml', None)
+        common_helm.helm_install('test_release', 'test_chart', 'test-values-file.yaml', None, [])
     assert isinstance(e.value, click.ClickException)
     assert e.value.message == "Command '['helm', 'upgrade']' returned non-zero exit status 1."

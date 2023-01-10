@@ -454,3 +454,8 @@ use_kubeconfig = Option (
     help = 'Communicate directly with kubernetes plane',
     is_flag=True
 )
+
+import_users = Option (
+    '--import-users',
+    default = None
+)

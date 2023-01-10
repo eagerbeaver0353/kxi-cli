@@ -35,11 +35,10 @@ def helm_upgrade_install(
 
     if version:
         base_command = base_command + ['--version', version]
-
+        
     if namespace:
         base_command = base_command + ['--namespace', namespace]
         create_namespace(namespace)
-
     try:
         log.debug(f'Upgrade install command {base_command}')
         with temp_docker_config(docker_config) as temp_dir:
@@ -98,7 +97,7 @@ def _get_helm_version() -> LocalHelmVersion:
         raise ClickException(str(e))
 
 
-def helm_install(release, chart, values_file, values_secret, version=None, namespace=None):
+def helm_install(release, chart, values_file, values_secret, args=[], version=None, namespace=None):
     """Call 'helm install' using subprocess.run"""
 
     base_command = ['helm', 'upgrade', '--install']
@@ -115,12 +114,12 @@ def helm_install(release, chart, values_file, values_secret, version=None, names
         base_command = base_command + ['-f', values_file]
 
     base_command = base_command + [release, chart]
+    base_command = base_command + args    
 
     version_msg = ''
     if version:
         version_msg = ' version ' + version
         base_command = base_command + ['--version', version]
-
     if values_file:
         if values_secret:
             click.echo(f'Installing chart {chart}{version_msg} with values from secret and values file from {values_file}')
@@ -131,11 +130,9 @@ def helm_install(release, chart, values_file, values_secret, version=None, names
             click.echo(f'Installing chart {chart}{version_msg} with values from secret')
         else:
             raise click.ClickException(f'Must provide one of values file or secret. Exiting install')
-
     if namespace:
         base_command = base_command + ['--namespace', namespace]
-        create_namespace(namespace)
-
+        create_namespace(namespace)                
     try:
         log.debug(f'Install command {base_command}')
         return subprocess.run(base_command, check=True, input=input_arg, text=text_arg)
