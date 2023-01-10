@@ -35,10 +35,10 @@ def helm_upgrade_install(
 
     if version:
         base_command = base_command + ['--version', version]
-        
     if namespace:
         base_command = base_command + ['--namespace', namespace]
         create_namespace(namespace)
+        
     try:
         log.debug(f'Upgrade install command {base_command}')
         with temp_docker_config(docker_config) as temp_dir:
@@ -130,9 +130,11 @@ def helm_install(release, chart, values_file, values_secret, args=[], version=No
             click.echo(f'Installing chart {chart}{version_msg} with values from secret')
         else:
             raise click.ClickException(f'Must provide one of values file or secret. Exiting install')
+            
     if namespace:
         base_command = base_command + ['--namespace', namespace]
         create_namespace(namespace)                
+        
     try:
         log.debug(f'Install command {base_command}')
         return subprocess.run(base_command, check=True, input=input_arg, text=text_arg)
