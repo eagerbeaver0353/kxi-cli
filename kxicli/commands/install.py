@@ -27,7 +27,7 @@ from kxicli.commands.common.arg import arg_force, arg_filepath, arg_version, arg
     arg_image_repo, arg_image_repo_user, arg_image_pull_secret, arg_gui_client_secret, arg_operator_client_secret, \
     arg_keycloak_secret, arg_keycloak_postgresql_secret, arg_keycloak_auth_url, \
     arg_ingress_cert_secret, arg_ingress_cert, arg_ingress_key, arg_ingress_certmanager_disabled,  \
-    arg_install_config_secret
+    arg_install_config_secret, arg_import_users
 from kxicli.commands.common.helm import helm_uninstall, helm_install
 from kxicli.commands.common.namespace import create_namespace
 from kxicli.common import get_default_val as default_val, key_gui_client_secret, key_operator_client_secret
@@ -275,6 +275,7 @@ def setup(namespace, chart_repo_name, chart_repo_url, chart_repo_username,
 @arg_version()
 @arg_operator_version()
 @arg_force()
+@arg_import_users()
 @click.pass_context
 def run(ctx, namespace, chart_repo_name, chart_repo_url, chart_repo_username, 
           license_secret, license_as_env_var, license_filepath,
@@ -282,9 +283,10 @@ def run(ctx, namespace, chart_repo_name, chart_repo_url, chart_repo_username,
           keycloak_secret, keycloak_postgresql_secret, keycloak_auth_url, hostname, 
           ingress_cert_secret, ingress_cert, ingress_key,
           output_file, install_config_secret, 
-          filepath, release, version, operator_version, force):
+          filepath, release, version, operator_version, force, import_users):
     """Install KX Insights with a values file"""
-
+    is_upgrade = False
+        
     # Run setup prompts if necessary
     if filepath is None and install_config_secret is None:
         click.echo(phrases.header_run)
@@ -308,7 +310,7 @@ def run(ctx, namespace, chart_repo_name, chart_repo_url, chart_repo_username,
         if click.confirm(f'KX Insights is already installed with version {insights_installed_charts[0]["chart"]}. Would you like to upgrade to version {version}?'):
             return perform_upgrade(namespace, release, chart_repo_name, None, version,
                                    operator_version, image_pull_secret, license_secret, install_config_secret,
-                                   filepath, force)
+                                   filepath, force, import_users)
         else:
             return
 
@@ -316,8 +318,8 @@ def run(ctx, namespace, chart_repo_name, chart_repo_url, chart_repo_username,
         chart_repo_name, version, operator_version, force)
 
     install_operator_and_release(release, namespace, version, operator_version, operator_release, filepath, values_secret,
-                                 image_pull_secret, license_secret, chart_repo_name,
-                                 install_operator, is_op_upgrade, crd_data)
+                                 image_pull_secret, license_secret, chart_repo_name, import_users,
+                                 install_operator, is_op_upgrade, crd_data, is_upgrade)
 
 @install.command()
 @arg_namespace()
@@ -331,16 +333,16 @@ def run(ctx, namespace, chart_repo_name, chart_repo_url, chart_repo_username,
 @arg_install_config_secret()
 @arg_filepath()
 @arg_force()
+@arg_import_users()
 def upgrade(namespace, release, chart_repo_name, assembly_backup_filepath, version, operator_version, image_pull_secret,
-            license_secret, install_config_secret, filepath, force):
+            license_secret, install_config_secret, filepath, force, import_users):
     perform_upgrade(namespace, release, chart_repo_name, assembly_backup_filepath, version, operator_version, image_pull_secret,
-                    license_secret, install_config_secret, filepath, force)
+                    license_secret, install_config_secret, filepath, force, import_users)
 
 def perform_upgrade(namespace, release, chart_repo_name, assembly_backup_filepath, version, operator_version, image_pull_secret,
-                    license_secret, install_config_secret, filepath, force):
+                    license_secret, install_config_secret, filepath, force, import_users):
     """Upgrade KX Insights"""
-    namespace = options.namespace.prompt(namespace)
-
+    namespace = options.namespace.prompt(namespace)    
     chart_repo_name = options.chart_repo_name.prompt(chart_repo_name, silent=True)
     check_helm_repo_exists(chart_repo_name)
 
@@ -367,7 +369,7 @@ def perform_upgrade(namespace, release, chart_repo_name, assembly_backup_filepat
         click.echo(phrases.upgrade_skip_to_install)
         install_operator_and_release(release, namespace, version, operator_version, operator_release, 
                                  filepath, values_secret, image_pull_secret, license_secret,
-                                 chart_repo_name, install_operator, is_op_upgrade, crd_data)
+                                 chart_repo_name, import_users, install_operator, is_op_upgrade, crd_data, is_upgrade=False)
         click.secho(str.format(phrases.upgrade_complete, version=version), bold=True)
         return
 
@@ -382,7 +384,7 @@ def perform_upgrade(namespace, release, chart_repo_name, assembly_backup_filepat
         click.secho(phrases.upgrade_insights, bold=True)
         upgraded =  install_operator_and_release(release, namespace, version, operator_version, operator_release, 
                                                 filepath, values_secret, image_pull_secret, license_secret, 
-                                                chart_repo_name, install_operator, is_op_upgrade, crd_data)
+                                                chart_repo_name, import_users, install_operator, is_op_upgrade, crd_data, is_upgrade=True)
 
     click.secho(phrases.upgrade_asm_reapply, bold=True)
     if assembly_backup_filepath and all(assembly._create_assemblies_from_file( 
@@ -867,14 +869,25 @@ def install_operator_and_release(
     image_pull_secret,
     license_secret,
     chart_repo_name,
+    import_users,
     install_operator = True,
     is_operator_upgrade = False,
-    crd_data = []
+    crd_data = [],
+    is_upgrade = None
 ):
     """Install operator and insights"""
 
     subprocess.run(['helm', 'repo', 'update'], check=True)
-
+    
+    # Check if keycloak users are to be imported
+    # On install if import_users is unset or True we import
+    # On upgrade only import users if import_users flag is set to True
+    # Never import if import_users flag is set to False
+    if ((import_users == None) and (not is_upgrade)) or import_users == True:
+        args = ['--set', 'keycloak.importUsers=true']
+    else:
+        args = []
+        
     if install_operator:
         create_namespace(operator_namespace)
 
@@ -882,7 +895,7 @@ def install_operator_and_release(
         copy_secret(license_secret, namespace, operator_namespace)
 
         helm_install(operator_release, chart=f'{chart_repo_name}/kxi-operator', values_file=values_file, values_secret=values_secret,
-                     version=operator_version, namespace=operator_namespace)
+                     version=operator_version, namespace=operator_namespace, args = [])
 
         if is_operator_upgrade:
             replace_chart_crds(crd_data)
@@ -892,7 +905,7 @@ def install_operator_and_release(
         click.echo(f'\nKX Insights already installed with version {insights_installed_charts[0]["chart"]}')
 
     helm_install(release, chart=f'{chart_repo_name}/insights', values_file=values_file, values_secret=values_secret,
-                 version=version, namespace=namespace)
+                 args=args, version=version, namespace=namespace)
 
     return True
 

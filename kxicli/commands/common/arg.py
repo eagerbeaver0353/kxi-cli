@@ -85,3 +85,5 @@ arg_client_secret = options.client_secret.decorator()
 arg_realm = options.realm.decorator()
 
 arg_use_kubeconfig = options.use_kubeconfig.decorator()
+
+arg_import_users = options.import_users.decorator()
