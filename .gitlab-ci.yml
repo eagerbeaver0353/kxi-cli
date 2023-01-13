@@ -1,7 +1,7 @@
 ---
 default:
   tags:
-    - k8s-gcp-tools
+    - k8s-aws-tools
   interruptible: true
 
 include:
