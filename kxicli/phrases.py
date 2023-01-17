@@ -3,7 +3,7 @@ This file should build up all phrases that are emitted
 """
 
 # Headers
-header_setup = 'KX Insights Configuration Setup'
+header_setup = 'kdb Insights Enterprise Configuration Setup'
 header_ingress = '\nChecking ingress configuration...'
 header_chart = '\nChecking chart details...'
 header_license = '\nChecking license details...'
@@ -11,7 +11,7 @@ header_image = '\nChecking image repository...'
 header_client_cert ='\nChecking client certificate issuer...'
 header_keycloak = '\nChecking keycloak configuration...'
 header_run = 'No values file provided, invoking "kxi install setup"\n'
-header_upgrade = 'Upgrading KX Insights'
+header_upgrade = 'Upgrading kdb Insights Enterprise'
 
 # Kubernetes
 namespace = '\nPlease enter a namespace to run in'
@@ -71,10 +71,10 @@ values_validating = 'Validating values...'
 values_validation_fail = 'Validation failed, run "kxi install setup" to fix'
 
 # Footers
-footer_setup = '\nConfiguration saved, KX Insights is now ready for install'
+footer_setup = '\nConfiguration saved, kdb Insights Enterprise is now ready for install'
 
 # Upgrade
-upgrade_skip_to_install = 'KX Insights is not deployed. Skipping to install'
+upgrade_skip_to_install = 'kdb Insights Enterprise is not deployed. Skipping to install'
 upgrade_asm_backup = '\nBacking up assemblies'
 upgrade_asm_teardown = '\nTearing down assemblies'
 upgrade_asm_reapply = '\nReapplying assemblies'

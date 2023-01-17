@@ -1153,7 +1153,7 @@ def test_install_run_exits_when_already_installed(mocker):
     with runner.isolated_filesystem():
         result = runner.invoke(main.cli, ['install', 'run', '--version', '1.2.3', '--filepath', test_val_file], input ='n\n')
         expected_output = f"""{phrases.values_validating}
-KX Insights is already installed with version insights-1.2.1. Would you like to upgrade to version 1.2.3? [y/N]: n
+kdb Insights Enterprise is already installed with version insights-1.2.1. Would you like to upgrade to version 1.2.3? [y/N]: n
 """
 
     assert result.exit_code == 0
@@ -1183,7 +1183,7 @@ def test_delete(mocker):
 """
         result = runner.invoke(main.cli, ['install', 'delete'], input=user_input)
         expected_output = f"""
-KX Insights is deployed. Do you want to uninstall? [y/N]: y
+kdb Insights Enterprise is deployed. Do you want to uninstall? [y/N]: y
 Uninstalling release insights in namespace {test_namespace}
 """
     assert result.exit_code == 0
@@ -1199,7 +1199,7 @@ def test_list_versions_default_repo(mocker):
     runner = CliRunner()
     with runner.isolated_filesystem():
         result = runner.invoke(main.cli, ['install', 'list-versions'])
-        expected_output = f"""Listing available KX Insights versions in repo kx-insights
+        expected_output = f"""Listing available kdb Insights Enterprise versions in repo kx-insights
 """
     assert result.exit_code == 0
     assert result.output == expected_output
@@ -1213,7 +1213,7 @@ def test_list_versions_custom_repo(mocker):
     runner = CliRunner()
     with runner.isolated_filesystem():
         result = runner.invoke(main.cli, ['install', 'list-versions', '--chart-repo-name', test_chart_repo_name])
-        expected_output = f"""Listing available KX Insights versions in repo {test_chart_repo_name}
+        expected_output = f"""Listing available kdb Insights Enterprise versions in repo {test_chart_repo_name}
 """
     assert result.exit_code == 0
     assert result.output == expected_output
@@ -1239,7 +1239,7 @@ def test_delete_specify_release(mocker):
 """
         result = runner.invoke(main.cli, ['install', 'delete', '--release', 'atestrelease'], input=user_input)
         expected_output = f"""
-KX Insights is deployed. Do you want to uninstall? [y/N]: y
+kdb Insights Enterprise is deployed. Do you want to uninstall? [y/N]: y
 Uninstalling release atestrelease in namespace {test_namespace}
 """
     assert result.exit_code == 0
@@ -1267,7 +1267,7 @@ def test_delete_specific_release_no_assemblies(mocker):
 """
         result = runner.invoke(main.cli, ['install', 'delete', '--release', 'atestrelease'], input=user_input)
         expected_output = f"""
-KX Insights is deployed. Do you want to uninstall? [y/N]: y
+kdb Insights Enterprise is deployed. Do you want to uninstall? [y/N]: y
 Uninstalling release atestrelease in namespace {test_namespace}
 """
     assert result.exit_code == 0
@@ -1294,7 +1294,7 @@ def test_delete_specific_release_one_assemblies(mocker):
 """
         result = runner.invoke(main.cli, ['install', 'delete', '--release', 'atestrelease'], input=user_input)
         expected_output = f"""
-KX Insights is deployed. Do you want to uninstall? [y/N]: y
+kdb Insights Enterprise is deployed. Do you want to uninstall? [y/N]: y
 Uninstalling release atestrelease in namespace {test_namespace}
 """
     assert result.exit_code == 0
@@ -1327,7 +1327,7 @@ def test_delete_does_not_prompt_to_remove_operator_and_crd_when_insights_exists(
 """
         result = runner.invoke(main.cli, ['install', 'delete'], input=user_input)
         expected_output = f"""
-KX Insights is deployed. Do you want to uninstall? [y/N]: n
+kdb Insights Enterprise is deployed. Do you want to uninstall? [y/N]: n
 """
     assert result.exit_code == 0
     assert result.output == expected_output
@@ -1354,7 +1354,7 @@ def test_delete_removes_insights_and_operator(mocker):
 """
         result = runner.invoke(main.cli, ['install', 'delete','--uninstall-operator'], input=user_input)
         expected_output = f"""
-KX Insights is deployed. Do you want to uninstall? [y/N]: y
+kdb Insights Enterprise is deployed. Do you want to uninstall? [y/N]: y
 Uninstalling release insights in namespace {test_namespace}
 Uninstalling release insights in namespace kxi-operator
 Deleting CRD assemblies.insights.kx.com
@@ -1391,7 +1391,7 @@ def test_delete_removes_insights(mocker):
 """
         result = runner.invoke(main.cli, ['install', 'delete'], input=user_input)
         expected_output = f"""
-KX Insights is deployed. Do you want to uninstall? [y/N]: y
+kdb Insights Enterprise is deployed. Do you want to uninstall? [y/N]: y
 Uninstalling release insights in namespace {test_namespace}
 """
     assert result.exit_code == 0
@@ -1457,7 +1457,7 @@ def test_delete_from_given_namespace(mocker):
 """
         result = runner.invoke(main.cli, cmd, input=user_input)
         expected_output = f"""
-KX Insights is deployed. Do you want to uninstall? [y/N]: y
+kdb Insights Enterprise is deployed. Do you want to uninstall? [y/N]: y
 Uninstalling release insights in namespace a_test_namespace
 """
     assert result.exit_code == 0
@@ -1483,7 +1483,7 @@ def test_delete_when_insights_not_installed(mocker):
 """
         result = runner.invoke(main.cli, ['install', 'delete'], input=user_input)
         expected_output = f"""
-KX Insights installation not found
+kdb Insights Enterprise installation not found
 """
     assert result.exit_code == 0
     assert result.output == expected_output
@@ -1563,7 +1563,7 @@ y
                     test_install_secret, '--assembly-backup-filepath', test_asm_backup],
             input=user_input
         )
-        expected_output = f"""Upgrading KX Insights
+        expected_output = f"""Upgrading kdb Insights Enterprise
 {phrases.values_validating}
 
 kxi-operator already installed with version 1.2.0
@@ -1584,7 +1584,7 @@ Installing chart kx-insights/kxi-operator version 1.2.3 with values from secret
 Replacing CRD assemblies.insights.kx.com
 Replacing CRD assemblyresources.insights.kx.com
 
-KX Insights already installed with version insights-1.2.1
+kdb Insights Enterprise already installed with version insights-1.2.1
 Installing chart kx-insights/insights version 1.2.3 with values from secret
 
 Reapplying assemblies
@@ -1662,10 +1662,10 @@ def test_upgrade_skips_to_install_when_not_running(mocker):
             ['install', 'upgrade', '--version', '1.2.3', '--install-config-secret', test_install_secret],
             input=user_input
         )
-    expected_output = f"""Upgrading KX Insights
+    expected_output = f"""Upgrading kdb Insights Enterprise
 {phrases.values_validating}
 Do you want to install kxi-operator version 1.2.3? [Y/n]: y
-KX Insights is not deployed. Skipping to install
+kdb Insights Enterprise is not deployed. Skipping to install
 Installing chart kx-insights/kxi-operator version 1.2.3 with values from secret
 Installing chart kx-insights/insights version 1.2.3 with values from secret
 
@@ -1700,7 +1700,7 @@ def test_upgrade_when_user_declines_to_teardown_assembly(mocker):
                 '--assembly-backup-filepath', test_asm_backup],
             input='y\ny\nn\n'
         )
-    expected_output = f"""Upgrading KX Insights
+    expected_output = f"""Upgrading kdb Insights Enterprise
 {phrases.values_validating}
 
 kxi-operator already installed with version 1.2.0
@@ -1767,7 +1767,7 @@ y
                     test_install_secret, '--assembly-backup-filepath', test_asm_backup],
             input=user_input
         )
-        expected_output = f"""Upgrading KX Insights
+        expected_output = f"""Upgrading kdb Insights Enterprise
 {phrases.values_validating}
 
 kxi-operator already installed with version 1.2.0
@@ -1816,8 +1816,8 @@ y
     with runner.isolated_filesystem():
         result = runner.invoke(main.cli, ['install', 'run', '--version', '1.2.3', '--filepath', test_val_file], input =user_input)
         expected_output = f"""{phrases.values_validating}
-KX Insights is already installed with version insights-1.2.1. Would you like to upgrade to version 1.2.3? [y/N]: y
-Upgrading KX Insights
+kdb Insights Enterprise is already installed with version insights-1.2.1. Would you like to upgrade to version 1.2.3? [y/N]: y
+Upgrading kdb Insights Enterprise
 {phrases.values_validating}
 
 kxi-operator already installed with version 1.2.0
@@ -1838,7 +1838,7 @@ Installing chart kx-insights/kxi-operator version 1.2.3 with values file from {t
 Replacing CRD assemblies.insights.kx.com
 Replacing CRD assemblyresources.insights.kx.com
 
-KX Insights already installed with version insights-1.2.1
+kdb Insights Enterprise already installed with version insights-1.2.1
 Installing chart kx-insights/insights version 1.2.3 with values file from {test_val_file}
 
 Reapplying assemblies
@@ -1890,7 +1890,7 @@ y
                     test_install_secret, '--assembly-backup-filepath', test_asm_backup],
             input=user_input
         )
-        expected_output = f"""Upgrading KX Insights
+        expected_output = f"""Upgrading kdb Insights Enterprise
 {phrases.values_validating}
 
 kxi-operator already installed with version 1.2.0
@@ -1908,7 +1908,7 @@ Waiting for assembly to be torn down
 
 Upgrading insights
 
-KX Insights already installed with version insights-1.2.1
+kdb Insights Enterprise already installed with version insights-1.2.1
 Installing chart kx-insights/insights version 1.2.3 with values from secret
 
 Reapplying assemblies

@@ -284,7 +284,7 @@ def run(ctx, namespace, chart_repo_name, chart_repo_url, chart_repo_username,
           ingress_cert_secret, ingress_cert, ingress_key,
           output_file, install_config_secret, 
           filepath, release, version, operator_version, force, import_users):
-    """Install KX Insights with a values file"""
+    """Install kdb Insights Enterprise with a values file"""
     is_upgrade = False
         
     # Run setup prompts if necessary
@@ -307,7 +307,7 @@ def run(ctx, namespace, chart_repo_name, chart_repo_url, chart_repo_username,
 
     insights_installed_charts = get_installed_charts(release, namespace)
     if len(insights_installed_charts) > 0:
-        if click.confirm(f'KX Insights is already installed with version {insights_installed_charts[0]["chart"]}. Would you like to upgrade to version {version}?'):
+        if click.confirm(f'kdb Insights Enterprise is already installed with version {insights_installed_charts[0]["chart"]}. Would you like to upgrade to version {version}?'):
             return perform_upgrade(namespace, release, chart_repo_name, None, version,
                                    operator_version, image_pull_secret, license_secret, install_config_secret,
                                    filepath, force, import_users)
@@ -341,7 +341,7 @@ def upgrade(namespace, release, chart_repo_name, assembly_backup_filepath, versi
 
 def perform_upgrade(namespace, release, chart_repo_name, assembly_backup_filepath, version, operator_version, image_pull_secret,
                     license_secret, install_config_secret, filepath, force, import_users):
-    """Upgrade KX Insights"""
+    """Upgrade kdb Insights Enterprise"""
     namespace = options.namespace.prompt(namespace)    
     chart_repo_name = options.chart_repo_name.prompt(chart_repo_name, silent=True)
     check_helm_repo_exists(chart_repo_name)
@@ -403,7 +403,7 @@ def perform_upgrade(namespace, release, chart_repo_name, assembly_backup_filepat
 @arg_force()
 @click.option('--uninstall-operator', is_flag=True, help='Remove KXI Operator installation')
 def delete(release, namespace, force, uninstall_operator):
-    """Uninstall KX Insights"""
+    """Uninstall kdb Insights Enterprise"""
     namespace = options.namespace.prompt(namespace)
     delete_release_operator_and_crds(release=release, namespace=namespace, force=force, uninstall_operator=uninstall_operator)
 
@@ -412,7 +412,7 @@ def delete(release, namespace, force, uninstall_operator):
 @arg_chart_repo_name()
 def list_versions(chart_repo_name):
     """
-    List available versions of KX Insights
+    List available versions of kdb Insights Enterprise
     """
     helm_list_versions(options.chart_repo_name.prompt(chart_repo_name, silent=True))
 
@@ -902,7 +902,7 @@ def install_operator_and_release(
 
     insights_installed_charts = get_installed_charts(release, namespace)
     if len(insights_installed_charts) > 0:
-        click.echo(f'\nKX Insights already installed with version {insights_installed_charts[0]["chart"]}')
+        click.echo(f'\nkdb Insights Enterprise already installed with version {insights_installed_charts[0]["chart"]}')
 
     helm_install(release, chart=f'{chart_repo_name}/insights', values_file=values_file, values_secret=values_secret,
                  args=args, version=version, namespace=namespace)
@@ -913,9 +913,9 @@ def install_operator_and_release(
 def delete_release_operator_and_crds(release, namespace, force, uninstall_operator):
     """Delete insights, operator and CRDs"""
     if not insights_installed(release, namespace):
-        click.echo('\nKX Insights installation not found')
+        click.echo('\nkdb Insights Enterprise installation not found')
     else:
-        if force or click.confirm('\nKX Insights is deployed. Do you want to uninstall?'):
+        if force or click.confirm('\nkdb Insights Enterprise is deployed. Do you want to uninstall?'):
             assembly._delete_running_assemblies(namespace, True, True)
             helm_uninstall(release=release, namespace=namespace)
         else:
@@ -964,7 +964,7 @@ def helm_list_versions(chart_repo_name):
     log.debug('Attempting to call: helm search repo')
     try:
         chart = f'{chart_repo_name}/insights'
-        click.echo(f'Listing available KX Insights versions in repo {chart_repo_name}')
+        click.echo(f'Listing available kdb Insights Enterprise versions in repo {chart_repo_name}')
 
         return subprocess.run(['helm', 'search', 'repo', chart], check=True)
     except subprocess.CalledProcessError as e:

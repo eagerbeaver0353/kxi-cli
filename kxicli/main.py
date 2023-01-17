@@ -20,7 +20,7 @@ VERSION_MSG = f'%(prog)s, version %(version)s from {PKG_DIR} (Python {PYTHON_VER
 @click.option('--profile', default='default', help='Name of configuration profile to use.')
 @click.pass_context
 def cli(ctx, debug, profile):
-    """KX Insights CLI"""
+    """kdb Insights Enterprise CLI"""
     if debug:
         log.GLOBAL_DEBUG_LOG = True
         log.debug(f'Version {CLI_VERSION}')

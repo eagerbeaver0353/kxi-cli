@@ -85,9 +85,9 @@ def upgrade(
         assembly_backup_filepath: Optional[str] = None,
         force: bool = False
 ):
-    """Upgrade KX Insights"""
+    """Upgrade kdb Insights Enterprise"""
 
-    click.secho('Upgrading KX Insights', bold=True)
+    click.secho('Upgrading kdb Insights Enterprise', bold=True)
 
     # Prepare
 
@@ -181,8 +181,8 @@ def uninstall(
         assembly_backup_filepath: Optional[str] = None,
         force: bool = False
 ):
-    """Uninstall KX Insights"""
-    click.secho('Uninstalling KX Insights', bold=True)
+    """Uninstall kdb Insights Enterprise"""
+    click.secho('Uninstalling kdb Insights Enterprise', bold=True)
 
     # Prepare
 
@@ -222,7 +222,7 @@ def uninstall(
 
     delete_crds(is_interactive_exec=is_interactive_exec)
 
-    click.secho('KX Insights uninstalled', bold=True)
+    click.secho('kdb Insights Enterprise uninstalled', bold=True)
 
 
 @azure.command()
@@ -248,9 +248,9 @@ def install(
         assembly_backup_filepath: Optional[str] = None,
         force: bool = False
 ):
-    """Install KX Insights"""
+    """Install kdb Insights Enterprise"""
 
-    click.secho('Installing KX Insights', bold=True)
+    click.secho('Installing kdb Insights Enterprise', bold=True)
 
     is_interactive_exec: bool = not force
 
@@ -444,7 +444,7 @@ def uninstall_insights(
     if install_lib.insights_installed(insights_release, namespace=insights_namespace) and \
             _prompt_if_interactive_exec(
                 is_interactive_exec=is_interactive_exec,
-                message='KX Insights is deployed. Do you want to uninstall?'
+                message='kdb Insights Enterprise is deployed. Do you want to uninstall?'
             ):
         helm_version_checked.ok()
         return kxicli.commands.common.helm.helm_uninstall(
