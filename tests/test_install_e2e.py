@@ -12,7 +12,6 @@ import click
 
 import yaml, json
 from click.testing import CliRunner
-from utils import mock_kube_crd_api,mock_load_kube_config, mock_load_kube_config_incluster
 from kxicli import common
 from kxicli import main
 from kxicli import phrases
@@ -20,7 +19,8 @@ from kxicli.resources import secret
 from kxicli.commands.assembly import CONFIG_ANNOTATION
 from utils import mock_kube_secret_api, return_none, return_true, return_false, raise_not_found, \
     test_val_file, mock_validate_secret, mock_kube_crd_api, mock_helm_env, mock_helm_fetch, mock_list_kube_config_contexts, \
-    mocked_helm_repo_list, test_helm_repo_cache
+    mocked_helm_repo_list, test_helm_repo_cache, mock_load_kube_config, mock_load_kube_config_incluster, \
+    mocked_read_namespaced_secret, return_V1SecretList
 from cli_io import cli_input, cli_output
 from const import test_namespace,  test_chart_repo_name, test_chart_repo_url, \
     test_user, test_pass, test_docker_config_json, test_cert, test_key, test_ingress_cert_secret
@@ -151,22 +151,24 @@ def mock_delete_crd(mocker):
     delete_crd_params = []
     global crd_exists_flag
     crd_exists_flag = True
-    mocker.patch('kxicli.common.delete_crd', mocked_delete_crd)
+    mocker.patch('kxicli.common.delete_crd', mocked_delete_crd_with_log)
+
+
+def mocked_delete_crd_with_log(name):
+    print(f'Deleting CRD {name}')
+    mocked_delete_crd(name)
 
 
 def mocked_delete_crd(name):
-    print(f'Deleting CRD {name}')
     global delete_crd_params
     delete_crd_params.append(name)
     global crd_exists_flag
     crd_exists_flag = False
 
-def mock_delete_crd(mocker):
-    global delete_crd_params
-    delete_crd_params = []
+
+def mocked_create_crd(name):
     global crd_exists_flag
     crd_exists_flag = True
-    mocker.patch('kxicli.common.delete_crd', mocked_delete_crd)
 
 def mocked_copy_secret(name, from_ns, to_ns):
     global copy_secret_params
@@ -1540,7 +1542,7 @@ def test_upgrade(mocker):
     mock_validate_secret(mocker)
     mock_helm_env(mocker)
     mock_helm_fetch(mocker)
-    mock_kube_crd_api(mocker)
+    mock_kube_crd_api(mocker, create=mocked_create_crd, delete=mocked_delete_crd)
     if os.path.exists(test_asm_backup):
         os.remove(test_asm_backup)
     with open(test_asm_file) as f:
@@ -1563,7 +1565,7 @@ y
                     test_install_secret, '--assembly-backup-filepath', test_asm_backup],
             input=user_input
         )
-        expected_output = f"""Upgrading kdb Insights Enterprise
+        expected_output = f"""{phrases.header_upgrade}
 {phrases.values_validating}
 
 kxi-operator already installed with version 1.2.0
@@ -1603,7 +1605,7 @@ Upgrade to version 1.2.3 complete
         ['helm', 'upgrade', '--install', '-f', '-', 'insights', test_chart, '--version', '1.2.3', '--namespace', test_namespace]
     ]
     assert subprocess_run_args == (True, values, True)
-    assert delete_crd_params == []
+    assert delete_crd_params == ['assemblies.insights.kx.com', 'assemblyresources.insights.kx.com']
     assert insights_installed_flag == True
     assert operator_installed_flag == True
     assert crd_exists_flag == True
@@ -1618,7 +1620,7 @@ def test_upgrade_without_backup_filepath(mocker):
     mock_validate_secret(mocker)
     mock_helm_env(mocker)
     mock_helm_fetch(mocker)
-    mock_kube_crd_api(mocker)
+    mock_kube_crd_api(mocker, create=mocked_create_crd, delete=mocked_delete_crd)
     with open(test_val_file, 'r') as values_file:
         values = str(values_file.read())
     runner = CliRunner()
@@ -1642,7 +1644,7 @@ y
         ['helm', 'upgrade', '--install', '-f', '-', 'insights', test_chart, '--version', '1.2.3', '--namespace', test_namespace]
     ]
     assert subprocess_run_args == (True, values, True)
-    assert delete_crd_params == []
+    assert delete_crd_params == ['assemblies.insights.kx.com', 'assemblyresources.insights.kx.com']
     assert insights_installed_flag == True
     assert operator_installed_flag == True
     assert crd_exists_flag == True
@@ -1662,7 +1664,7 @@ def test_upgrade_skips_to_install_when_not_running(mocker):
             ['install', 'upgrade', '--version', '1.2.3', '--install-config-secret', test_install_secret],
             input=user_input
         )
-    expected_output = f"""Upgrading kdb Insights Enterprise
+    expected_output = f"""{phrases.header_upgrade}
 {phrases.values_validating}
 Do you want to install kxi-operator version 1.2.3? [Y/n]: y
 kdb Insights Enterprise is not deployed. Skipping to install
@@ -1700,7 +1702,7 @@ def test_upgrade_when_user_declines_to_teardown_assembly(mocker):
                 '--assembly-backup-filepath', test_asm_backup],
             input='y\ny\nn\n'
         )
-    expected_output = f"""Upgrading kdb Insights Enterprise
+    expected_output = f"""{phrases.header_upgrade}
 {phrases.values_validating}
 
 kxi-operator already installed with version 1.2.0
@@ -1744,7 +1746,7 @@ def test_upgrade_does_not_reapply_assemblies_when_upgrade_fails(mocker):
     mock_validate_secret(mocker)
     mock_helm_env(mocker)
     mock_helm_fetch(mocker)
-    mock_kube_crd_api(mocker)
+    mock_kube_crd_api(mocker, create=mocked_create_crd, delete=mocked_delete_crd)
     if os.path.exists(test_asm_backup):
         os.remove(test_asm_backup)
     with open(test_asm_file) as f:
@@ -1767,7 +1769,7 @@ y
                     test_install_secret, '--assembly-backup-filepath', test_asm_backup],
             input=user_input
         )
-        expected_output = f"""Upgrading kdb Insights Enterprise
+        expected_output = f"""{phrases.header_upgrade}
 {phrases.values_validating}
 
 kxi-operator already installed with version 1.2.0
@@ -1803,7 +1805,7 @@ def test_install_run_upgrades_when_already_installed(mocker):
     mock_create_namespace(mocker)
     mock_get_operator_version(mocker)
     mock_validate_secret(mocker)
-    mock_kube_crd_api(mocker)
+    mock_kube_crd_api(mocker, create=mocked_create_crd, delete=mocked_delete_crd)
     mock_helm_env(mocker)
     mock_helm_fetch(mocker)
     mocker.patch('kxicli.commands.assembly._backup_filepath', lambda filepath, force: test_asm_backup)
@@ -1817,7 +1819,7 @@ y
         result = runner.invoke(main.cli, ['install', 'run', '--version', '1.2.3', '--filepath', test_val_file], input =user_input)
         expected_output = f"""{phrases.values_validating}
 kdb Insights Enterprise is already installed with version insights-1.2.1. Would you like to upgrade to version 1.2.3? [y/N]: y
-Upgrading kdb Insights Enterprise
+{phrases.header_upgrade}
 {phrases.values_validating}
 
 kxi-operator already installed with version 1.2.0
@@ -1868,7 +1870,7 @@ def test_upgrade_without_op_name_prompts_to_skip_operator_install(mocker):
     mock_validate_secret(mocker)
     mock_helm_env(mocker)
     mock_helm_fetch(mocker)
-    mock_kube_crd_api(mocker)
+    mock_kube_crd_api(mocker, create=mocked_create_crd, delete=mocked_delete_crd)
     if os.path.exists(test_asm_backup):
         os.remove(test_asm_backup)
     with open(test_asm_file) as f:
@@ -1890,7 +1892,7 @@ y
                     test_install_secret, '--assembly-backup-filepath', test_asm_backup],
             input=user_input
         )
-        expected_output = f"""Upgrading kdb Insights Enterprise
+        expected_output = f"""{phrases.header_upgrade}
 {phrases.values_validating}
 
 kxi-operator already installed with version 1.2.0
@@ -1940,7 +1942,7 @@ def test_upgrade_with_no_assemblies(mocker):
     mock_validate_secret(mocker)
     mock_helm_env(mocker)
     mock_helm_fetch(mocker)
-    mock_kube_crd_api(mocker)
+    mock_kube_crd_api(mocker, create=mocked_create_crd, delete=mocked_delete_crd)
     mocker.patch(GET_ASSEMBLIES_LIST_FUNC, mock_list_assembly_none)
     running_assembly[test_asm_name] = False
     runner = CliRunner()
@@ -1972,6 +1974,71 @@ def test_install_upgrade_errors_when_repo_does_not_exist(mocker):
         expected_output = "Error: Cannot find local chart repo kx-insights\n"
     assert result.exit_code == 1
     assert result.output == expected_output
+    
+def raise_exception_on_insights_install(*args, **kwargs):
+    if args == (['helm', 'upgrade', '--install', '-f', test_val_file, 'insights', test_chart, '--version', '1.2.3', '--namespace', test_namespace],):
+        raise subprocess.CalledProcessError(1, args)
+
+
+def test_upgrade_backs_up_helm_secret_upon_crd_api_change(mocker):
+    upgrades_mocks(mocker)
+    mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
+    mock_get_operator_version(mocker)
+    mock_validate_secret(mocker)
+    mock_helm_env(mocker)
+    mock_helm_fetch(mocker)
+    mock_kube_crd_api(mocker, create=mocked_create_crd, delete=mocked_delete_crd)
+    mocker.patch('kxicli.commands.install.check_supported_crd_api', return_false)
+    mock_kube_secret_api(
+            mocker,
+            list=lambda **kwargs: return_V1SecretList(
+                items=[
+                    mocked_read_namespaced_secret(test_namespace,'helm-release.v1'), 
+                    mocked_read_namespaced_secret(test_namespace,'helm-release.v2')
+                    ]
+                ),
+            read=mocked_read_namespaced_secret,
+            delete=return_none
+        )
+    mocker.patch(GET_ASSEMBLIES_LIST_FUNC, mock_list_assembly_none)
+    mocker.patch('subprocess.run').side_effect = raise_exception_on_insights_install
+    
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        result = runner.invoke(main.cli,
+            ['install', 'upgrade', '--version', '1.2.3', '--filepath', test_val_file, 
+                '--helm-release-backup-filepath', 'test-helm-release.yaml'],
+            input='y'
+        )
+        expected_output = f"""{phrases.header_upgrade}
+{phrases.values_validating}
+
+kxi-operator already installed with version 1.2.0
+Do you want to install kxi-operator version 1.2.3? [Y/n]: y
+Reading CRD data from {test_helm_repo_cache}/kxi-operator-1.2.3.tgz
+
+Backing up assemblies
+No assemblies to back up
+
+Tearing down assemblies
+Assembly data will be persisted and state will be recovered post-upgrade
+
+Upgrading insights
+Installing chart kx-insights/kxi-operator version 1.2.3 with values file from {test_val_file}
+Replacing CRD assemblies.insights.kx.com
+Replacing CRD assemblyresources.insights.kx.com
+Backing up and removing helm release secret helm-release.v2 to file test-helm-release.yaml
+
+kdb Insights Enterprise already installed with version insights-1.2.1
+Installing chart kx-insights/insights version 1.2.3 with values file from {test_val_file}
+Error: Command '(['helm', 'upgrade', '--install', '-f', '{test_val_file}', 'insights', '{test_chart}', '--version', '1.2.3', '--namespace', '{test_namespace}'],)' returned non-zero exit status 1.
+"""
+    assert result.exit_code == 1
+    assert result.output == expected_output
+    assert operator_installed_flag == True
+    assert crd_exists_flag == True
+    assert delete_crd_params == ['assemblies.insights.kx.com', 'assemblyresources.insights.kx.com']
+    os.path.exists('test-helm-release.yaml')
 
 
 def test_install_values_validated_on_run_and_upgrade(mocker):

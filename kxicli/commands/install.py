@@ -5,6 +5,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+from tempfile import mkstemp
 from typing import Callable, Dict
 
 import click
@@ -27,7 +28,7 @@ from kxicli.commands.common.arg import arg_force, arg_filepath, arg_version, arg
     arg_image_repo, arg_image_repo_user, arg_image_pull_secret, arg_gui_client_secret, arg_operator_client_secret, \
     arg_keycloak_secret, arg_keycloak_postgresql_secret, arg_keycloak_auth_url, \
     arg_ingress_cert_secret, arg_ingress_cert, arg_ingress_key, arg_ingress_certmanager_disabled,  \
-    arg_install_config_secret, arg_import_users
+    arg_install_config_secret, arg_import_users, arg_helm_release_backup_filepath
 from kxicli.commands.common.helm import helm_uninstall, helm_install
 from kxicli.commands.common.namespace import create_namespace
 from kxicli.common import get_default_val as default_val, key_gui_client_secret, key_operator_client_secret
@@ -67,6 +68,8 @@ CRD_NAMES = [
 
 license_key = 'license.secret'
 image_pull_key = 'image.pullSecret'
+
+HELM_RELEASE_FIELD_SELECTOR = 'type=helm.sh/release.v1'
 
 @click.group()
 def install():
@@ -334,13 +337,14 @@ def run(ctx, namespace, chart_repo_name, chart_repo_url, chart_repo_username,
 @arg_filepath()
 @arg_force()
 @arg_import_users()
+@arg_helm_release_backup_filepath()
 def upgrade(namespace, release, chart_repo_name, assembly_backup_filepath, version, operator_version, image_pull_secret,
-            license_secret, install_config_secret, filepath, force, import_users):
+            license_secret, install_config_secret, filepath, force, import_users, helm_release_backup_filepath):
     perform_upgrade(namespace, release, chart_repo_name, assembly_backup_filepath, version, operator_version, image_pull_secret,
-                    license_secret, install_config_secret, filepath, force, import_users)
+                    license_secret, install_config_secret, filepath, force, import_users, helm_release_backup_filepath)
 
 def perform_upgrade(namespace, release, chart_repo_name, assembly_backup_filepath, version, operator_version, image_pull_secret,
-                    license_secret, install_config_secret, filepath, force, import_users):
+                    license_secret, install_config_secret, filepath, force, import_users, helm_release_backup_filepath = None):
     """Upgrade kdb Insights Enterprise"""
     namespace = options.namespace.prompt(namespace)    
     chart_repo_name = options.chart_repo_name.prompt(chart_repo_name, silent=True)
@@ -384,7 +388,8 @@ def perform_upgrade(namespace, release, chart_repo_name, assembly_backup_filepat
         click.secho(phrases.upgrade_insights, bold=True)
         upgraded =  install_operator_and_release(release, namespace, version, operator_version, operator_release, 
                                                 filepath, values_secret, image_pull_secret, license_secret, 
-                                                chart_repo_name, import_users, install_operator, is_op_upgrade, crd_data, is_upgrade=True)
+                                                chart_repo_name, import_users, install_operator, is_op_upgrade, crd_data, 
+                                                is_upgrade=True, helm_release_backup_filepath=helm_release_backup_filepath)
 
     click.secho(phrases.upgrade_asm_reapply, bold=True)
     if assembly_backup_filepath and all(assembly._create_assemblies_from_file( 
@@ -873,7 +878,8 @@ def install_operator_and_release(
     install_operator = True,
     is_operator_upgrade = False,
     crd_data = [],
-    is_upgrade = None
+    is_upgrade = None,
+    helm_release_backup_filepath = None
 ):
     """Install operator and insights"""
 
@@ -898,7 +904,10 @@ def install_operator_and_release(
                      version=operator_version, namespace=operator_namespace, args = [])
 
         if is_operator_upgrade:
+            remove_helm_history = check_supported_crd_apis(crd_data)
             replace_chart_crds(crd_data)
+            if remove_helm_history:
+                delete_helm_secret(release, namespace, helm_release_backup_filepath)
 
     insights_installed_charts = get_installed_charts(release, namespace)
     if len(insights_installed_charts) > 0:
@@ -1109,3 +1118,52 @@ def read_cached_crd_files(
 def replace_chart_crds(crd_data):
     for body in crd_data:
         common.replace_crd(body['metadata']['name'], body)
+
+
+def delete_helm_secret(release, namespace, filepath):
+    """If we are upgrading CRDs to an unsupported api version, backup & delete the helm history"""
+
+    common.load_kube_config()
+    api = k8s.client.CoreV1Api()
+    api_client = k8s.client.ApiClient()
+    helm_releases = api.list_namespaced_secret(namespace=namespace, label_selector=f'name={release}', field_selector=HELM_RELEASE_FIELD_SELECTOR).items
+    if not len(helm_releases):
+        return None
+    helm_latest_release_name = helm_releases[-1].metadata.name
+    helm_latest_release_data = api.read_namespaced_secret(namespace=namespace, name=helm_latest_release_name)
+    helm_latest_release_data = api_client.sanitize_for_serialization(helm_latest_release_data)
+    if 'resourceVersion' in helm_latest_release_data['metadata']:
+        del helm_latest_release_data['metadata']['resourceVersion']
+    if not filepath:
+        _, filepath = mkstemp(f'-{helm_latest_release_name}-backup.yaml')
+    click.echo(f'Backing up and removing helm release secret {helm_latest_release_name} to file {filepath}')
+    with open(filepath, 'w') as f:
+        yaml.dump(helm_latest_release_data, f)
+    api.delete_namespaced_secret(namespace=namespace, name=helm_latest_release_name)
+    return filepath
+
+
+def check_supported_crd_api(crd_body):
+    existing_versions = []
+    target_versions = []
+    name = crd_body['metadata']['name']
+    existing_crd = common.read_crd(name)
+
+    if not isinstance(existing_crd, k8s.client.V1CustomResourceDefinition):
+        return True
+
+    for version in existing_crd.spec.versions:
+        existing_versions.append(version.name)
+
+    for version in crd_body['spec']['versions']:
+        target_versions.append(version['name'])
+
+    return set(existing_versions).issubset(target_versions)
+
+
+def check_supported_crd_apis(crd_data):
+    "Check that all version apis in existing CRDs exist in crd_data"
+    supported_crd_apis = []
+    for body in crd_data:
+        supported_crd_apis.append(check_supported_crd_api(body))
+    return not all(supported_crd_apis)

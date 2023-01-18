@@ -4,6 +4,7 @@ import pytest
 import yaml
 from pathlib import Path
 import click
+import time
 
 from kxicli import common
 from kxicli import config
@@ -59,10 +60,10 @@ def test_read_crd_returns_none_when_not_found(mocker):
 
 def test_read_crd_logs_exception(mocker, capsys):
     mock_kube_crd_api(mocker, read=raise_conflict)
-    common.read_crd('test')
-
-    captured = capsys.readouterr()
-    assert 'Exception when calling ApiextensionsV1Api->read_custom_resource_definition: (409)' in captured.out
+    with pytest.raises(Exception) as e:
+        common.read_crd('test')
+    assert isinstance(e.value, click.ClickException)
+    assert 'Exception when calling ApiextensionsV1Api->read_custom_resource_definition: (409)' in e.value.message
 
 def test_crd_exists(mocker):
     mock_kube_crd_api(mocker)
@@ -73,14 +74,31 @@ def test_crd_exists(mocker):
 
 
 glob = None
-glob_y = None
 def set_glob(x):
     global glob
     glob = x
 
-def set_glob2(x, y):
-    global glob_y
-    glob_y = y
+def read_glob(x):
+    return glob
+
+def delete_glob(x):
+    global glob
+    glob = None
+
+
+def test_delete_crd(mocker):
+    set_glob('test')
+    mock_kube_crd_api(mocker, delete=delete_glob)
+    common.delete_crd('test')
+    assert glob == None
+
+
+def test_delete_crd_raises_exception_on_other_delete_error(mocker):
+    mock_kube_crd_api(mocker, delete=raise_conflict)
+    with pytest.raises(Exception) as e:
+        common.delete_crd('test')
+    assert 'Exception when calling ApiextensionsV1Api->delete_custom_resource_definition' in e.value.message
+
 
 def test_replace_crd_calls_create_if_not_found(mocker):
     mock_kube_crd_api(mocker, create=set_glob, read=return_none)
@@ -88,25 +106,48 @@ def test_replace_crd_calls_create_if_not_found(mocker):
     common.replace_crd('test', get_crd_body('test'))
     assert glob == get_crd_body('test')
 
-def test_replace_crd_calls_replace_if_found(mocker):
-    mock_kube_crd_api(mocker, replace=set_glob2)
+def test_replace_crd_calls_delete_and_create_if_found(mocker):
+    mock = mock_kube_crd_api(mocker, create=set_glob, read=read_glob, delete=delete_glob)
 
     body = get_crd_body('x').to_dict()
     common.replace_crd('x', body)
 
     body['metadata']['resourceVersion'] = '1'
-    assert glob_y == body
-
-def test_replace_crd_tries_again_on_conflict(mocker):
-    mock = mocker.patch('kxicli.common.create_or_replace_crd', side_effect=raise_conflict)
-    with pytest.raises(Exception):
-        common.replace_crd('test', get_crd_body('test'))
+    assert glob == body
     assert mock.call_count == 2
 
-def test_replace_crd_only_runs_once_on_other_k8s_error(mocker):
-    mock = mocker.patch('kxicli.common.create_or_replace_crd', side_effect=raise_not_found)
-    common.replace_crd('test', get_crd_body('test'))
+def test_replace_crd_calls_complete_if_crd_doesnt_exist(mocker):
+    mock = mock_kube_crd_api(mocker, create=set_glob, read=return_none,  delete=raise_not_found)
+
+    body = get_crd_body('x').to_dict()
+    common.replace_crd('x', body)
+    assert glob == body
+
+def test_replace_crd_raises_exception_on_other_delete_error(mocker):
+    mock = mock_kube_crd_api(mocker, delete=raise_conflict)
+
+    with pytest.raises(Exception) as e:
+        common.replace_crd('test', get_crd_body('test'))
     assert mock.call_count == 1
+    assert 'Exception when calling ApiextensionsV1Api->delete_custom_resource_definition' in e.value.message
+
+def test_replace_crd_tries_again_on_crd_existing(mocker):
+    # create waits 10s while waiting for delete to complete
+    mock_k8s = mock_kube_crd_api(mocker)
+    mock_time = mocker.patch('time.sleep')
+
+    with pytest.raises(Exception) as e:
+        common.replace_crd('test', get_crd_body('test'))
+    assert mock_k8s.call_count == 11
+    assert mock_time.call_count == 10
+    assert 'Timed out waiting for CRD test to be deleted' in e.value.message
+
+def test_replace_crd_raises_exception_on_create_error(mocker):
+    mock = mock_kube_crd_api(mocker, create=raise_conflict, read=return_none)
+
+    with pytest.raises(Exception) as e:
+        common.replace_crd('test', get_crd_body('test'))
+    assert 'Exception when calling ApiextensionsV1Api->create_custom_resource_definition' in e.value.message
 
 
 def test_extract_files_from_tar_throws_file_not_found():
