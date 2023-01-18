@@ -87,3 +87,5 @@ arg_realm = options.realm.decorator()
 arg_use_kubeconfig = options.use_kubeconfig.decorator()
 
 arg_import_users = options.import_users.decorator()
+
+arg_helm_release_backup_filepath = options.helm_release_backup_filepath.decorator()

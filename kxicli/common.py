@@ -5,6 +5,7 @@ import kubernetes as k8s
 from pathlib import Path
 import requests
 import tarfile
+import time
 
 from kxicli import config
 from kxicli import log
@@ -48,6 +49,7 @@ key_version = 'version'
 key_operator_version = 'operator.version'
 key_client_id = 'client.id'
 key_client_secret = 'client.secret'
+key_helm_release_backup_filepath = 'helm.release.backup.filepath'
 
 # Help text dictionary for commands
 HELP_TEXT = {
@@ -87,7 +89,8 @@ HELP_TEXT = {
     key_operator_client_secret: 'Keycloak client secret for operator service account',
     key_keycloak_realm: 'Name of Keycloak realm',
     key_version: 'Version to install',
-    key_operator_version: 'Version of the operator to install'
+    key_operator_version: 'Version of the operator to install',
+    key_helm_release_backup_filepath: 'Filepath to backup helm release history to'
 }
 
 # Default values for commands if needed
@@ -212,7 +215,7 @@ def read_crd(name):
         if exception.status == 404:
             return None
         else:
-            click.echo(f'Exception when calling ApiextensionsV1Api->read_custom_resource_definition: {exception}')
+            raise click.ClickException(f'Exception when calling ApiextensionsV1Api->read_custom_resource_definition: {exception}')
 
 def crd_exists(name):
     return isinstance(read_crd(name), k8s.client.V1CustomResourceDefinition)
@@ -224,26 +227,25 @@ def get_existing_crds(names):
             crds.append(n)
     return crds
 
-def create_or_replace_crd(name, body):
-    load_kube_config()
-    api = k8s.client.ApiextensionsV1Api()
-    existing_crd = read_crd(name)
-    if isinstance(existing_crd, k8s.client.V1CustomResourceDefinition):
-        body['metadata']['resourceVersion'] = existing_crd.metadata.resource_version
-        api.replace_custom_resource_definition(name, body)
-    else:
-        api.create_custom_resource_definition(body)
-
 def replace_crd(name, body):
     click.echo(f'Replacing CRD {name}')
+    load_kube_config()
+    api = k8s.client.ApiextensionsV1Api()
     try:
-        create_or_replace_crd(name, body)
+        api.delete_custom_resource_definition(name)
     except k8s.client.rest.ApiException as exception:
-        # can occur if metadata.resourceVersion is out of date so try and reapply
-        if exception.status == 409:
-            create_or_replace_crd(name, body)
-        else:
-            click.echo(f'Exception when trying to replace custom resource definition: {exception}')
+        if exception.status != 404:
+            raise click.ClickException(f'Exception when calling ApiextensionsV1Api->delete_custom_resource_definition: {exception}')
+    # wait for deletion to complete
+    for n in range(10):
+        if not crd_exists(name):
+            try:
+                return api.create_custom_resource_definition(body)
+            except k8s.client.rest.ApiException as exception:
+                raise click.ClickException(f'Exception when calling ApiextensionsV1Api->create_custom_resource_definition: {exception}')
+        time.sleep(1)
+    
+    raise click.ClickException(f'Timed out waiting for CRD {name} to be deleted')
 
 def delete_crd(name):
     load_kube_config()
@@ -253,7 +255,7 @@ def delete_crd(name):
     try:
         api.delete_custom_resource_definition(name)
     except k8s.client.rest.ApiException as exception:
-        click.echo(f'Exception when calling ApiextensionsV1Api->delete_custom_resource_definition: {exception}')
+        raise click.ClickException(f'Exception when calling ApiextensionsV1Api->delete_custom_resource_definition: {exception}')
 
 def extract_files_from_tar(tar: Path, files: list, max_read_size: int = 2000000):
     data = []
