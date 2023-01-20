@@ -22,6 +22,7 @@ VERSION_MSG = f'%(prog)s, version %(version)s from {PKG_DIR} (Python {PYTHON_VER
 def cli(ctx, debug, profile):
     """kdb Insights Enterprise CLI"""
     if debug:
+        ctx.obj = {"debug":True}
         log.GLOBAL_DEBUG_LOG = True
         log.debug(f'Version {CLI_VERSION}')
         log.debug('Enabled global debug logging')
