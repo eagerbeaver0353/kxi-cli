@@ -49,7 +49,6 @@ key_version = 'version'
 key_operator_version = 'operator.version'
 key_client_id = 'client.id'
 key_client_secret = 'client.secret'
-key_helm_release_backup_filepath = 'helm.release.backup.filepath'
 
 # Help text dictionary for commands
 HELP_TEXT = {
@@ -89,8 +88,7 @@ HELP_TEXT = {
     key_operator_client_secret: 'Keycloak client secret for operator service account',
     key_keycloak_realm: 'Name of Keycloak realm',
     key_version: 'Version to install',
-    key_operator_version: 'Version of the operator to install',
-    key_helm_release_backup_filepath: 'Filepath to backup helm release history to'
+    key_operator_version: 'Version of the operator to install'
 }
 
 # Default values for commands if needed

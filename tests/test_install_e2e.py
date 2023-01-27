@@ -19,8 +19,7 @@ from kxicli.resources import secret
 from kxicli.commands.assembly import CONFIG_ANNOTATION
 from utils import mock_kube_secret_api, return_none, return_true, return_false, raise_not_found, \
     test_val_file, mock_validate_secret, mock_kube_crd_api, mock_helm_env, mock_helm_fetch, mock_list_kube_config_contexts, \
-    mocked_helm_repo_list, test_helm_repo_cache, mock_load_kube_config, mock_load_kube_config_incluster, \
-    mocked_read_namespaced_secret, return_V1SecretList
+    mocked_helm_repo_list, test_helm_repo_cache, mock_load_kube_config, mock_load_kube_config_incluster
 from cli_io import cli_input, cli_output
 from const import test_namespace,  test_chart_repo_name, test_chart_repo_url, \
     test_user, test_pass, test_docker_config_json, test_cert, test_key, test_ingress_cert_secret
@@ -1974,71 +1973,6 @@ def test_install_upgrade_errors_when_repo_does_not_exist(mocker):
         expected_output = "Error: Cannot find local chart repo kx-insights\n"
     assert result.exit_code == 1
     assert result.output == expected_output
-    
-def raise_exception_on_insights_install(*args, **kwargs):
-    if args == (['helm', 'upgrade', '--install', '-f', test_val_file, 'insights', test_chart, '--version', '1.2.3', '--namespace', test_namespace],):
-        raise subprocess.CalledProcessError(1, args)
-
-
-def test_upgrade_backs_up_helm_secret_upon_crd_api_change(mocker):
-    upgrades_mocks(mocker)
-    mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
-    mock_get_operator_version(mocker)
-    mock_validate_secret(mocker)
-    mock_helm_env(mocker)
-    mock_helm_fetch(mocker)
-    mock_kube_crd_api(mocker, create=mocked_create_crd, delete=mocked_delete_crd)
-    mocker.patch('kxicli.commands.install.check_supported_crd_api', return_false)
-    mock_kube_secret_api(
-            mocker,
-            list=lambda **kwargs: return_V1SecretList(
-                items=[
-                    mocked_read_namespaced_secret(test_namespace,'helm-release.v1'), 
-                    mocked_read_namespaced_secret(test_namespace,'helm-release.v2')
-                    ]
-                ),
-            read=mocked_read_namespaced_secret,
-            delete=return_none
-        )
-    mocker.patch(GET_ASSEMBLIES_LIST_FUNC, mock_list_assembly_none)
-    mocker.patch('subprocess.run').side_effect = raise_exception_on_insights_install
-    
-    runner = CliRunner()
-    with runner.isolated_filesystem():
-        result = runner.invoke(main.cli,
-            ['install', 'upgrade', '--version', '1.2.3', '--filepath', test_val_file, 
-                '--helm-release-backup-filepath', 'test-helm-release.yaml'],
-            input='y'
-        )
-        expected_output = f"""{phrases.header_upgrade}
-{phrases.values_validating}
-
-kxi-operator already installed with version 1.2.0
-Do you want to install kxi-operator version 1.2.3? [Y/n]: y
-Reading CRD data from {test_helm_repo_cache}/kxi-operator-1.2.3.tgz
-
-Backing up assemblies
-No assemblies to back up
-
-Tearing down assemblies
-Assembly data will be persisted and state will be recovered post-upgrade
-
-Upgrading insights
-Installing chart kx-insights/kxi-operator version 1.2.3 with values file from {test_val_file}
-Replacing CRD assemblies.insights.kx.com
-Replacing CRD assemblyresources.insights.kx.com
-Backing up and removing helm release secret helm-release.v2 to file test-helm-release.yaml
-
-kdb Insights Enterprise already installed with version insights-1.2.1
-Installing chart kx-insights/insights version 1.2.3 with values file from {test_val_file}
-Error: Command '(['helm', 'upgrade', '--install', '-f', '{test_val_file}', 'insights', '{test_chart}', '--version', '1.2.3', '--namespace', '{test_namespace}'],)' returned non-zero exit status 1.
-"""
-    assert result.exit_code == 1
-    assert result.output == expected_output
-    assert operator_installed_flag == True
-    assert crd_exists_flag == True
-    assert delete_crd_params == ['assemblies.insights.kx.com', 'assemblyresources.insights.kx.com']
-    os.path.exists('test-helm-release.yaml')
 
 
 def test_install_values_validated_on_run_and_upgrade(mocker):
