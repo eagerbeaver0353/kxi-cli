@@ -52,9 +52,23 @@ def mocked_helm_search_returns_valid_json(base_command, check=True, capture_outp
     return install.subprocess.CompletedProcess(
         args=base_command,
         returncode=0,
-        stdout='[{"name":"kx-insights/kxi-operator","version":"1.1.0","app_version":"1.1.0-rc.43","description":"KX Insights Operator"}]\n'
+        stdout='[{"name":"kx-insights/kxi-operator","version":"1.3.0","app_version":"1.3.0","description":"KX Insights Operator"}]\n'
     )
 
+
+def mocked_helm_search_returns_valid_json_rc(base_command, check=True, capture_output=True, text=True):
+    return install.subprocess.CompletedProcess(
+        args=base_command,
+        returncode=0,
+        stdout='[{"name":"kx-insights/kxi-operator","version":"1.3.0-rc.40","app_version":"1.3.0","description":"KX Insights Operator"}]\n'
+    )
+
+def mocked_helm_search_returns_valid_json_optional_multiple_versions(base_command, check=True, capture_output=True, text=True):
+    return install.subprocess.CompletedProcess(
+        args=base_command,
+        returncode=0,
+        stdout='[{"name":"kx-insights/kxi-operator","version":"1.3.0-rc.32","app_version":"1.3.0","description":"KX Insights Operator"}, {"name":"kx-insights/kxi-operator","version":"1.3.1-rc.1","app_version":"1.3.1-rc.1","description":"KX Insights Operator"}]\n'
+    )
 
 def mocked_helm_search_returns_empty_json(base_command, check=True, capture_output=True, text=True):
     return install.subprocess.CompletedProcess(
@@ -369,11 +383,29 @@ def get_minor_version_returns_minor_version_from_semver():
     assert install.get_minor_version('1.2.3') == '1.2'
     assert install.get_minor_version('1.2.3-rc.50') == '1.2'
 
+def mocked_subprocess_get_operator_version(chart_repo_name, insights_version, rc_version):
+        if rc_version:
+            return f'{insights_version}-rc.40'
+        else:
+            return insights_version
 
+def mocked_subprocess_get_operator_version_inc(chart_repo_name, insights_version, rc_version):
+        return '1.5.0'
+
+def mocked_subprocess_get_operator_version_none(chart_repo_name, insights_version, rc_version):
+        return ''
+    
 def test_get_operator_version_returns_latest_minor_version(mocker):
     mocker.patch('subprocess.run', mocked_helm_search_returns_valid_json)
-    assert install.get_operator_version('kxi-insights', '1.1.1', None) == '1.1.0'
+    assert install.get_operator_version('kxi-insights', '1.3.0', None) == '1.3.0'
 
+def test_get_operator_version_returns_latest_minor_version_multiple_versions(mocker):
+    mocker.patch('subprocess.run', mocked_helm_search_returns_valid_json_optional_multiple_versions)
+    assert install.get_operator_version('kxi-insights', '1.3.0', None) == '1.3.1-rc.1'
+
+def test_get_operator_version_returns_latest_minor_version_rc(mocker):
+    mocker.patch('subprocess.run', mocked_helm_search_returns_valid_json_rc)
+    assert install.get_operator_version('kxi-insights', '1.3.0-rc.30', None) == '1.3.0-rc.40'
 
 def test_get_operator_version_returns_none_when_not_found(mocker):
     mocker.patch('subprocess.run', mocked_helm_search_returns_empty_json)
@@ -643,13 +675,30 @@ def test_read_cache_crd_from_file_throws_yaml_error(mocker):
     assert isinstance(e.value, click.ClickException)
     assert 'Failed to parse custom resource definition file' in e.value.message
 
+def test_filter_max_operator_version_rcTrue():
+    data = [{'version': '1.0.0-rc.1'}, {'version': '1.0.0-rc.2'}, {'version': '1.0.0-rc.3'}]
+    insights_version = '1.0.0'
+    rc_version = True
+    assert install.filter_max_operator_version(data, insights_version, rc_version) == '1.0.0-rc.3'
+
+def test_filter_max_operator_version_rcFalse():
+    data = [{'version': '1.0.0-rc.1'}, {'version': '1.0.0-rc.2'}, {'version': '1.0.0'}]
+    insights_version = '1.0.0'
+    rc_version = False
+    assert install.filter_max_operator_version(data, insights_version, rc_version) == '1.0.0'
+
+def test_filter_max_operator_version_no_match():
+    data = [{'version': '1.0.0-rc.1'}, {'version': '1.0.0-rc.2'}, {'version': '1.0.1'}]
+    insights_version = '2.0.0'
+    rc_version = True
+    assert install.filter_max_operator_version(data, insights_version, rc_version) == ''
 
 def test_check_for_operator_install_returns_version_to_install(mocker):
     # Operator not already installed, compatible version avaliable on repo
     mock_helm_env(mocker)
     mocker.patch('subprocess.run', mocked_helm_search_returns_valid_json)
     mock_kube_deployment_api(mocker)
-    assert install.check_for_operator_install('kx-insights', 'insights', '1.1.3', None, True) == (True, False, '1.1.0', 'kx-insights', [])
+    assert install.check_for_operator_install('kx-insights', 'insights', '1.3.0', None, True) == (True, False, '1.3.0', 'kx-insights', [])
 
 
 def test_check_for_operator_install_errors_when_operator_repo_charts_not_compatible(mocker):
@@ -658,7 +707,7 @@ def test_check_for_operator_install_errors_when_operator_repo_charts_not_compati
     mocker.patch('subprocess.run', mocked_helm_search_returns_valid_json)
     mock_kube_deployment_api(mocker)
     with pytest.raises(Exception) as e:
-        install.check_for_operator_install('kx-insights', 'insights', '1.3.0', None, True)
+        install.check_for_operator_install('kx-insights', 'insights', '1.8.0', None, True)
     assert isinstance(e.value, click.ClickException)
     assert 'Compatible version of operator not found' in e.value.message
 
@@ -667,15 +716,17 @@ def test_check_for_operator_install_does_not_install_when_no_repo_charts_availab
     # Operator already installed, no compatible version avaliable on repo
     mocker.patch('subprocess.run', mocked_helm_search_returns_empty_json)
     mock_kube_deployment_api(mocker, read=mocked_kube_deployment_list)
-    assert install.check_for_operator_install('kx-insights', 'insights', '1.2.3', None, True) == (False, True, None, 'test-helm-name', [])
-
+    with pytest.raises(Exception) as e:
+        install.check_for_operator_install('kx-insights', 'insights', '1.8.0', None, True)
+    assert isinstance(e.value, click.ClickException)
+    assert 'Compatible version of operator not found' in e.value.message
 
 def test_check_for_operator_install_errors_when_installed_operator_not_compitible(mocker):
     # Incompatiable operator already installed, no version avaliable on repo. Error returned
     mocker.patch('subprocess.run', mocked_helm_search_returns_empty_json)
     mock_kube_deployment_api(mocker, read=mocked_kube_deployment_list)
     with pytest.raises(Exception) as e:
-        install.check_for_operator_install('kx-insights', 'insights', '1.3.0', None, True)
+        install.check_for_operator_install('kx-insights', 'insights', '1.8.0', None, True)
     assert isinstance(e.value, click.ClickException)
     assert 'Compatible version of operator not found' in e.value.message
 
@@ -686,7 +737,7 @@ def test_check_for_operator_install_when_installed_and_available_operators_not_c
     mocker.patch('subprocess.run', mocked_helm_search_returns_valid_json)
     mock_kube_deployment_api(mocker, read=mocked_kube_deployment_list)
     with pytest.raises(Exception) as e:
-        install.check_for_operator_install('kx-insights', 'insights', '1.3.0', None, True)
+        install.check_for_operator_install('kx-insights', 'insights', '1.4.0', None, True)
     assert isinstance(e.value, click.ClickException)
     assert 'Compatible version of operator not found' in e.value.message
 

@@ -45,6 +45,7 @@
     "idps",
     "oidc",
     "serviceaccount",
-    "incluster"
+    "incluster",
+    "devel"
   ]
 }

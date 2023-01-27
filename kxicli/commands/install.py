@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import Callable, Dict
 
 import click
+import semver
+import re
 import kubernetes as k8s
 import yaml
 from click import ClickException
@@ -457,16 +459,37 @@ def get_operator_version(chart_repo_name, insights_version, operator_version):
     """Determine operator version to use. Retrieve the most recent operator minor version matching the insights version"""
     if operator_version is None:
         insights_version_minor = get_minor_version(insights_version)
-        ops_from_helm = subprocess.run(
-            ['helm', 'search', 'repo', f'{chart_repo_name}/kxi-operator', '--version', f'{insights_version_minor}',
-             '--output', 'json'], check=True, capture_output=True, text=True)
-        ops_from_helm = json.loads(ops_from_helm.stdout)
-        if len(ops_from_helm):
-            operator_version = ops_from_helm[0]['version']
+        if '-rc.' in insights_version:
+            rc_version = True
+            ops_from_helm = subprocess.run(
+                        ['helm', 'search', 'repo', f'{chart_repo_name}/kxi-operator', '--versions','--devel',
+                        '--output', 'json'], check=True, capture_output=True, text=True)
         else:
-            log.warn(f'Cannot find operator version in chart repo {chart_repo_name} to install matching insights minor version {insights_version_minor}')
+            rc_version = False
+            ops_from_helm = subprocess.run(
+                        ['helm', 'search', 'repo', f'{chart_repo_name}/kxi-operator', '--versions',
+                        '--output', 'json'], check=True, capture_output=True, text=True)
+        data = json.loads(ops_from_helm.stdout)
+        fil_res = filter_max_operator_version(data, insights_version_minor, rc_version)
+        if len(fil_res):
+            operator_version = fil_res
+        else:
+            log.warn(f'Cannot find operator version in chart repo {chart_repo_name} to install matching insights minor version {insights_version}')
             operator_version = None
     return operator_version
+
+def filter_max_operator_version(data, insights_version, rc_version):
+    if rc_version:
+        regex = '-rc.[0-9]+$'
+    else:
+        regex = ''
+
+    matching_versions = [x['version'] for x in data if re.search(regex, x['version']) and x['version'].startswith(insights_version)]
+    if len(matching_versions) == 0:
+        return ''
+    else:
+        res = str(max(map(semver.VersionInfo.parse, matching_versions)))
+        return res
 
 
 def sanitize_ingress_host(raw_string):
