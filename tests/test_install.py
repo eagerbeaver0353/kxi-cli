@@ -4,7 +4,6 @@ import copy
 import io
 import json
 import kubernetes as k8s
-import os
 import pytest
 import subprocess
 import yaml
@@ -15,8 +14,7 @@ from kxicli.commands import install
 from kxicli.resources import secret
 from utils import IPATH_KUBE_COREV1API, temp_file, test_secret_data, test_secret_type, test_secret_key, \
     mock_kube_deployment_api, mocked_kube_deployment_list, mock_kube_secret_api, mocked_read_namespaced_secret, \
-    raise_conflict, raise_not_found, test_val_file, mock_validate_secret, mock_helm_env, mocked_helm_repo_list, \
-    mock_kube_crd_api, get_crd_body, return_true, return_false, return_V1SecretList
+    raise_conflict, raise_not_found, test_val_file, mock_validate_secret, mock_helm_env, mocked_helm_repo_list
 from test_install_e2e import mocked_read_namespaced_secret_return_values, test_vals
 from const import test_user, test_pass, test_lic_file, test_chart_repo_name, test_chart_repo_url
 
@@ -64,12 +62,6 @@ def mocked_helm_search_returns_empty_json(base_command, check=True, capture_outp
         returncode=0,
         stdout='[]\n'
     )
-
-
-def mocked_delete_secret(name, namespace):
-    global deleted_secret
-    deleted_secret = name
-    return k8s.client.V1Status()
 
 
 def test_get_secret_body_string_data_parameter():
@@ -756,63 +748,3 @@ def test_load_values_stores_exception_when_invalid_values_file_provided():
             install.load_values_stores(test_secret, new_file)
         assert isinstance(e.value, click.ClickException)
         assert f'Invalid values file {new_file}' in e.value.message
-
-
-def test_check_supported_crd_api_when_all_apis_supported(mocker):
-    mock_kube_crd_api(mocker)
-    new_crd_body = get_crd_body('test')
-    assert install.check_supported_crd_api(new_crd_body.to_dict())
-
-
-def test_check_supported_crd_api_when_crd_no_already_installed(mocker):
-    mock_kube_crd_api(mocker, read=raise_not_found)
-    new_crd_body = get_crd_body('test')
-    assert install.check_supported_crd_api(new_crd_body.to_dict())
-
-
-def test_check_supported_crd_api_when_new_crd_does_not_have_version_in_existing(mocker):
-    mock_kube_crd_api(mocker)
-    new_crd_body = k8s.client.V1CustomResourceDefinition(
-        metadata=k8s.client.V1ObjectMeta(
-            name='test',
-            resource_version='1'
-        ),
-        spec=k8s.client.V1CustomResourceDefinitionSpec(
-            group='insights.kx.com', 
-            scope='Namespaced',
-            names=['test'],
-            versions=[
-                 k8s.client.V1CustomResourceDefinitionVersion(
-                    served=True,
-                    storage=True,
-                    name='v1alpha1'
-                    ),
-            ]
-        )
-    )
-    assert not install.check_supported_crd_api(new_crd_body.to_dict())
-
-
-def test_check_supported_crd_apis_returns_false_when_api_versions_match(mocker):
-    mocker.patch('kxicli.commands.install.check_supported_crd_api', return_true)
-    crd_data = [get_crd_body('test').to_dict(),get_crd_body('test1').to_dict()]
-    assert not install.check_supported_crd_apis(crd_data)
-
-
-def test_delete_helm_secret(mocker):
-    mocker.patch('kxicli.commands.install.check_supported_crd_api', return_false)
-    mock_kube_secret_api(
-        mocker,
-        list=lambda **kwargs: return_V1SecretList(
-            items=[
-                mocked_read_namespaced_secret(test_ns,'helm-release.v1'), 
-                mocked_read_namespaced_secret(test_ns,'helm-release.v2')
-                ]
-            ),
-        read=mocked_read_namespaced_secret,
-        delete=mocked_delete_secret
-    )
-    helm_backup_filepath = install.delete_helm_secret('insights', test_ns, None)
-    assert os.path.exists(helm_backup_filepath)
-    assert deleted_secret == 'helm-release.v2'
-    os.remove(helm_backup_filepath)

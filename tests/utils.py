@@ -55,9 +55,6 @@ def return_false(*args, **kwargs):
 def return_V1status(*args, **kwargs):
     return k8s.client.V1Status()
 
-def return_V1SecretList(items=[], **kwargs):
-    return k8s.client.V1SecretList(items=items)
-
 def mocked_create_namespaced_secret(namespace, body):
     return secret.Secret(namespace, body.metadata.name, body.type, data=body.data, string_data=body.string_data).get_body()
 
@@ -79,24 +76,8 @@ def get_crd_body(name):
             name=name,
             resource_version='1'
         ),
-        spec=k8s.client.V1CustomResourceDefinitionSpec(
-            group='insights.kx.com', 
-            scope='Namespaced',
-            names=[name],
-            versions=[
-                k8s.client.V1CustomResourceDefinitionVersion(
-                    served=True,
-                    storage=True,
-                    name='v1'
-                    ),
-                k8s.client.V1CustomResourceDefinitionVersion(
-                    served=True,
-                    storage=True,
-                    name='v1alpha1'
-                    ),
-            ]
+        spec={}
         )
-    )
 
 def mocked_read_custom_resource_definition(name):
     # resource version must be set because 'replace_crd'
@@ -107,20 +88,11 @@ def mocked_replace_custom_resource_definition(name, body):
     data = KubeResponse(json.dumps(body))
     return k8s.client.ApiClient().deserialize(data, 'V1CustomResourceDefinition')
 
-def mock_kube_secret_api(mocker, 
-        create=mocked_create_namespaced_secret,
-        read=return_none,
-        patch=mocked_patch_namespaced_secret,
-        delete=return_V1status,
-        list=return_V1SecretList
-):
+def mock_kube_secret_api(mocker, create=mocked_create_namespaced_secret, read=return_none, patch=mocked_patch_namespaced_secret):
     mock = mocker.patch(IPATH_KUBE_COREV1API)
     mock.return_value.create_namespaced_secret = create
     mock.return_value.read_namespaced_secret = read
     mock.return_value.patch_namespaced_secret = patch
-    mock.return_value.delete_namespaced_secret = delete
-    mock.return_value.list_namespaced_secret = list
-    return mock
 
 def mock_kube_crd_api(
     mocker,
