@@ -23,7 +23,8 @@ dependencies = [
     "python-keycloak>=2.3.0",
     "azure-identity>=1.10.0",
     "msgraph-core>=0.2.2",
-    "dataclasses_json>=0.5.7"
+    "dataclasses_json>=0.5.7",
+    "semver>=2.13.0"
     ]
 
 
