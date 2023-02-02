@@ -457,5 +457,6 @@ use_kubeconfig = Option (
 
 import_users = Option (
     '--import-users',
-    default = None
+    default = None,
+    type = bool
 )
