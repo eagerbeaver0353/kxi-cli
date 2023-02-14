@@ -1357,9 +1357,9 @@ def test_delete_removes_insights_and_operator(mocker):
         expected_output = f"""
 kdb Insights Enterprise is deployed. Do you want to uninstall? [y/N]: y
 Uninstalling release insights in namespace {test_namespace}
-Uninstalling release insights in namespace kxi-operator
 Deleting CRD assemblies.insights.kx.com
 Deleting CRD assemblyresources.insights.kx.com
+Uninstalling release test-op-helm in namespace kxi-operator
 """
     assert result.exit_code == 0
     assert result.output == expected_output
@@ -1368,9 +1368,54 @@ Deleting CRD assemblyresources.insights.kx.com
         assert deleted_asm['name'] in asms_array
     assert subprocess_run_command == [
         ['helm', 'uninstall', 'insights', '--namespace', test_namespace],
-        ['helm', 'uninstall', 'insights', '--namespace', 'kxi-operator']
+        ['helm', 'uninstall', 'test-op-helm', '--namespace', 'kxi-operator']
     ]
     assert delete_crd_params == test_crds
+
+
+def test_delete_when_insights_and_operator_not_installed(mocker):
+    mock_subprocess_run(mocker)
+    mock_delete_crd(mocker)
+    mock_set_insights_operator_and_crd_installed_state(mocker, False, False, False)
+
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        result = runner.invoke(main.cli, ['install', 'delete','--uninstall-operator'])
+        expected_output = f"""
+kdb Insights Enterprise installation not found
+
+kdb Insights Enterprise kxi-operator not found
+"""
+    assert result.exit_code == 0
+    assert result.output == expected_output
+    assert subprocess_run_command == []
+    assert delete_crd_params == []
+
+
+def test_delete_error_deleting_crds(mocker):
+    mock_subprocess_run(mocker)
+    mock_set_insights_operator_and_crd_installed_state(mocker, False, False, True)
+    mock_kube_crd_api(mocker, delete=raise_not_found)
+
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        result = runner.invoke(main.cli, ['install', 'delete','--uninstall-operator'])
+        expected_output = f"""
+kdb Insights Enterprise installation not found
+Deleting CRD assemblies.insights.kx.com
+error=Exception when calling ApiextensionsV1Api->delete_custom_resource_definition: (404)
+Reason: None
+
+Deleting CRD assemblyresources.insights.kx.com
+error=Exception when calling ApiextensionsV1Api->delete_custom_resource_definition: (404)
+Reason: None
+
+
+kdb Insights Enterprise kxi-operator not found
+"""
+    assert result.exit_code == 0
+    assert result.output == expected_output
+    assert subprocess_run_command == []
 
 
 def test_delete_removes_insights(mocker):
@@ -1419,9 +1464,9 @@ def test_delete_force_removes_insights_operator_and_crd(mocker):
     with runner.isolated_filesystem():
         result = runner.invoke(main.cli, ['install', 'delete', '--force'])
         expected_output = f"""Uninstalling release insights in namespace {test_namespace}
-Uninstalling release insights in namespace kxi-operator
 Deleting CRD assemblies.insights.kx.com
 Deleting CRD assemblyresources.insights.kx.com
+Uninstalling release test-op-helm in namespace kxi-operator
 """
     assert result.exit_code == 0
     assert result.output == expected_output
@@ -1430,7 +1475,7 @@ Deleting CRD assemblyresources.insights.kx.com
         assert deleted_asm['name'] in asms_array
     assert subprocess_run_command == [
         ['helm', 'uninstall', 'insights', '--namespace', test_namespace],
-        ['helm', 'uninstall', 'insights', '--namespace', 'kxi-operator']
+        ['helm', 'uninstall', 'test-op-helm', '--namespace', 'kxi-operator']
     ]
     assert delete_crd_params == test_crds
 
