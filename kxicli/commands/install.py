@@ -935,22 +935,30 @@ def install_operator_and_release(
 
 def delete_release_operator_and_crds(release, namespace, force, uninstall_operator):
     """Delete insights, operator and CRDs"""
+    common.load_kube_config()
+    
     if not insights_installed(release, namespace):
         click.echo('\nkdb Insights Enterprise installation not found')
+    elif force or click.confirm('\nkdb Insights Enterprise is deployed. Do you want to uninstall?'):
+        assembly._delete_running_assemblies(namespace, True, True)
+        helm_uninstall(release=release, namespace=namespace)
+
+    if not (force or uninstall_operator):
+        return
+
+    crds = common.get_existing_crds(CRD_NAMES)
+    for i in crds:
+        try:
+            common.delete_crd(i)
+        except click.ClickException as e:
+            log.error(e)
+
+    _, operator_releases = get_installed_operator_versions(operator_namespace)
+
+    if len(operator_releases)>0:
+        helm_uninstall(release=operator_releases[0], namespace=operator_namespace)
     else:
-        if force or click.confirm('\nkdb Insights Enterprise is deployed. Do you want to uninstall?'):
-            assembly._delete_running_assemblies(namespace, True, True)
-            helm_uninstall(release=release, namespace=namespace)
-        else:
-            return
-
-    if force or operator_installed(release) and uninstall_operator:
-        helm_uninstall(release=release, namespace=operator_namespace)
-
-        crds = common.get_existing_crds(CRD_NAMES)
-        if len(crds) > 0:
-            for i in crds:
-                common.delete_crd(i)
+        click.echo(f'\nkdb Insights Enterprise kxi-operator not found')
 
 
 def helm_add_repo(chart_repo_name, url, username, password):
