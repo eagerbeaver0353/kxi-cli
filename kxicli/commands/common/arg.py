@@ -87,3 +87,5 @@ arg_realm = options.realm.decorator()
 arg_use_kubeconfig = options.use_kubeconfig.decorator()
 
 arg_import_users = options.import_users.decorator()
+
+arg_install_config_secret_data_name = options.install_config_secret_data_name.decorator()

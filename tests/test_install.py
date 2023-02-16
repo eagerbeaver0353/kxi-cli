@@ -14,8 +14,9 @@ from kxicli.commands import install
 from kxicli.resources import secret
 from utils import IPATH_KUBE_COREV1API, temp_file, test_secret_data, test_secret_type, test_secret_key, \
     mock_kube_deployment_api, mocked_kube_deployment_list, mock_kube_secret_api, mocked_read_namespaced_secret, \
-    raise_conflict, raise_not_found, test_val_file, mock_validate_secret, mock_helm_env, mocked_helm_repo_list
-from test_install_e2e import mocked_read_namespaced_secret_return_values, test_vals
+    raise_conflict, raise_not_found, test_val_file, mock_validate_secret, mock_helm_env, mocked_helm_repo_list, \
+    return_none, fake_docker_config_yaml
+from test_install_e2e import mocked_read_namespaced_secret_return_values, test_vals, mocked_read_secret
 from const import test_user, test_pass, test_lic_file, test_chart_repo_name, test_chart_repo_url
 
 # Common test parameters
@@ -24,6 +25,8 @@ test_repo = 'test.kx.com'
 test_secret = 'test-secret'
 test_key = install.gen_private_key()
 test_cert = install.gen_cert(test_key)
+test_values_yaml = 'values.yaml'
+test_values_keys = ('values.yaml',)
 
 common.config.load_config("default")
 
@@ -129,6 +132,23 @@ def test_create_docker_secret(mocker):
     assert res.metadata.name == test_secret
     assert '.dockerconfigjson' in res.data
 
+
+def test_get_docker_config_secret(mocker):
+    mock_kube_secret_api(mocker, read=mocked_read_secret)
+    assert install.get_docker_config_secret(
+        namespace='test-namespace',
+        secret_name=common.get_default_val('image.pullSecret')
+        
+    ) == fake_docker_config_yaml
+
+
+def test_get_docker_config_secret_fail(mocker):
+    mock_kube_secret_api(mocker, read=return_none)
+    with pytest.raises(click.ClickException):
+        install.get_docker_config_secret(
+        namespace='test-namespace',
+        secret_name=common.get_default_val('image.pullSecret')
+        )
 
 def test_create_license_secret_encoded(mocker):
     mock_kube_secret_api(mocker)
@@ -265,19 +285,27 @@ def test_copy_secret_409_exception_when_creating_secret_does_not_raise_exception
     assert install.copy_secret(test_secret, test_ns, 'to_ns') == None
 
 
-def test_get_install_config_secret_returns_decoded_secret(mocker):
+def test_get_secret_returns_decoded_secret(mocker):
     mock_kube_secret_api(mocker, read=mocked_read_namespaced_secret_return_values)
 
     s = secret.Secret(test_ns, test_secret)
-    res = install.get_install_config_secret(s)
+    res = install.get_secret(s, test_values_yaml)
 
     assert res == yaml.dump(test_vals)
 
 
-def test_get_install_config_secret_when_does_not_exist(mocker):
+def test_get_secret_when_does_not_exist(mocker):
     mock_kube_secret_api(mocker)
     s = secret.Secret(test_ns, test_secret)
-    res = install.get_install_config_secret(s)
+    res = install.get_secret(s, test_values_yaml)
+
+    assert res == None
+
+
+def test_get_secret_when_key_does_not_exist(mocker):
+    mock_kube_secret_api(mocker, read=mocked_read_namespaced_secret_return_values)
+    s = secret.Secret(test_ns, test_secret)
+    res = install.get_secret(s, 'a_bad_key')
 
     assert res == None
 
@@ -296,8 +324,8 @@ def test_patch_secret_returns_updated_k8s_secret(mocker):
 def test_create_install_config_secret_when_does_not_exists(mocker):
     mock_kube_secret_api(mocker)
 
-    s = secret.Secret(test_ns, test_secret, install.SECRET_TYPE_OPAQUE, install.INSTALL_CONFIG_KEYS)
-    s = install.create_install_config(s, test_vals)
+    s = secret.Secret(test_ns, test_secret, install.SECRET_TYPE_OPAQUE, test_values_keys)
+    s = install.create_install_config(s, test_values_yaml, test_vals)
     res = s.get_body()
 
     assert res.type == test_secret_type
@@ -314,8 +342,8 @@ def test_create_install_config_secret_when_secret_exists_and_user_overwrites(moc
 
     # patch stdin to 'y' for the prompt confirming to overwrite the secret
     monkeypatch.setattr(SYS_STDIN, io.StringIO('y'))
-    s = secret.Secret(test_ns, test_secret, install.SECRET_TYPE_OPAQUE, install.INSTALL_CONFIG_KEYS)
-    install.create_install_config(s, new_values)
+    s = secret.Secret(test_ns, test_secret, install.SECRET_TYPE_OPAQUE, test_values_keys)
+    install.create_install_config(s, test_values_yaml, new_values)
     res = s.get_body()
 
     assert res.type == test_secret_type
@@ -333,8 +361,8 @@ def test_create_install_config_secret_when_secret_exists_and_user_declines_overw
 
     # patch stdin to 'n' for the prompt, declining to overwrite the secret
     monkeypatch.setattr(SYS_STDIN, io.StringIO('n'))
-    s = secret.Secret(test_ns, test_secret, install.SECRET_TYPE_OPAQUE, install.INSTALL_CONFIG_KEYS)
-    s = install.create_install_config(s, new_values)
+    s = secret.Secret(test_ns, test_secret, install.SECRET_TYPE_OPAQUE, test_values_keys)
+    s = install.create_install_config(s, test_values_yaml, new_values)
     res = s.read()
 
     assert res.type == test_secret_type
@@ -344,10 +372,23 @@ def test_create_install_config_secret_when_secret_exists_and_user_declines_overw
     assert yaml.full_load(base64.b64decode(res.data['values.yaml'])) == test_vals
 
 
+def test_create_install_config_secret_with_custom_data_key(mocker):
+    mock_kube_secret_api(mocker)
+
+    s = secret.Secret(test_ns, test_secret, install.SECRET_TYPE_OPAQUE, test_values_keys)
+    s = install.create_install_config(s, 'a_test_data_key', test_vals)
+    res = s.get_body()
+
+    assert res.type == test_secret_type
+    assert res.metadata.name == test_secret
+    assert 'a_test_data_key' in res.data
+    assert yaml.full_load(base64.b64decode(res.data['a_test_data_key'])) == test_vals
+
+
 def test_build_install_secret():
     data = {"secretName": "a_test_secret_name"}
-    s = secret.Secret(test_ns, test_secret, install.SECRET_TYPE_OPAQUE, install.INSTALL_CONFIG_KEYS)
-    s = install.populate_install_secret(s, {'values': data})
+    s = secret.Secret(test_ns, test_secret, install.SECRET_TYPE_OPAQUE, test_values_keys)
+    s = install.populate_install_secret(s, test_values_yaml, {'values': data})
     res = s.get_body().data
 
     assert 'values.yaml' in res
@@ -356,19 +397,10 @@ def test_build_install_secret():
 
 def test_get_install_values_returns_values_from_secret(mocker):
     mock_kube_secret_api(mocker, read=mocked_read_namespaced_secret_return_values)
-    print(install.get_install_values(secret.Secret(test_ns, test_secret)))
-
-    assert install.get_install_values(secret.Secret(test_ns, test_secret)) == yaml.dump(test_vals)
-    assert install.get_install_values(secret.Secret(test_ns, None)) is None
-
-
-def test_get_install_values_exits_when_secret_not_found(mocker):
-    mock = mocker.patch(IPATH_KUBE_COREV1API)
-    mock.return_value.read_namespaced_secret.side_effect = raise_not_found
-    with pytest.raises(Exception) as e:
-        install.get_install_values(secret.Secret(test_ns, test_secret))
-    assert isinstance(e.value, click.ClickException)
-    assert f'Cannot find values secret {test_secret}. Exiting Install\n' in e.value.message
+    _, decoded_values = install.get_install_values(test_ns, test_secret, test_values_yaml)
+    assert decoded_values == yaml.dump(test_vals)
+    _, decoded_values = install.get_install_values(test_ns, None, test_values_yaml)
+    assert decoded_values == None
 
 
 def test_get_operator_version_returns_operator_version_if_passed_regardless_of_rc():
@@ -454,16 +486,6 @@ def test_insights_check_helm_repo_exists_returns_error_when_repo_does_not_exist(
         install.check_helm_repo_exists(test_chart_repo_name)
     assert isinstance(e.value, click.ClickException)
     assert f'Cannot find local chart repo {test_chart_repo_name}' in e.value.message
-
-
-def test_operator_installed_returns_true_when_already_exists(mocker):
-    mock_kube_deployment_api(mocker, read=mocked_kube_deployment_list)
-    assert install.operator_installed('kx-operator') == True
-
-
-def test_operator_installed_returns_false_when_does_not_exist(mocker):
-    mock_kube_deployment_api(mocker)
-    assert install.operator_installed('kx-operator') == False
 
 
 def test_get_installed_operator_versions_returns_helm_chart_version(mocker):
@@ -698,7 +720,7 @@ def test_check_for_operator_install_returns_version_to_install(mocker):
     mock_helm_env(mocker)
     mocker.patch('subprocess.run', mocked_helm_search_returns_valid_json)
     mock_kube_deployment_api(mocker)
-    assert install.check_for_operator_install('kx-insights', 'insights', '1.3.0', None, True) == (True, False, '1.3.0', 'kx-insights', [])
+    assert install.check_for_operator_install('kx-insights', 'insights', '1.3.0', None, force=True) == (True, False, '1.3.0', 'kx-insights', [])
 
 
 def test_check_for_operator_install_errors_when_operator_repo_charts_not_compatible(mocker):
@@ -772,16 +794,6 @@ def test_check_for_operator_install_errors_when_incompatible_operator_is_not_man
         install.check_for_operator_install('kx-insights', 'insights', '1.3.0', None, True)
     assert isinstance(e.value, click.ClickException)
     assert 'Installed kxi-operator version 1.2.0 is incompatible with insights version 1.3.0' in e.value.message
-
-
-def test_upgrade_exception_when_filepath_or_install_secret_not_provided(mocker):
-    mocker.patch('kxicli.commands.install.helm_repo_list', lambda: mocked_helm_repo_list(test_chart_repo_name, test_chart_repo_url))
-    with pytest.raises(Exception) as e:
-        install.perform_upgrade(test_ns, test_repo, test_chart_repo_name, 'test-asm-backup.yaml', '1.3.0', 
-                                   '1.3.0', image_pull_secret=None, license_secret=None, install_config_secret=None,
-                                   filepath=None, force=False, import_users=None)
-    assert isinstance(e.value, click.ClickException)
-    assert 'At least one of --install-config-secret and --filepath options must be provided' in e.value.message
 
 
 def test_load_values_stores_exception_when_values_file_does_not_exist():

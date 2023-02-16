@@ -25,12 +25,11 @@ from kxicli.commands import assembly
 from kxicli.commands.common.arg import arg_force, arg_filepath, arg_version, arg_operator_version, \
     arg_release, arg_namespace, arg_assembly_backup_filepath, arg_output_file, arg_hostname, \
     arg_chart_repo_name, arg_chart_repo_url, arg_chart_repo_username, \
-    arg_chart_repo_password, arg_license_secret, arg_license_as_env_var, arg_license_filepath, arg_client_cert_secret, \
+    arg_license_secret, arg_license_as_env_var, arg_license_filepath, arg_client_cert_secret, \
     arg_image_repo, arg_image_repo_user, arg_image_pull_secret, arg_gui_client_secret, arg_operator_client_secret, \
     arg_keycloak_secret, arg_keycloak_postgresql_secret, arg_keycloak_auth_url, \
     arg_ingress_cert_secret, arg_ingress_cert, arg_ingress_key, arg_ingress_certmanager_disabled,  \
-    arg_install_config_secret, arg_import_users
-from kxicli.commands.common.helm import helm_uninstall, helm_install
+    arg_install_config_secret, arg_install_config_secret_data_name, arg_import_users
 from kxicli.commands.common.namespace import create_namespace
 from kxicli.common import get_default_val as default_val, key_gui_client_secret, key_operator_client_secret
 from kxicli.resources import secret, helm
@@ -45,17 +44,16 @@ SECRET_TYPE_OPAQUE = 'Opaque'
 
 TLS_CRT = 'tls.crt'
 TLS_KEY = 'tls.key'
+DOCKER_SECRET_KEY = '.dockerconfigjson'
 
-VALUES_YAML = 'values.yaml'
 
 # Basic validation for secrets
 KEYCLOAK_KEYS =  ('admin-password', 'management-password')
 POSTGRESQL_KEYS =  ('postgres-password', 'password')
 LICENSE_KEYS = ('license',)
-IMAGE_PULL_KEYS =  ('.dockerconfigjson',)
+IMAGE_PULL_KEYS =  (DOCKER_SECRET_KEY,)
 INGRESS_CERT_KEYS = (TLS_CRT, TLS_KEY)
 CLIENT_CERT_KEYS = (TLS_CRT, TLS_KEY)
-INSTALL_CONFIG_KEYS = (VALUES_YAML,)
 
 CRD_FILES = [
     'insights.kx.com_assemblies.yaml',
@@ -99,12 +97,13 @@ def install():
 @arg_ingress_certmanager_disabled()
 @arg_output_file()
 @arg_install_config_secret()
+@arg_install_config_secret_data_name()
 def setup(namespace, chart_repo_name, chart_repo_url, chart_repo_username, 
           license_secret, license_as_env_var, license_filepath,
           client_cert_secret, image_repo, image_repo_user, image_pull_secret, gui_client_secret, operator_client_secret,
           keycloak_secret, keycloak_postgresql_secret, keycloak_auth_url, hostname, 
           ingress_cert_secret, ingress_cert, ingress_key, ingress_certmanager_disabled,
-          output_file, install_config_secret, **kwargs):
+          output_file, install_config_secret, install_config_secret_data_name, **kwargs):
     """Perform necessary setup steps to install Insights"""
     
     click.secho(phrases.header_setup, bold=True)                                    
@@ -121,9 +120,9 @@ def setup(namespace, chart_repo_name, chart_repo_url, chart_repo_username,
             click.echo(f'Running in namespace {namespace} in-cluster')
         except k8s.config.ConfigException:
             raise click.ClickException("Kubernetes cluster config not found")        
-        
-    install_config_secret = secret.Secret(namespace, options.install_config_secret.prompt(install_config_secret), SECRET_TYPE_OPAQUE, INSTALL_CONFIG_KEYS)
-    values_secret = get_install_config_secret(install_config_secret)
+
+    install_config_secret = options.install_config_secret.prompt(install_config_secret)
+    install_config_secret, values_secret = get_install_values(namespace, install_config_secret, install_config_secret_data_name)
     # Setup secret by looking for them in the following hierarchy
     #   - cmd line arg
     #      - values file (currently None in this command)
@@ -241,7 +240,7 @@ def setup(namespace, chart_repo_name, chart_repo_url, chart_repo_username,
     with open(output_file, 'w') as f:
         yaml.dump(install_file, f)
 
-    create_install_config(install_config_secret, install_file)
+    create_install_config(install_config_secret, install_config_secret_data_name, install_file)
 
     click.secho(phrases.footer_setup, bold=True)
     click.echo(phrases.values_file_saved.format(output_file=output_file))
@@ -272,6 +271,7 @@ def setup(namespace, chart_repo_name, chart_repo_url, chart_repo_username,
 @arg_ingress_key()
 @arg_output_file()
 @arg_install_config_secret()
+@arg_install_config_secret_data_name()
 @arg_filepath()
 @arg_release()
 @arg_version()
@@ -284,112 +284,103 @@ def run(ctx, namespace, chart_repo_name, chart_repo_url, chart_repo_username,
           client_cert_secret, image_repo, image_repo_user, image_pull_secret, gui_client_secret, operator_client_secret,
           keycloak_secret, keycloak_postgresql_secret, keycloak_auth_url, hostname, 
           ingress_cert_secret, ingress_cert, ingress_key,
-          output_file, install_config_secret, 
+          output_file, install_config_secret, install_config_secret_data_name,
           filepath, release, version, operator_version, force, import_users):
     """Install kdb Insights Enterprise with a values file"""
-    is_upgrade = False
-        
+
     # Run setup prompts if necessary
     if filepath is None and install_config_secret is None:
         click.echo(phrases.header_run)
         filepath, chart_repo_name = ctx.forward(setup)
 
-    chart_repo_name = options.chart_repo_name.prompt(chart_repo_name, silent=True)
-    check_helm_repo_exists(chart_repo_name)
+    filepath, values_secret, namespace, chart_repo, image_pull_secret, license_secret = get_values_and_secrets(filepath,
+        install_config_secret, install_config_secret_data_name, namespace, chart_repo_name, chart_repo_url,
+        image_pull_secret, license_secret)
 
-    namespace = options.namespace.prompt(namespace)
-
-    install_config_secret = secret.Secret(namespace, install_config_secret, SECRET_TYPE_OPAQUE, INSTALL_CONFIG_KEYS)
-
-    values_secret = get_install_values(install_config_secret)
-    image_pull_secret, license_secret = get_image_and_license_secret_from_values(values_secret, filepath,
-                                                                                 image_pull_secret, license_secret)
-
-    validate_values(namespace, values_secret, filepath)
+    docker_config = get_docker_config_secret(namespace, image_pull_secret, DOCKER_SECRET_KEY)
 
     insights_installed_charts = get_installed_charts(release, namespace)
     if len(insights_installed_charts) > 0:
         if click.confirm(f'kdb Insights Enterprise is already installed with version {insights_installed_charts[0]["chart"]}. Would you like to upgrade to version {version}?'):
-            return perform_upgrade(namespace, release, chart_repo_name, None, version,
-                                   operator_version, image_pull_secret, license_secret, install_config_secret,
-                                   filepath, force, import_users)
+            return perform_upgrade(namespace, release, chart_repo, None, version, operator_version, image_pull_secret,
+                    license_secret, values_secret, filepath, import_users, docker_config, force)
         else:
             return
 
     install_operator, is_op_upgrade, operator_version, operator_release, crd_data = check_for_operator_install(release,
-        chart_repo_name, version, operator_version, force)
+        chart_repo, version, operator_version, docker_config, force)
 
     install_operator_and_release(release, namespace, version, operator_version, operator_release, filepath, values_secret,
-                                 image_pull_secret, license_secret, chart_repo_name, import_users,
-                                 install_operator, is_op_upgrade, crd_data, is_upgrade)
+                                 image_pull_secret, license_secret, chart_repo, import_users, docker_config,
+                                 install_operator, is_op_upgrade, crd_data, is_upgrade=False)
 
 @install.command()
 @arg_namespace()
 @arg_release()
 @arg_chart_repo_name()
+@arg_chart_repo_url()
 @arg_assembly_backup_filepath()
 @arg_version()
 @arg_operator_version()
 @arg_image_pull_secret()
 @arg_license_secret()
 @arg_install_config_secret()
+@arg_install_config_secret_data_name()
 @arg_filepath()
 @arg_force()
 @arg_import_users()
-def upgrade(namespace, release, chart_repo_name, assembly_backup_filepath, version, operator_version, image_pull_secret,
-            license_secret, install_config_secret, filepath, force, import_users):
-    perform_upgrade(namespace, release, chart_repo_name, assembly_backup_filepath, version, operator_version, image_pull_secret,
-                    license_secret, install_config_secret, filepath, force, import_users)
-
-def perform_upgrade(namespace, release, chart_repo_name, assembly_backup_filepath, version, operator_version, image_pull_secret,
-                    license_secret, install_config_secret, filepath, force, import_users):
+def upgrade(namespace, release, chart_repo_name, chart_repo_url, assembly_backup_filepath, version, operator_version, image_pull_secret,
+            license_secret, install_config_secret, install_config_secret_data_name, filepath, force, import_users):
     """Upgrade kdb Insights Enterprise"""
-    namespace = options.namespace.prompt(namespace)    
-    chart_repo_name = options.chart_repo_name.prompt(chart_repo_name, silent=True)
-    check_helm_repo_exists(chart_repo_name)
-
-    upgraded = False
     click.secho(phrases.header_upgrade, bold=True)
 
     # Read install values
     if filepath is None and install_config_secret is None:
         raise click.ClickException('At least one of --install-config-secret and --filepath options must be provided')
 
-    if not isinstance(install_config_secret, secret.Secret):
-        install_config_secret = secret.Secret(namespace, install_config_secret, SECRET_TYPE_OPAQUE, INSTALL_CONFIG_KEYS)
+    filepath, values_secret, namespace, chart_repo, image_pull_secret, license_secret = get_values_and_secrets(filepath,
+        install_config_secret, install_config_secret_data_name, namespace, chart_repo_name, chart_repo_url,
+        image_pull_secret, license_secret)
+    
+    docker_config = get_docker_config_secret(namespace, image_pull_secret, DOCKER_SECRET_KEY)
+    
+    perform_upgrade(namespace, release, chart_repo, assembly_backup_filepath, version, operator_version, image_pull_secret,
+                    license_secret, values_secret, filepath, import_users, docker_config, force)
 
-    values_secret = get_install_values(install_config_secret)
-    image_pull_secret, license_secret = get_image_and_license_secret_from_values(values_secret, filepath,
-                                                                                 image_pull_secret, license_secret)
 
-    validate_values(namespace, values_secret, filepath)
-
+def perform_upgrade(namespace, release, chart_repo, assembly_backup_filepath, version, operator_version, image_pull_secret,
+                    license_secret, values_secret, filepath, import_users, docker_config, force):
+    
+    upgraded = False
+    
     install_operator, is_op_upgrade, operator_version, operator_release, crd_data = check_for_operator_install(release,
-        chart_repo_name, version, operator_version, force)
+        chart_repo, version, operator_version, docker_config, force)
 
     if not insights_installed(release, namespace):
         click.echo(phrases.upgrade_skip_to_install)
         install_operator_and_release(release, namespace, version, operator_version, operator_release, 
                                  filepath, values_secret, image_pull_secret, license_secret,
-                                 chart_repo_name, import_users, install_operator, is_op_upgrade, crd_data, is_upgrade=False)
+                                 chart_repo, import_users, docker_config, install_operator,
+                                 is_op_upgrade, crd_data, is_upgrade=False)
         click.secho(str.format(phrases.upgrade_complete, version=version), bold=True)
         return
 
     click.secho(phrases.upgrade_asm_backup, bold=True)
-    assembly_backup_filepath = assembly._backup_assemblies(namespace, assembly_backup_filepath, force)
+    assembly_backup_filepath = assembly.backup_assemblies(namespace, assembly_backup_filepath, force)
 
     click.secho(phrases.upgrade_asm_teardown, bold=True)
     click.secho(phrases.upgrade_asm_persist)
-    deleted = assembly._delete_running_assemblies(namespace=namespace, wait=True, force=force)
+    deleted = assembly.delete_running_assemblies(namespace=namespace, wait=True, force=force)
 
     if all(deleted):
         click.secho(phrases.upgrade_insights, bold=True)
         upgraded =  install_operator_and_release(release, namespace, version, operator_version, operator_release, 
                                                 filepath, values_secret, image_pull_secret, license_secret, 
-                                                chart_repo_name, import_users, install_operator, is_op_upgrade, crd_data, is_upgrade=True)
+                                                chart_repo, import_users, docker_config, install_operator, 
+                                                is_op_upgrade, crd_data, is_upgrade=True)
 
     click.secho(phrases.upgrade_asm_reapply, bold=True)
-    if assembly_backup_filepath and all(assembly._create_assemblies_from_file( 
+    if assembly_backup_filepath and all(assembly.create_assemblies_from_file( 
                                             namespace=namespace, filepath=assembly_backup_filepath, use_kubeconfig=True
                                             )
                                         ):
@@ -422,31 +413,60 @@ def list_versions(chart_repo_name):
 @install.command()
 @arg_namespace()
 @arg_install_config_secret()
-def get_values(namespace, install_config_secret):
+@arg_install_config_secret_data_name()
+def get_values(namespace, install_config_secret, install_config_secret_data_name):
     """
     Display the kxi-install-config secret used for storing installation values
     """
     install_config_secret = options.install_config_secret.prompt(install_config_secret, silent=True)
-    install_config_secret = secret.Secret(namespace, install_config_secret, SECRET_TYPE_OPAQUE, INSTALL_CONFIG_KEYS)
-
-    data = get_install_config_secret(install_config_secret)
+    _, data = get_install_values(namespace, install_config_secret, install_config_secret_data_name)
     if data is None:
-        click.echo(f'Cannot find values secret {install_config_secret.name}\n')
+        click.echo(f'Cannot find values secret {install_config_secret}\n')
     else:
         click.echo(data)
 
 
-def get_install_config_secret(install_config_secret: secret.Secret):
-    """
-    Return the kxi-install-config secret used for storing installation values
-    """
-    values_secret = install_config_secret.read()
-    if values_secret:
-        values_secret = base64.b64decode(values_secret.data[VALUES_YAML]).decode('ascii')
-    else:
-        log.debug(f'Cannot find values secret {install_config_secret.name}')
+def get_values_and_secrets(filepath, install_config_secret, install_config_secret_data_name, namespace,
+                       chart_repo_name, chart_repo_url, image_pull_secret, license_secret):
 
-    return values_secret
+    if chart_repo_url and 'oci://' in chart_repo_url:
+            helm_version_checked=helm.get_helm_version_checked()
+            helm_version_checked.ok()
+            chart_repo = chart_repo_url
+    else: 
+        chart_repo_name = options.chart_repo_name.prompt(chart_repo_name, silent=True)
+        check_helm_repo_exists(chart_repo_name)
+        helm.repo_update()
+        chart_repo = chart_repo_name
+
+    namespace = options.namespace.prompt(namespace)
+
+    _, values_secret = get_install_values(namespace, install_config_secret, install_config_secret_data_name)
+    image_pull_secret, license_secret = get_image_and_license_secret_from_values(values_secret, filepath,
+                                                                                 image_pull_secret, license_secret)
+
+    validate_values(namespace, values_secret, filepath)
+    
+    return filepath, values_secret, namespace, chart_repo, image_pull_secret, license_secret 
+
+
+def get_secret(secret_object: secret.Secret,
+               secret_data_name: str
+    ):
+    """
+    Return decoded secret
+    """
+    secret_value = secret_object.read()
+    if secret_value:
+        try:
+            secret_value = base64.b64decode(secret_value.data[secret_data_name]).decode('ascii')
+        except KeyError:
+            log.error(f'Cannot find key {secret_data_name} in secret {secret_object.name}')
+            return None
+    else:
+        log.debug(f'Cannot find values secret {secret_object.name}')
+
+    return secret_value
 
 
 def get_minor_version(version):
@@ -703,10 +723,21 @@ def populate_docker_config_secret(secret: secret.Secret, docker_config):
     """Populate a secret with a docker config file"""
     docker_config = json.dumps(docker_config).encode()
     secret.data = {
-        '.dockerconfigjson': base64.b64encode(docker_config).decode('ascii')
+        DOCKER_SECRET_KEY: base64.b64encode(docker_config).decode('ascii')
     }
     return secret
 
+def get_docker_config_secret(
+        namespace: str,
+        secret_name: str,
+        secret_data_name: str = DOCKER_SECRET_KEY
+) -> str:
+    s = secret.Secret(namespace, secret_name)
+    docker_config = get_secret(s, secret_data_name)
+    if docker_config is not None:
+        return docker_config
+    else:
+        raise click.ClickException('Docker config secret not found in Cluster')
 
 def populate_tls_secret(secret: secret.Secret, cert, key):
     """Create a TLS secret in a given namespace from a cert and private key"""
@@ -726,19 +757,25 @@ def populate_tls_secret(secret: secret.Secret, cert, key):
 
     return secret
 
-def populate_install_secret(secret: secret.Secret, data: Dict):
-    secret.data = {VALUES_YAML: base64.b64encode(yaml.dump(data['values']).encode()).decode('ascii')}
+def populate_install_secret(secret: secret.Secret,
+                            install_config_secret_data_name: str,
+                            data: dict
+    ):
+    secret.data = {install_config_secret_data_name: base64.b64encode(yaml.dump(data['values']).encode()).decode('ascii')}
     return secret
 
 
-def get_install_values(install_config_secret: secret.Secret):
-    values_secret = None
+def get_install_values(namespace: str,
+                       install_config_secret: secret.Secret,
+                       install_config_secret_data_name: str
+    ):
+    decoded_secret = None
+    install_config_key = options.install_config_secret_data_name.prompt(install_config_secret_data_name, silent=True)
+    install_config_secret = secret.Secret(namespace, install_config_secret, SECRET_TYPE_OPAQUE, (install_config_key,))
     if install_config_secret.name:
-        values_secret = get_install_config_secret(install_config_secret)
-        if not values_secret:
-            raise click.ClickException(f'Cannot find values secret {install_config_secret.name}. Exiting Install\n')
+        decoded_secret = get_secret(install_config_secret, install_config_key)
 
-    return values_secret
+    return install_config_secret, decoded_secret
 
 
 def get_image_and_license_secret_from_values(values_secret, values_file, image_pull_secret, license_secret):
@@ -832,7 +869,7 @@ def gen_cert(private_key):
     return builder.sign(private_key, hashes.SHA256(), default_backend())
 
 
-def check_for_operator_install(release, chart_repo_name, insights_ver, op_ver, force):
+def check_for_operator_install(release, chart_repo_name, insights_ver, op_ver, docker_config='', force=False):
     """
     Determine if the operator needs to be install or upgraded
     Fetch the CRD data if it's an upgrade
@@ -875,7 +912,7 @@ def check_for_operator_install(release, chart_repo_name, insights_ver, op_ver, f
     crd_data = []
     if install_operator and is_upgrade:
         cache = helm.get_repository_cache()
-        helm.fetch(chart_repo_name, 'kxi-operator', cache, operator_version_to_install)
+        helm.fetch(chart_repo_name, 'kxi-operator', cache, operator_version_to_install, docker_config)
         crd_data = read_cached_crd_files(operator_version_to_install)
 
     return install_operator, is_upgrade, operator_version_to_install, release, crd_data
@@ -893,15 +930,14 @@ def install_operator_and_release(
     license_secret,
     chart_repo_name,
     import_users,
+    docker_config,
     install_operator = True,
     is_operator_upgrade = False,
     crd_data = [],
     is_upgrade = None
 ):
     """Install operator and insights"""
-
-    subprocess.run(['helm', 'repo', 'update'], check=True)
-    
+   
     # Check if keycloak users are to be imported
     # On install if import_users is unset or True we import
     # On upgrade only import users if import_users flag is set to True
@@ -917,8 +953,8 @@ def install_operator_and_release(
         copy_secret(image_pull_secret, namespace, operator_namespace)
         copy_secret(license_secret, namespace, operator_namespace)
 
-        helm_install(operator_release, chart=f'{chart_repo_name}/kxi-operator', values_file=values_file, values_secret=values_secret,
-                     version=operator_version, namespace=operator_namespace, args = [])
+        helm.upgrade_install(operator_release, chart=f'{chart_repo_name}/kxi-operator', values_file=values_file, values_secret=values_secret,
+                     version=operator_version, namespace=operator_namespace, args = [], docker_config=docker_config)
 
         if is_operator_upgrade:
             replace_chart_crds(crd_data)
@@ -927,8 +963,8 @@ def install_operator_and_release(
     if len(insights_installed_charts) > 0:
         click.echo(f'\nkdb Insights Enterprise already installed with version {insights_installed_charts[0]["chart"]}')
 
-    helm_install(release, chart=f'{chart_repo_name}/insights', values_file=values_file, values_secret=values_secret,
-                 args=args, version=version, namespace=namespace)
+    helm.upgrade_install(release, chart=f'{chart_repo_name}/insights', values_file=values_file, values_secret=values_secret,
+                 args=args, version=version, namespace=namespace, docker_config=docker_config)
 
     return True
 
@@ -940,8 +976,8 @@ def delete_release_operator_and_crds(release, namespace, force, uninstall_operat
     if not insights_installed(release, namespace):
         click.echo('\nkdb Insights Enterprise installation not found')
     elif force or click.confirm('\nkdb Insights Enterprise is deployed. Do you want to uninstall?'):
-        assembly._delete_running_assemblies(namespace, True, True)
-        helm_uninstall(release=release, namespace=namespace)
+        assembly.delete_running_assemblies(namespace, True, True)
+        helm.uninstall(release=release, namespace=namespace)
 
     if not (force or uninstall_operator):
         return
@@ -956,7 +992,7 @@ def delete_release_operator_and_crds(release, namespace, force, uninstall_operat
     _, operator_releases = get_installed_operator_versions(operator_namespace)
 
     if len(operator_releases)>0:
-        helm_uninstall(release=operator_releases[0], namespace=operator_namespace)
+        helm.uninstall(release=operator_releases[0], namespace=operator_namespace)
     else:
         click.echo(f'\nkdb Insights Enterprise kxi-operator not found')
 
@@ -988,7 +1024,6 @@ def helm_repo_list():
 def check_helm_repo_exists(chart_repo_name):
     if not any (chart_repo_name == item['name'] for item in helm_repo_list()):
         raise click.ClickException(f'Cannot find local chart repo {chart_repo_name}')
-
 
 def helm_list_versions(chart_repo_name):
     """Call 'helm search repo' using subprocess.run"""
@@ -1024,11 +1059,6 @@ def insights_installed(release, namespace):
     return len(get_installed_charts(release, namespace)) > 0
 
 
-def operator_installed(release, namespace: str = operator_namespace):
-    """Check if a helm release of the operator exists"""
-    return len(get_installed_operator_versions(namespace)[0]) > 0
-
-
 def get_installed_charts(release, namespace):
     """Retrieve running helm charts"""
     base_command = ['helm', 'list', '--filter', "^"+release+"$", '-o', 'json','--namespace', namespace]
@@ -1062,7 +1092,7 @@ def get_secret_config():
     return {
         license_key: (['global', 'license', 'secretName'], SECRET_TYPE_OPAQUE, LICENSE_KEYS, True),
         'client.cert.secret': (['global', 'caIssuer', 'secretName'],  SECRET_TYPE_TLS, CLIENT_CERT_KEYS, True),
-        image_pull_key: (['global', 'imagePullSecret', 0, 'name'], SECRET_TYPE_DOCKERCONFIG_JSON, IMAGE_PULL_KEYS, True),
+        image_pull_key: (['global', 'imagePullSecrets', 0, 'name'], SECRET_TYPE_DOCKERCONFIG_JSON, IMAGE_PULL_KEYS, True),
         'keycloak.secret': (['keycloak', 'auth', 'existingSecret'], SECRET_TYPE_OPAQUE, KEYCLOAK_KEYS, deploy_keycloak()),
         'keycloak.postgresqlSecret': (['keycloak', 'postgresql', 'existingSecret'], SECRET_TYPE_OPAQUE, POSTGRESQL_KEYS, deploy_keycloak()),
         'ingress.cert.secret': (['global', 'ingress', 'tlsSecret'], SECRET_TYPE_TLS, INGRESS_CERT_KEYS, False)
@@ -1104,8 +1134,14 @@ def lookup_secret(namespace, arg, values_secret, values_file, default_key):
     s = secret.Secret(namespace, arg, v[1], v[2])
     return s
 
-def create_install_config(install_config_secret: secret.Secret, data):
-    install_config_secret = populate_install_secret(install_config_secret, data={'values': data})
+def create_install_config(install_config_secret: secret.Secret,
+                          install_config_secret_data_name: str,
+                          data,
+    ):
+    install_config_secret = populate_install_secret(install_config_secret, 
+                                                    install_config_secret_data_name, 
+                                                    data={'values': data}
+                                                    )
     if install_config_secret.exists():
         if click.confirm(phrases.secret_exist.format(name=install_config_secret.name)):
             click.echo(phrases.secret_overwriting.format(name=install_config_secret.name))

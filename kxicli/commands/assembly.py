@@ -105,7 +105,7 @@ def _list_assemblies(hostname=None, client_id=None, client_secret=None, realm=No
     """List assemblies"""
     if use_kubeconfig:
         namespace = options_namespace.prompt(namespace)
-        res = _get_assemblies_list(namespace)
+        res = get_assemblies_list(namespace)
         asm_list = _format_assemblies_list_k8s(res)
     else:
         hostname, token = get_kxic_options(hostname, client_id, client_secret, realm)
@@ -116,7 +116,7 @@ def _list_assemblies(hostname=None, client_id=None, client_secret=None, realm=No
     return True
 
 
-def _get_assemblies_list(namespace, label_selector=ASM_LABEL_SELECTOR):
+def get_assemblies_list(namespace, label_selector=ASM_LABEL_SELECTOR):
     """List assemblies via the kubernetes API"""
     common.load_kube_config()
     api = k8s.client.CustomObjectsApi()
@@ -165,9 +165,9 @@ def _print_2d_list(data, headers):
         click.echo(f'{row[0]:{padding}}{row[1]}')
 
 
-def _backup_assemblies(namespace, filepath, force):
+def backup_assemblies(namespace, filepath, force):
     """Get assemblies' definitions"""
-    res = _get_assemblies_list(namespace)
+    res = get_assemblies_list(namespace)
     backup = copy.deepcopy(res)
     backup['items'] = []
 
@@ -226,7 +226,7 @@ def _read_assembly_file(filepath):
     return body
 
 
-def _create_assemblies_from_file(filepath, hostname=None, client_id=None, client_secret=None, realm=None, namespace=None, use_kubeconfig=False, wait=None):
+def create_assemblies_from_file(filepath, hostname=None, client_id=None, client_secret=None, realm=None, namespace=None, use_kubeconfig=False, wait=None):
     """Apply assemblies from file"""
     if not filepath:
         click.echo('No assemblies to restore')
@@ -378,9 +378,9 @@ def wait_for_assembly_teardown(namespace, name, hostname, client_id, client_secr
     return not asm_running
 
 
-def _delete_running_assemblies(namespace, wait, force):
+def delete_running_assemblies(namespace, wait, force):
     """Deletes all assemblies running in a namespace"""
-    asm_list = _get_assemblies_list(namespace)
+    asm_list = get_assemblies_list(namespace)
     deleted = []
     if 'items' in asm_list:
         for asm in asm_list['items']:
@@ -400,7 +400,7 @@ def backup(namespace, filepath, force):
 
     namespace = options_namespace.prompt(namespace)
 
-    _backup_assemblies(namespace, filepath, force)
+    backup_assemblies(namespace, filepath, force)
 
 
 @assembly.command(aliases=['create'])
@@ -417,7 +417,7 @@ def deploy(hostname, client_id, client_secret, realm, namespace, filepath, use_k
 
     filepath = assembly_filepath.prompt(filepath)
 
-    _create_assemblies_from_file(
+    create_assemblies_from_file(
         filepath,
         hostname=hostname,
         client_id=client_id,
