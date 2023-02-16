@@ -1,5 +1,7 @@
+import base64
 import json
 import shutil
+import yaml
 from contextlib import contextmanager
 from pathlib import Path
 from tempfile import mkdtemp
@@ -11,6 +13,15 @@ test_secret_key = 'secret_key'
 test_secret_data = {test_secret_key: 'secret_value'}
 test_val_file = str(Path(__file__).parent / 'files' / 'test-values.yaml')
 test_helm_repo_cache = str(Path(__file__).parent / 'files' / 'helm')
+fake_docker_config: dict = {
+    'asdf': 'asdf'
+}
+fake_docker_config_yaml: str = yaml.dump(fake_docker_config)
+fake_docker_config_secret: k8s.client.V1Secret = k8s.client.V1Secret(
+    data={
+        '.dockerconfigjson': base64.b64encode(fake_docker_config_yaml.encode('ascii'))
+    }
+)
 
 IPATH_KUBE_COREV1API = 'kubernetes.client.CoreV1Api'
 IPATH_KUBE_APIEXTENSTIONSV1API = 'kubernetes.client.ApiextensionsV1Api'

@@ -19,6 +19,7 @@ key_chart_repo_username = 'chart.repo.username'
 key_chart_repo_password = 'chart.repo.password'
 key_client_cert_secret = 'client.cert.secret'
 key_install_config_secret = 'install.configSecret'
+key_install_config_secret_data_name = 'install.configSecretDataName'
 key_ingress_cert_secret = 'ingress.cert.secret'
 key_ingress_cert = 'ingress.cert'
 key_ingress_key ='ingress.key'
@@ -105,6 +106,7 @@ DEFAULT_VALUES = {
     key_ingress_cert_secret: 'kxi-ingress-cert',
     key_install_outputFile: 'values.yaml',
     key_install_config_secret: 'kxi-install-config',
+    key_install_config_secret_data_name: 'values.yaml',
     key_assembly_backup_file: 'kxi-assembly-state.yaml',
     key_release_name: 'insights',
     key_keycloak_realm: 'insights',

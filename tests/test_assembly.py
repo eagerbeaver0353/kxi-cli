@@ -227,13 +227,13 @@ def test_status_with_false_status_k8s_api(mocker):
 
 def test_get_assemblies_list_k8s_api(mocker):
     mock_list_assemblies(mocker.patch(CUSTOM_OBJECT_API).return_value)
-    assert assembly._get_assemblies_list(namespace='test_ns') == ASSEMBLY_LIST
+    assert assembly.get_assemblies_list(namespace='test_ns') == ASSEMBLY_LIST
 
 
 def test_get_assemblies_list_uses_label_selector(mocker):
     mock = mocker.patch.object(k8s.client.CustomObjectsApi, 'list_namespaced_custom_object')
     mock.side_effect = lambda *args, **kwargs: ASSEMBLY_LIST
-    res = assembly._get_assemblies_list(namespace='test_ns')
+    res = assembly.get_assemblies_list(namespace='test_ns')
 
     assert mock.call_args_list[0][1]['label_selector'] == assembly.ASM_LABEL_SELECTOR
     assert res == ASSEMBLY_LIST
@@ -242,7 +242,7 @@ def test_get_assemblies_list_uses_label_selector(mocker):
 def test_backup_assemblies(mocker):
     mock_list_assemblies(mocker.patch(CUSTOM_OBJECT_API).return_value)
     with temp_asm_file() as test_asm_list_file:
-        assert test_asm_list_file == assembly._backup_assemblies(namespace='test_ns', filepath=test_asm_list_file,
+        assert test_asm_list_file == assembly.backup_assemblies(namespace='test_ns', filepath=test_asm_list_file,
                                                                  force=False)
         with open(test_asm_list_file, 'rb') as f:
             expect = yaml.full_load(f)
@@ -253,7 +253,7 @@ def test_backup_assemblies_when_no_assemblies_running(mocker):
     mock_instance = mocker.patch(CUSTOM_OBJECT_API).return_value
     mock_instance.list_namespaced_custom_object.return_value = {'items': []}
     with temp_asm_file() as test_asm_list_file:
-        assert assembly._backup_assemblies(namespace='test_ns', filepath=test_asm_list_file, force=False) == None
+        assert assembly.backup_assemblies(namespace='test_ns', filepath=test_asm_list_file, force=False) == None
         assert not os.path.exists(test_asm_list_file)
 
 
@@ -287,7 +287,7 @@ def test_create_assemblies_from_file_creates_one_assembly(mocker):
         mocker.patch('kxicli.common.get_access_token', return_none)
         m.post('https://test.kx.com/kxicontroller/assembly/cli/deploy')
 
-        assert assembly._create_assemblies_from_file(hostname='https://test.kx.com', client_id='client', client_secret='secret', \
+        assert assembly.create_assemblies_from_file(hostname='https://test.kx.com', client_id='client', client_secret='secret', \
                                                 realm='insights', namespace=None, filepath=test_asm_file, use_kubeconfig=False)
         assert m.last_request.json() == assembly._add_last_applied_configuration_annotation(test_asm)
 
@@ -297,7 +297,7 @@ def test_create_assemblies_from_file_creates_one_assembly_k8s_api(mocker):
     with open(test_asm_file) as f:
         test_asm = yaml.safe_load(f)
 
-    assert assembly._create_assemblies_from_file(namespace='test_ns', filepath=test_asm_file, use_kubeconfig=True)
+    assert assembly.create_assemblies_from_file(namespace='test_ns', filepath=test_asm_file, use_kubeconfig=True)
 
     assert appended_args == [
         {'group': assembly.API_GROUP, 'version': PREFERRED_VERSION, 'namespace': 'test_ns', 'plural': 'assemblies',
@@ -308,11 +308,11 @@ def test_create_assemblies_from_file_creates_two_assemblies(mocker):
     mock_instance = mocker.patch(CUSTOM_OBJECT_API).return_value
     mock_list_assemblies(mock_instance)
 
-    # Call _backup_assemblies to create file
+    # Call backup_assemblies to create file
     with temp_asm_file() as test_asm_list_file, requests_mock.Mocker() as m:
         m.post('https://test.kx.com/kxicontroller/assembly/cli/deploy')
-        assert assembly._backup_assemblies(namespace='test_ns', filepath=test_asm_list_file, force=False) == test_asm_list_file
-        assert assembly._create_assemblies_from_file(hostname='https://test.kx.com', client_id='client', client_secret='secret', \
+        assert assembly.backup_assemblies(namespace='test_ns', filepath=test_asm_list_file, force=False) == test_asm_list_file
+        assert assembly.create_assemblies_from_file(hostname='https://test.kx.com', client_id='client', client_secret='secret', \
                                                 realm='insights', namespace=None, filepath=test_asm_list_file, use_kubeconfig=False)
 
         with open(test_asm_list_file, 'rb') as f:
@@ -328,10 +328,10 @@ def test_create_assemblies_from_file_creates_two_assemblies_k8s_api(mocker):
     mock_list_assemblies(mock_instance)
     mock_create_assemblies(mock_instance)
 
-    # Call _backup_assemblies to create file
+    # Call backup_assemblies to create file
     with temp_asm_file() as test_asm_list_file:
-        assert assembly._backup_assemblies(namespace='test_ns', filepath=test_asm_list_file, force=False) == test_asm_list_file
-        assert assembly._create_assemblies_from_file(namespace='test_ns', filepath=test_asm_list_file, use_kubeconfig=True)
+        assert assembly.backup_assemblies(namespace='test_ns', filepath=test_asm_list_file, force=False) == test_asm_list_file
+        assert assembly.create_assemblies_from_file(namespace='test_ns', filepath=test_asm_list_file, use_kubeconfig=True)
 
         with open(test_asm_list_file, 'rb') as f:
             assert yaml.full_load(f) == ASSEMBLY_BACKUP_LIST
@@ -352,11 +352,11 @@ def test_create_assemblies_from_file_removes_resourceVersion(mocker):
     mock_instance = mocker.patch(CUSTOM_OBJECT_API).return_value
     mock_list_assemblies(mock_instance=mock_instance, response=assembly_list)
 
-    # Call _backup_assemblies to create file
+    # Call backup_assemblies to create file
     with temp_asm_file() as test_asm_list_file, requests_mock.Mocker() as m:
         m.post('https://test.kx.com/kxicontroller/assembly/cli/deploy')
-        assert assembly._backup_assemblies(namespace='test_ns', filepath=test_asm_list_file, force=False) == test_asm_list_file
-        assembly._create_assemblies_from_file(hostname='https://test.kx.com', client_id='client', client_secret='secret', \
+        assert assembly.backup_assemblies(namespace='test_ns', filepath=test_asm_list_file, force=False) == test_asm_list_file
+        assembly.create_assemblies_from_file(hostname='https://test.kx.com', client_id='client', client_secret='secret', \
                                                 realm='insights', namespace=None, filepath=test_asm_list_file, use_kubeconfig=False)
         assert m.last_request.json() == assembly._add_last_applied_configuration_annotation(build_assembly_object(ASM_NAME, False))
 
@@ -370,10 +370,10 @@ def test_create_assemblies_from_file_removes_resourceVersion_k8s_api(mocker):
     mock_list_assemblies(mock_instance=mock_instance, response=assembly_list)
     mock_create_assemblies(mock_instance)
 
-    # Call _backup_assemblies to create file
+    # Call backup_assemblies to create file
     with temp_asm_file() as test_asm_list_file:
-        assert assembly._backup_assemblies(namespace='test_ns', filepath=test_asm_list_file, force=False) == test_asm_list_file
-        assert assembly._create_assemblies_from_file(namespace='test_ns', filepath=test_asm_list_file, use_kubeconfig=True)
+        assert assembly.backup_assemblies(namespace='test_ns', filepath=test_asm_list_file, force=False) == test_asm_list_file
+        assert assembly.create_assemblies_from_file(namespace='test_ns', filepath=test_asm_list_file, use_kubeconfig=True)
 
         assert appended_args == [
             {'group': assembly.API_GROUP, 'version': PREFERRED_VERSION, 'namespace': 'test_ns', 'plural': 'assemblies',
@@ -389,10 +389,10 @@ def test_create_assemblies_from_file_creates_when_one_already_exists_k8s_api(moc
     # mock the Kubernetes create function to return error upon creation of test_asm, success for test_asm2
     mock_instance.create_namespaced_custom_object.side_effect = mock_return_conflict_for_assembly
 
-    # Call _backup_assemblies to create file
+    # Call backup_assemblies to create file
     with temp_asm_file() as test_asm_list_file:
-        assert assembly._backup_assemblies(namespace='test_ns', filepath=test_asm_list_file, force=False)  == test_asm_list_file
-        assert assembly._create_assemblies_from_file(namespace='test_ns', filepath=test_asm_list_file, use_kubeconfig=True)
+        assert assembly.backup_assemblies(namespace='test_ns', filepath=test_asm_list_file, force=False)  == test_asm_list_file
+        assert assembly.create_assemblies_from_file(namespace='test_ns', filepath=test_asm_list_file, use_kubeconfig=True)
 
         with open(test_asm_list_file, 'rb') as f:
             assert yaml.full_load(f) == ASSEMBLY_BACKUP_LIST
@@ -403,7 +403,7 @@ def test_create_assemblies_from_file_creates_when_one_already_exists_k8s_api(moc
 
 
 def test_create_assemblies_from_file_does_nothing_when_filepath_is_none():
-    assert assembly._create_assemblies_from_file(namespace='test_ns', filepath=None, use_kubeconfig=False) == []
+    assert assembly.create_assemblies_from_file(namespace='test_ns', filepath=None, use_kubeconfig=False) == []
 
 
 def test_delete_assembly(mocker):
@@ -445,7 +445,7 @@ def test_delete_running_assemblies(mocker):
     mocker.patch(PREFERRED_VERSION_FUNC, return_value=PREFERRED_VERSION)
     mock_delete_assemblies(mock_instance)
 
-    assert assembly._delete_running_assemblies(namespace='test_ns', wait=False, force=True) == [True, True, True]
+    assert assembly.delete_running_assemblies(namespace='test_ns', wait=False, force=True) == [True, True, True]
 
     assert appended_args == [
         {'group': assembly.API_GROUP, 'version': PREFERRED_VERSION, 'namespace': 'test_ns', 'plural': 'assemblies',

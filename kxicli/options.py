@@ -15,11 +15,11 @@ from kxicli.common import key_install_outputFile, key_chart_repo_name, key_insta
     key_ingress_cert_secret, key_ingress_certmanager_disabled, key_ingress_cert, key_ingress_key, \
     key_keycloak_secret, key_keycloak_admin_password, key_keycloak_management_password, \
     key_keycloak_postgresqlSecret, key_postgresql_postgres_password, key_postgresql_user_password, \
-    key_keycloak_authURL, key_keycloak_realm, key_install_outputFile, key_install_config_secret, \
+    key_keycloak_authURL, key_keycloak_realm, key_install_outputFile, key_install_config_secret_data_name, \
     key_license_secret, key_license_envVar, key_license_filepath, \
     key_chart_repo_url, key_chart_repo_username, key_chart_repo_password, \
     key_client_cert_secret, key_gui_client_secret, key_operator_client_secret, \
-    key_install_filepath, key_assembly_backup_file, key_release_name, \
+    key_install_filepath, key_assembly_backup_file, \
     key_namespace, key_hostname, key_version, key_operator_version, \
     key_client_id, key_client_secret
 from kxicli.common import enter_password
@@ -396,6 +396,12 @@ install_config_secret = Option (
     '--install-config-secret',
     config_name = key_install_config_secret,
     help=help_text(key_install_config_secret)
+)
+
+install_config_secret_data_name = Option (
+    '--install-config-secret-data-name',
+    config_name = key_install_config_secret_data_name,
+    help='Data key of the helm install values secret'
 )
 
 assembly_backup_filepath = Option (

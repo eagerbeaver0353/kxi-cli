@@ -2,8 +2,14 @@ import subprocess
 import click
 import pytest
 
+from functools import partial
+from pathlib import Path
+from pytest_mock import MockerFixture
+from subprocess import CompletedProcess, CalledProcessError
+
+
 from kxicli.resources import helm
-from kxicli.commands.common import helm as common_helm
+from utils import fake_docker_config_yaml, return_none
 
 HELM_BIN_KEY = 'HELM_BIN'
 HELM_BIN_VAL = 'helm'
@@ -16,10 +22,69 @@ SAMPLE_OUTPUT = f'''{HELM_BIN_KEY}="{HELM_BIN_VAL}"
 {HELM_CACHE_KEY}="{HELM_CACHE_VAL}"
 {HELM_RESPOSITORY_CACHE_KEY}="{HELM_RESPOSITORY_CACHE_VAL}"'''.encode()
 
+RELEASE='test-chart-name'
 REPO = 'kxi-insights'
 CHART = 'kxi-operator'
 DEST =  HELM_RESPOSITORY_CACHE_VAL
 VERSION = '1.2.3'
+NAMESPACE = 'test-namespace'
+VALUES_SECRET: dict = {'abc':'def'}
+
+fun_install_create_namespace: str = 'kxicli.resources.helm.create_namespace'
+fun_subprocess_check_out: str = 'subprocess.check_output'
+fun_subprocess_run: str = 'subprocess.run'
+config_json_file_name: str = 'config.json'
+
+# Mocks
+
+def subprocess_check_out_helm_version_valid(*popenargs, timeout=None, **kwargs) -> str:
+    return f'v{helm.minimum_helm_version}'
+
+
+def subprocess_check_out_helm_version_invalid(*popenargs, timeout=None, **kwargs) -> str:
+    return 'v3.7.0'
+
+
+def subprocess_check_out_helm_version_exception(*popenargs, timeout=None, **kwargs) -> str:
+    raise CalledProcessError(returncode=1, cmd=popenargs[0])
+
+
+def subprocess_run_helm_fail(
+        *popenargs,
+        input=None, capture_output=False, timeout=None, check=False, **kwargs
+):
+    raise CalledProcessError(returncode=1, cmd=popenargs[0])
+
+
+def subprocess_run_helm_success_install_with_res(
+        *popenargs, res: dict,
+        input=None, capture_output=False, timeout=None, check=False, **kwargs
+):
+    env: dict = kwargs['env']
+    res['env'] = env
+    res['cmd'] = popenargs[0]
+    res['DOCKER_CONFIG'] = env['DOCKER_CONFIG']
+    with open(str(Path(env['DOCKER_CONFIG']) / config_json_file_name)) as dc:
+        res['dockerconfigjson'] = dc.read()
+    return CompletedProcess(args=popenargs[0], returncode=0, stdout='', stderr='')
+
+
+def subprocess_run_helm_success_uninstall_with_res(
+        *popenargs, res: dict,
+        input=None, capture_output=False, timeout=None, check=False, **kwargs
+):
+    res['cmd'] = popenargs[0]
+    return CompletedProcess(args=popenargs[0], returncode=0, stdout='', stderr='')
+
+
+def compare_completed_process(cp1: CompletedProcess, cp2: CompletedProcess) -> bool:
+    return cp1.args == cp2.args and \
+           cp1.returncode == cp2.returncode and \
+           cp1.stdout == cp2.stdout and \
+           cp1.stderr == cp2.stderr
+
+
+# Tests
 
 def test_helm_env_correctly_splits_output(mocker):
     mocker.patch('subprocess.check_output',return_value=SAMPLE_OUTPUT)
@@ -55,7 +120,7 @@ def test_get_repository_cache_returns_cache(mocker):
 
 
 def test_fetch_adds_dest_and_version(mocker):
-    mocker.patch('subprocess.check_output', lambda x: x)
+    mocker.patch('subprocess.check_output', lambda x, env: x)
     cmd = helm.fetch(REPO, CHART, DEST, VERSION)
 
     assert cmd == ['helm', 'fetch', f'{REPO}/{CHART}', '--destination', DEST, '--version', VERSION]
@@ -70,16 +135,119 @@ def test_fetch_raises_exception(mocker):
     assert isinstance(e.value, click.ClickException)
     assert isinstance(e.value.message, subprocess.CalledProcessError)
 
-def test_helm_install_without_file_or_secret_raises_exception():
+def test_helm_upgrade_install_without_file_or_secret_raises_exception():
     with pytest.raises(Exception) as e:
-        common_helm.helm_install('test_release', 'test_chart', None, None, [])
+        helm.upgrade_install('test_release', 'test_chart', values_file=None, values_secret=None)
 
     assert isinstance(e.value, click.ClickException)
     assert e.value.message == 'Must provide one of values file or secret. Exiting install'
 
-def test_helm_install_error_raises_exception(mocker):
+def test_helm_upgrade_install_error_raises_exception(mocker):
     mocker.patch('subprocess.run').side_effect = subprocess.CalledProcessError(1, ['helm', 'upgrade'])
     with pytest.raises(Exception) as e:
-        common_helm.helm_install('test_release', 'test_chart', 'test-values-file.yaml', None, [])
+        helm.upgrade_install('test_release', 'test_chart', values_file='test-values-file.yaml')
     assert isinstance(e.value, click.ClickException)
     assert e.value.message == "Command '['helm', 'upgrade']' returned non-zero exit status 1."
+
+
+def test_helm_version_valid(mocker: MockerFixture):
+    mocker.patch(fun_subprocess_check_out, subprocess_check_out_helm_version_valid)
+    assert helm._get_helm_version() >= helm.LocalHelmVersion(version=helm.minimum_helm_version)
+
+
+def test_helm_version_invalid(mocker: MockerFixture):
+    mocker.patch(fun_subprocess_check_out, subprocess_check_out_helm_version_invalid)
+    assert helm._get_helm_version() < helm.LocalHelmVersion(version=helm.minimum_helm_version)
+
+
+def test_helm_version_exception(mocker: MockerFixture):
+    mocker.patch(fun_subprocess_check_out, subprocess_check_out_helm_version_exception)
+    with pytest.raises(click.ClickException):
+        assert helm._get_helm_version()
+
+
+def test_helm_install_success(mocker: MockerFixture):
+    res: dict = {}
+    expected_cmd: List[str] = [
+        'helm', 'upgrade', '--install', '-f', '-', RELEASE, CHART,
+        '--version', VERSION,
+        '--namespace', NAMESPACE
+    ]
+
+    subprocess_run_helm_success_helm_install = partial(subprocess_run_helm_success_install_with_res, res=res)
+
+    mocker.patch(fun_subprocess_run, subprocess_run_helm_success_helm_install)
+    mocker.patch(fun_install_create_namespace, return_none)
+
+    actual_res = helm.upgrade_install(
+        release=RELEASE,
+        chart=CHART,
+        values_secret=VALUES_SECRET,
+        version=VERSION,
+        namespace=NAMESPACE,
+        docker_config=fake_docker_config_yaml
+    )
+
+    assert 'DOCKER_CONFIG' in dict(res['env'])
+    assert res['dockerconfigjson'] == fake_docker_config_yaml
+    assert res['cmd'] == expected_cmd
+    assert compare_completed_process(
+        actual_res,
+        CompletedProcess(args=expected_cmd, returncode=0, stdout='', stderr='')
+    )
+
+
+def test_helm_install_fail(mocker: MockerFixture):
+    mocker.patch(fun_subprocess_run, subprocess_run_helm_fail)
+    mocker.patch(fun_install_create_namespace, return_none)
+    with pytest.raises(click.ClickException):
+        helm.upgrade_install(
+            release=RELEASE,
+            chart=CHART,
+            values_secret=VALUES_SECRET,
+            version=VERSION,
+            namespace=NAMESPACE,
+            docker_config=fake_docker_config_yaml
+        )
+
+
+def test_helm_uninstall_success(mocker: MockerFixture):
+    res: dict = {}
+    expected_cmd: List[str] = [
+        'helm', 'uninstall', RELEASE, '--namespace', NAMESPACE
+    ]
+    expected_res: CompletedProcess = CompletedProcess(args=expected_cmd, returncode=0, stdout='', stderr='')
+
+    subprocess_run_helm_success_uninstall = partial(subprocess_run_helm_success_uninstall_with_res, res=res)
+
+    mocker.patch(fun_subprocess_run, subprocess_run_helm_success_uninstall)
+    mocker.patch(fun_install_create_namespace, return_none)
+    actual_res = helm.uninstall(
+        release=RELEASE,
+        namespace=NAMESPACE
+    )
+    assert compare_completed_process(actual_res, expected_res)
+    assert res['cmd'] == expected_cmd
+
+
+def test_helm_uninstall_fail(mocker: MockerFixture):
+    mocker.patch(fun_subprocess_run, subprocess_run_helm_fail)
+    mocker.patch(fun_install_create_namespace, return_none)
+    with pytest.raises(click.ClickException):
+        helm.uninstall(
+            release=RELEASE,
+            namespace=NAMESPACE
+        )
+
+
+def test_get_helm_version_checked(mocker: MockerFixture):
+    mocker.patch(fun_subprocess_check_out, subprocess_check_out_helm_version_valid)
+    assert type(helm.get_helm_version_checked()) is helm.HelmVersionChecked
+
+
+def test_get_helm_version_checked_fail():
+    with pytest.raises(click.ClickException):
+        helm.HelmVersionChecked(
+            req_helm_version=helm.required_helm_version,
+            local_helm_version=helm.LocalHelmVersion(subprocess_check_out_helm_version_invalid([]))
+        )
