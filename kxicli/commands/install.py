@@ -1029,6 +1029,7 @@ def helm_list_versions(chart_repo_name):
     """Call 'helm search repo' using subprocess.run"""
     log.debug('Attempting to call: helm search repo')
     try:
+        helm.repo_update()
         chart = f'{chart_repo_name}/insights'
         click.echo(f'Listing available kdb Insights Enterprise versions in repo {chart_repo_name}')
 
