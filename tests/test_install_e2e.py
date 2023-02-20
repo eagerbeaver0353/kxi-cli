@@ -1272,7 +1272,7 @@ def test_list_versions_default_repo(mocker):
 """
     assert result.exit_code == 0
     assert result.output == expected_output
-    assert subprocess_run_command == [['helm', 'search', 'repo', test_chart]]
+    assert subprocess_run_command == [['helm', 'repo', 'update'], ['helm', 'search', 'repo', test_chart]]
 
 
 def test_list_versions_custom_repo(mocker):
@@ -1286,7 +1286,7 @@ def test_list_versions_custom_repo(mocker):
 """
     assert result.exit_code == 0
     assert result.output == expected_output
-    assert subprocess_run_command == [['helm', 'search', 'repo', test_chart_repo_name + '/insights']]
+    assert subprocess_run_command == [['helm', 'repo', 'update'],['helm', 'search', 'repo', test_chart_repo_name + '/insights']]
 
 
 def test_delete_specify_release(mocker):
