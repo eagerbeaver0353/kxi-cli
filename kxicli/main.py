@@ -6,7 +6,7 @@ import pkg_resources
 
 from kxicli import config
 from kxicli import log
-from kxicli.commands import client, assembly, auth, install, package, azure
+from kxicli.commands import client, assembly, auth, install, package, azure, user
 
 CLI_VERSION = pkg_resources.require('kxicli')[0].version
 PYTHON_VERSION = f'{sys.version_info.major}.{sys.version_info.minor}'
@@ -47,6 +47,7 @@ cli.add_command(azure.azure)
 cli.add_command(install.install)
 cli.add_command(configure)
 cli.add_command(package.package)
+cli.add_command(user.user)
 
 if __name__ == '__main__':
     cli()  # pylint: disable=no-value-for-parameter

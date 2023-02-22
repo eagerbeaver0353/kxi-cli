@@ -89,3 +89,6 @@ password_no_match = 'Entered values did not match'
 # Common
 hostname_prefix = 'Failed to request access token, hostname missing protocol - specify http or https [{hostname}]'
 hostname_none = 'Hostname is empty'
+
+# Users
+missing_user_argument = "'username' must be provided as a keyword argument"

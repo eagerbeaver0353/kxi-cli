@@ -15,6 +15,7 @@ include:
 stages:
   - build
   - test
+  - visualisation
   - sonarqube
   - publish
   - docs
@@ -48,7 +49,7 @@ build dist:
     paths:
       - dist
 
-.run-tests:
+.unit-tests:
   stage: test
   image: python:3
   rules:
@@ -57,23 +58,65 @@ build dist:
     - python3 -m pip config set install.extra-index-url "${KX_PIP_EXTRA_INSTALL_URL}"
     - pip install .[dev]
     - pip install dist/*.whl
-  script:
     - export KUBECONFIG=$(pwd)/tests/files/test-kube-config
-    - coverage run -m pytest --junitxml=report.xml
-    - coverage report
-    - coverage html
-    - coverage xml
-  coverage: /^TOTAL.*\s+(\d+%)$/
+  script:
+    - ./test-and-coverage.sh unit
   artifacts:
     paths:
       - htmlcov
-      - coverage.xml
-      - report.xml
+      - report.unit.xml
+      - coverage.unit.xml
+      - .coverage.unit
+
+integration-tests:
+  stage: test
+  rules:
+    - !reference [ .default-rules, rules ]
+  image:
+    name: python:3.10
+  before_script:
+    - python3 -m pip config set install.extra-index-url "${KX_PIP_EXTRA_INSTALL_URL}"
+    - pip install .[dev]
+    - pip install dist/*.whl
+    - mkdir -p /root/.insights
+    - cp tests/files/integration-cli-config /root/.insights/cli-config
+    - echo "admin.password = $KEYCLOAK_ADMIN_PASSWORD" >> /root/.insights/cli-config
+  script:
+    - ./test-and-coverage.sh integration
+  artifacts:
+    paths:
+      - htmlcov
+      - report.integration.xml
+      - coverage.integration.xml
+      - .coverage.integration
+
+combine-test-metrics:
+  stage: visualisation
+  rules:
+    - !reference [ .default-rules, rules ]
+  image:
+    name: python:3.10
+  before_script:
+    - python3 -m pip config set install.extra-index-url "${KX_PIP_EXTRA_INSTALL_URL}"
+    - pip install .[dev]
+    - pip install junitparser
+  script:
+    # combines coverage data files named .coverage.* and output a new xml report
+    - coverage combine
+    - coverage report
+    - coverage xml
+    # merges multiple junit xml files into one file
+    - junitparser merge report.unit.xml report.integration.xml report.xml
+  coverage: /^TOTAL.*\s+(\d+%)$/
+  artifacts:
     reports:
-      junit: report.xml
       coverage_report:
         coverage_format: cobertura
         path: coverage.xml
+      junit: report.xml
+  needs:
+    - unit-tests-3.8
+    - integration-tests
 
 whitesource-dep-scan:
   stage: test
@@ -105,16 +148,16 @@ whitesource-release-dep-scan:
     KUBERNETES_MEMORY_REQUEST: "600Mi"
     KUBERNETES_MEMORY_LIMIT: "1Gi"
 
-run tests 3.8:
-  extends: .run-tests
+unit-tests-3.8:
+  extends: .unit-tests
   image: python:3.8
 
-run tests 3.9:
-  extends: .run-tests
+unit-tests-3.9:
+  extends: .unit-tests
   image: python:3.9
 
-run tests 3.10:
-  extends: .run-tests
+unit-tests-3.10:
+  extends: .unit-tests
   image: python:3.10
 
 publish package:
@@ -192,7 +235,8 @@ sonarqube-check:
   stage: sonarqube
   extends: .sonar-template
   needs:
-    - run tests 3.8
+    - unit-tests-3.8
+    - integration-tests
   rules:
     - !reference [ .default-rules, rules ]
 

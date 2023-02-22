@@ -24,7 +24,8 @@ dependencies = [
     "azure-identity>=1.10.0",
     "msgraph-core>=0.2.2",
     "dataclasses_json>=0.5.7",
-    "semver>=2.13.0"
+    "semver>=2.13.0",
+    "kxi>=1.4.1-rc.3"
     ]
 
 
@@ -34,7 +35,8 @@ dev = [
     "pytest-cov",
     "pytest-mock>=3.6.1",
     "responses>=0.15.0",
-    "requests-mock>=1.9.3"
+    "requests-mock>=1.9.3",
+    "twill"
 ]
 doc = [
     "mkdocs>1.2.4",

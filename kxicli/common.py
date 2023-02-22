@@ -50,6 +50,7 @@ key_version = 'version'
 key_operator_version = 'operator.version'
 key_client_id = 'client.id'
 key_client_secret = 'client.secret'
+key_admin_username = 'admin.username'
 
 # Help text dictionary for commands
 HELP_TEXT = {
@@ -89,7 +90,8 @@ HELP_TEXT = {
     key_operator_client_secret: 'Keycloak client secret for operator service account',
     key_keycloak_realm: 'Name of Keycloak realm',
     key_version: 'Version to install',
-    key_operator_version: 'Version of the operator to install'
+    key_operator_version: 'Version of the operator to install',
+    key_admin_username: 'Administrator username'
 }
 
 # Default values for commands if needed
@@ -110,7 +112,8 @@ DEFAULT_VALUES = {
     key_assembly_backup_file: 'kxi-assembly-state.yaml',
     key_release_name: 'insights',
     key_keycloak_realm: 'insights',
-    key_namespace: 'kxi'
+    key_namespace: 'kxi',
+    key_admin_username: 'user'
 }
 
 # Flag to indicate if k8s.config.load_config has already been called
