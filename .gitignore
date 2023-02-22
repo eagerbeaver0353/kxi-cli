@@ -456,3 +456,5 @@ $RECYCLE.BIN/
 *.lnk
 
 # End of https://www.toptal.com/developers/gitignore/api/vim,git,diff,linux,sonar,patch,macos,python,dotenv,windows,notepadpp,sonarqube,virtualenv,compressed,tortoisegit,intellij+all,visualstudiocode,helm
+
+*.xml

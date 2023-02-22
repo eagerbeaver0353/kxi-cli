@@ -1,0 +1,4 @@
+[default]
+hostname = https://insights-1-4.aws-red.kxi-dev.kx.com
+realm = insights
+admin.username = user

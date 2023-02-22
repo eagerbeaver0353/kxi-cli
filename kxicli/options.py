@@ -1,7 +1,6 @@
 import click
 import random
 import string
-import sys
 import kubernetes as k8s
 import kxicli.common
 
@@ -21,7 +20,7 @@ from kxicli.common import key_install_outputFile, key_chart_repo_name, key_insta
     key_client_cert_secret, key_gui_client_secret, key_operator_client_secret, \
     key_install_filepath, key_assembly_backup_file, \
     key_namespace, key_hostname, key_version, key_operator_version, \
-    key_client_id, key_client_secret
+    key_client_id, key_client_secret, key_admin_username
 from kxicli.common import enter_password
 
 
@@ -465,4 +464,32 @@ import_users = Option (
     '--import-users',
     default = None,
     type = bool
+)
+
+admin_username = Option(
+    '--admin-username',
+    config_name = key_admin_username,
+    help = help_text(key_admin_username),
+    default = lambda: default_val(key_admin_username),
+    prompt_message = 'Enter your admin username'
+)
+
+admin_password = Option(
+    '--admin-password',
+    config_name = 'admin.password',
+    help = 'Administrator password',
+    prompt_message = 'Enter your admin password'
+)
+
+timeout = Option(
+    '--timeout',
+    type = int,
+    default = 2,
+    help = 'Timeout in seconds for request'
+)
+
+temporary = Option(
+    '--temporary/--not-temporary',
+    default=True,
+    help='Controls whether user must reset password on first login'
 )

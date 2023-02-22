@@ -89,3 +89,11 @@ arg_use_kubeconfig = options.use_kubeconfig.decorator()
 arg_import_users = options.import_users.decorator()
 
 arg_install_config_secret_data_name = options.install_config_secret_data_name.decorator()
+
+arg_admin_username = options.admin_username.decorator()
+
+arg_admin_password = options.admin_password.decorator()
+
+arg_timeout = options.timeout.decorator()
+
+arg_temporary = options.temporary.decorator()
