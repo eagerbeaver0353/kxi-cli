@@ -299,9 +299,8 @@ def run(ctx, namespace, chart_repo_name, chart_repo_url, chart_repo_username,
 
     docker_config = get_docker_config_secret(namespace, image_pull_secret, DOCKER_SECRET_KEY)
 
-    insights_installed_charts = get_installed_charts(release, namespace)
-    if len(insights_installed_charts) > 0:
-        if click.confirm(f'kdb Insights Enterprise is already installed with version {insights_installed_charts[0]["chart"]}. Would you like to upgrade to version {version}?'):
+    if is_valid_upgrade_version(release, namespace, version):
+        if click.confirm(f'Would you like to upgrade to version {version}?'):
             return perform_upgrade(namespace, release, chart_repo, None, version, operator_version, image_pull_secret,
                     license_secret, values_secret, filepath, import_users, docker_config, force)
         else:
@@ -341,6 +340,8 @@ def upgrade(namespace, release, chart_repo_name, chart_repo_url, assembly_backup
     filepath, values_secret, namespace, chart_repo, image_pull_secret, license_secret = get_values_and_secrets(filepath,
         install_config_secret, install_config_secret_data_name, namespace, chart_repo_name, chart_repo_url,
         image_pull_secret, license_secret)
+
+    is_valid_upgrade_version(release, namespace, version)
     
     docker_config = get_docker_config_secret(namespace, image_pull_secret, DOCKER_SECRET_KEY)
     
@@ -882,7 +883,7 @@ def check_for_operator_install(release, chart_repo_name, insights_ver, op_ver, d
     if is_upgrade:
         installed_operator_version = operator_installed_charts[0]
         release = operator_installed_releases[0]
-        click.echo(f'\nkxi-operator already installed with version {installed_operator_version}')
+        click.echo(f'kxi-operator already installed with version {installed_operator_version}')
 
     insights_version_minor = get_minor_version(insights_ver)
     operator_version_to_install = get_operator_version(chart_repo_name, insights_ver, op_ver)
@@ -911,6 +912,7 @@ def check_for_operator_install(release, chart_repo_name, insights_ver, op_ver, d
 
     crd_data = []
     if install_operator and is_upgrade:
+        check_upgrade_version(installed_operator_version, operator_version_to_install)
         cache = helm.get_repository_cache()
         helm.fetch(chart_repo_name, 'kxi-operator', cache, operator_version_to_install, docker_config)
         crd_data = read_cached_crd_files(operator_version_to_install)
@@ -958,10 +960,6 @@ def install_operator_and_release(
 
         if is_operator_upgrade:
             replace_chart_crds(crd_data)
-
-    insights_installed_charts = get_installed_charts(release, namespace)
-    if len(insights_installed_charts) > 0:
-        click.echo(f'\nkdb Insights Enterprise already installed with version {insights_installed_charts[0]["chart"]}')
 
     helm.upgrade_install(release, chart=f'{chart_repo_name}/insights', values_file=values_file, values_secret=values_secret,
                  args=args, version=version, namespace=namespace, docker_config=docker_config)
@@ -1119,6 +1117,7 @@ def validate_values(namespace, values_secret, values_file):
                 exit_execution = True
     if exit_execution:
         raise click.ClickException(phrases.values_validation_fail)
+    click.echo('')
 
 
 def lookup_secret(namespace, arg, values_secret, values_file, default_key):
@@ -1177,3 +1176,19 @@ def read_cached_crd_files(
 def replace_chart_crds(crd_data):
     for body in crd_data:
         common.replace_crd(body['metadata']['name'], body)
+
+def check_upgrade_version(from_version, to_version):
+    v1 = semver.VersionInfo.parse(from_version)
+    v2 = semver.VersionInfo.parse(to_version)
+    if v1 > v2:
+        raise click.ClickException(f'Cannot upgrade from version {from_version} to version {to_version}. Target version must be higher than currently installed version.')
+
+def is_valid_upgrade_version(release, namespace, version):
+    insights_installed_charts = get_installed_charts(release, namespace)
+    if len(insights_installed_charts) > 0:
+        insights_installed_version = insights_installed_charts[0]["app_version"]
+        click.echo(f'kdb Insights Enterprise is already installed with version {insights_installed_version}')
+        check_upgrade_version(insights_installed_version, version)
+        return True
+    else:
+        return False

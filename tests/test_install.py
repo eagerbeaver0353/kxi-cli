@@ -16,7 +16,7 @@ from utils import IPATH_KUBE_COREV1API, temp_file, test_secret_data, test_secret
     mock_kube_deployment_api, mocked_kube_deployment_list, mock_kube_secret_api, mocked_read_namespaced_secret, \
     raise_conflict, raise_not_found, test_val_file, mock_validate_secret, mock_helm_env, mocked_helm_repo_list, \
     return_none, fake_docker_config_yaml
-from test_install_e2e import mocked_read_namespaced_secret_return_values, test_vals, mocked_read_secret
+from test_install_e2e import mocked_read_namespaced_secret_return_values, test_vals, mocked_read_secret, mocked_installed_chart_json
 from const import test_user, test_pass, test_lic_file, test_chart_repo_name, test_chart_repo_url
 
 # Common test parameters
@@ -811,3 +811,37 @@ def test_load_values_stores_exception_when_invalid_values_file_provided():
             install.load_values_stores(test_secret, new_file)
         assert isinstance(e.value, click.ClickException)
         assert f'Invalid values file {new_file}' in e.value.message
+
+
+def test_check_upgrade_version_allows_upgrade():
+    assert install.check_upgrade_version('1.3.3', '1.4.0') == None
+    assert install.check_upgrade_version('1.3.3', '1.3.4') == None
+    assert install.check_upgrade_version('1.3.3', '2.0.0') == None
+    assert install.check_upgrade_version('1.3.3', '1.3.3') == None
+    assert install.check_upgrade_version('1.5.0-rc.18', '1.5.0-rc.19') == None
+    assert install.check_upgrade_version('1.5.0-rc.18', '1.5.0-rc.18') == None
+
+def test_check_upgrade_version_raises_exception_upon_downgrade():
+    with pytest.raises(Exception) as e:
+        install.check_upgrade_version('1.4.0', '1.3.3')
+    assert isinstance(e.value, click.ClickException)
+    assert 'Cannot upgrade from version 1.4.0 to version 1.3.3. Target version must be higher than currently installed version.' in e.value.message
+    with pytest.raises(Exception) as e:
+        install.check_upgrade_version('1.5.0-rc.18', '1.5.0-rc.17')
+    assert isinstance(e.value, click.ClickException)
+    assert 'Cannot upgrade from version 1.5.0-rc.18 to version 1.5.0-rc.17. Target version must be higher than currently installed version.' in e.value.message
+
+def test_is_valid_upgrade_version_allows_upgrade(mocker):
+    mocker.patch('kxicli.commands.install.get_installed_charts', mocked_installed_chart_json)
+    assert install.is_valid_upgrade_version('test_release', test_ns, '1.4.0') == True
+
+def test_is_valid_upgrade_version_when_install_not_found(mocker):
+    mocker.patch('kxicli.commands.install.get_installed_charts', lambda *args: [])
+    assert install.is_valid_upgrade_version('test_release', test_ns, '1.4.0') == False
+
+def test_is_valid_upgrade_version_raises_exception_upon_downgrade(mocker):
+    mocker.patch('kxicli.commands.install.get_installed_charts', mocked_installed_chart_json)
+    with pytest.raises(Exception) as e:
+        install.is_valid_upgrade_version('test_release', test_ns, '1.0.0')
+    assert isinstance(e.value, click.ClickException)
+    assert 'Cannot upgrade from version 1.2.1 to version 1.0.0. Target version must be higher than currently installed version.' in e.value.message

@@ -817,6 +817,7 @@ def test_install_run_when_no_file_provided(mocker):
 
             expected_output = f"""{phrases.header_run}
 {cli_output('setup', test_cli_config, 'values.yaml', **test_cfg)}{phrases.values_validating}
+
 Do you want to install kxi-operator version 1.2.3? [Y/n]: n
 Installing chart internal-nexus-dev/insights version 1.2.3 with values file from values.yaml
 """
@@ -862,6 +863,7 @@ def test_install_run_when_no_file_provided_import_users_false(mocker):
 
             expected_output = f"""{phrases.header_run}
 {cli_output('setup', test_cli_config, 'values.yaml', **test_cfg)}{phrases.values_validating}
+
 Do you want to install kxi-operator version 1.2.3? [Y/n]: n
 Installing chart internal-nexus-dev/insights version 1.2.3 with values file from values.yaml
 """
@@ -960,6 +962,7 @@ def test_install_run_installs_operator(mocker):
         result = runner.invoke(main.cli, ['install', 'run', '--version', '1.2.3', '--filepath', test_val_file],
                                input=user_input)
         expected_output = f"""{phrases.values_validating}
+
 Do you want to install kxi-operator version 1.2.3? [Y/n]: y
 Installing chart kx-insights/kxi-operator version 1.2.3 with values file from {test_val_file}
 Installing chart kx-insights/insights version 1.2.3 with values file from {test_val_file}
@@ -996,6 +999,7 @@ def test_install_run_when_provided_oci_chart_repo_url(mocker):
             input='y'
         )
         expected_output = f"""{phrases.values_validating}
+
 Do you want to install kxi-operator version 1.2.3? [Y/n]: y
 Installing chart {test_chart_repo_url_oci}/kxi-operator version 1.2.3 with values file from {test_val_file}
 Installing chart {test_chart_repo_url_oci}/insights version 1.2.3 with values file from {test_val_file}
@@ -1027,6 +1031,7 @@ def test_install_run_force_installs_operator(mocker):
         result = runner.invoke(main.cli,
                                ['install', 'run', '--version', '1.2.3', '--filepath', test_val_file, '--force'])
         expected_output = f"""{phrases.values_validating}
+
 Installing chart kx-insights/kxi-operator version 1.2.3 with values file from {test_val_file}
 Installing chart kx-insights/insights version 1.2.3 with values file from {test_val_file}
 """    
@@ -1060,6 +1065,7 @@ def test_install_run_with_operator_version(mocker):
         result = runner.invoke(main.cli,
                                ['install', 'run', '--version', '1.2.3', '--filepath', test_val_file, '--operator-version', '1.2.1'])
         expected_output = f"""{phrases.values_validating}
+
 Installing chart kx-insights/kxi-operator version 1.2.1 with values file from {test_val_file}
 Installing chart kx-insights/insights version 1.2.3 with values file from {test_val_file}
 """
@@ -1092,6 +1098,7 @@ def test_install_run_with_no_operator_version_available(mocker):
         result = runner.invoke(main.cli,
                                ['install', 'run', '--version', '1.2.3', '--filepath', test_val_file])
         expected_output = f"""{phrases.values_validating}
+
 Error: Compatible version of operator not found
 """
     assert result.exit_code == 1
@@ -1158,6 +1165,7 @@ def test_install_run_installs_operator_with_modified_secrets(mocker):
                                ['install', 'run', '--version', '1.2.3', '--install-config-secret', test_install_secret],
                                input=user_input)
         expected_output = f"""{phrases.values_validating}
+
 Do you want to install kxi-operator version 1.2.3? [Y/n]: y
 Installing chart kx-insights/kxi-operator version 1.2.3 with values from secret
 Installing chart kx-insights/insights version 1.2.3 with values from secret
@@ -1221,7 +1229,9 @@ def test_install_run_exits_when_already_installed(mocker):
     with runner.isolated_filesystem():
         result = runner.invoke(main.cli, ['install', 'run', '--version', '1.2.3', '--filepath', test_val_file], input ='n\n')
         expected_output = f"""{phrases.values_validating}
-kdb Insights Enterprise is already installed with version insights-1.2.1. Would you like to upgrade to version 1.2.3? [y/N]: n
+
+kdb Insights Enterprise is already installed with version 1.2.1
+Would you like to upgrade to version 1.2.3? [y/N]: n
 """
 
     assert result.exit_code == 0
@@ -1683,6 +1693,7 @@ y
         expected_output = f"""{phrases.header_upgrade}
 {phrases.values_validating}
 
+kdb Insights Enterprise is already installed with version 1.2.1
 kxi-operator already installed with version 1.2.0
 Do you want to install kxi-operator version 1.2.3? [Y/n]: y
 Reading CRD data from {test_helm_repo_cache}/kxi-operator-1.2.3.tgz
@@ -1700,8 +1711,6 @@ Upgrading insights
 Installing chart kx-insights/kxi-operator version 1.2.3 with values from secret
 Replacing CRD assemblies.insights.kx.com
 Replacing CRD assemblyresources.insights.kx.com
-
-kdb Insights Enterprise already installed with version insights-1.2.1
 Installing chart kx-insights/insights version 1.2.3 with values from secret
 
 Reapplying assemblies
@@ -1782,6 +1791,7 @@ def test_upgrade_skips_to_install_when_not_running(mocker):
         )
     expected_output = f"""{phrases.header_upgrade}
 {phrases.values_validating}
+
 Do you want to install kxi-operator version 1.2.3? [Y/n]: y
 kdb Insights Enterprise is not deployed. Skipping to install
 Installing chart kx-insights/kxi-operator version 1.2.3 with values from secret
@@ -1821,6 +1831,7 @@ def test_upgrade_when_user_declines_to_teardown_assembly(mocker):
     expected_output = f"""{phrases.header_upgrade}
 {phrases.values_validating}
 
+kdb Insights Enterprise is already installed with version 1.2.1
 kxi-operator already installed with version 1.2.0
 Do you want to install kxi-operator version 1.2.3? [Y/n]: y
 Reading CRD data from {test_helm_repo_cache}/kxi-operator-1.2.3.tgz
@@ -1889,6 +1900,7 @@ y
         expected_output = f"""{phrases.header_upgrade}
 {phrases.values_validating}
 
+kdb Insights Enterprise is already installed with version 1.2.1
 kxi-operator already installed with version 1.2.0
 Do you want to install kxi-operator version 1.2.3? [Y/n]: y
 Reading CRD data from {test_helm_repo_cache}/kxi-operator-1.2.3.tgz
@@ -1936,8 +1948,9 @@ y
     with runner.isolated_filesystem():
         result = runner.invoke(main.cli, ['install', 'run', '--version', '1.2.3', '--filepath', test_val_file], input =user_input)
         expected_output = f"""{phrases.values_validating}
-kdb Insights Enterprise is already installed with version insights-1.2.1. Would you like to upgrade to version 1.2.3? [y/N]: y
 
+kdb Insights Enterprise is already installed with version 1.2.1
+Would you like to upgrade to version 1.2.3? [y/N]: y
 kxi-operator already installed with version 1.2.0
 Do you want to install kxi-operator version 1.2.3? [Y/n]: y
 Reading CRD data from {test_helm_repo_cache}/kxi-operator-1.2.3.tgz
@@ -1955,8 +1968,6 @@ Upgrading insights
 Installing chart kx-insights/kxi-operator version 1.2.3 with values file from {test_val_file}
 Replacing CRD assemblies.insights.kx.com
 Replacing CRD assemblyresources.insights.kx.com
-
-kdb Insights Enterprise already installed with version insights-1.2.1
 Installing chart kx-insights/insights version 1.2.3 with values file from {test_val_file}
 
 Reapplying assemblies
@@ -2011,6 +2022,7 @@ y
         expected_output = f"""{phrases.header_upgrade}
 {phrases.values_validating}
 
+kdb Insights Enterprise is already installed with version 1.2.1
 kxi-operator already installed with version 1.2.0
 warn=kxi-operator already installed, but not managed by helm
 Not installing kxi-operator
@@ -2025,8 +2037,6 @@ Are you sure you want to teardown {test_asm_name} [y/N]: y
 Waiting for assembly to be torn down
 
 Upgrading insights
-
-kdb Insights Enterprise already installed with version insights-1.2.1
 Installing chart kx-insights/insights version 1.2.3 with values from secret
 
 Reapplying assemblies
@@ -2087,7 +2097,7 @@ def test_install_upgrade_errors_when_repo_does_not_exist(mocker):
     runner = CliRunner()
     with runner.isolated_filesystem():
         result = runner.invoke(main.cli, ['install', 'upgrade', '--version', '1.2.3', '--filepath', test_val_file])
-        expected_output = """Upgrading kdb Insights Enterprise
+        expected_output = f"""{phrases.header_upgrade}
 Error: Cannot find local chart repo kx-insights
 """
     assert result.exit_code == 1
@@ -2098,12 +2108,66 @@ def test_install_upgrade_errors_when_filepath_or_install_secret_not_provided():
     runner = CliRunner()
     with runner.isolated_filesystem():
         result = runner.invoke(main.cli, ['install', 'upgrade', '--version', '1.2.3'])
-        expected_output = """Upgrading kdb Insights Enterprise
+        expected_output = f"""{phrases.header_upgrade}
 Error: At least one of --install-config-secret and --filepath options must be provided
 """
     assert result.exit_code == 1
     assert result.output == expected_output
     
+
+def test_install_upgrade_errors_when_downgrading_to_lower_version(mocker):
+    upgrades_mocks(mocker)
+    mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
+    mock_validate_secret(mocker)
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        result = runner.invoke(main.cli, ['install', 'upgrade', '--version', '1.0.0', '--filepath', test_val_file])
+        expected_output = f"""{phrases.header_upgrade}
+{phrases.values_validating}
+
+kdb Insights Enterprise is already installed with version 1.2.1
+Error: Cannot upgrade from version 1.2.1 to version 1.0.0. Target version must be higher than currently installed version.
+"""
+    assert result.exit_code == 1
+    assert result.output == expected_output
+
+
+def test_install_run_errors_when_downgrading_to_lower_version(mocker):
+    upgrades_mocks(mocker)
+    mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
+    mock_validate_secret(mocker)
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        result = runner.invoke(main.cli, ['install', 'run', '--version', '1.0.0', '--filepath', test_val_file])
+        expected_output = f"""{phrases.values_validating}
+
+kdb Insights Enterprise is already installed with version 1.2.1
+Error: Cannot upgrade from version 1.2.1 to version 1.0.0. Target version must be higher than currently installed version.
+"""
+    assert result.exit_code == 1
+    assert result.output == expected_output
+
+
+def test_install_upgrade_errors_when_downgrading_operator_to_lower_version(mocker):
+    upgrades_mocks(mocker)
+    mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
+    mocker.patch('kxicli.commands.install.get_installed_operator_versions', 
+                 lambda x:((['1.2.2'], [test_operator_helm_name])))
+    mock_validate_secret(mocker)
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        result = runner.invoke(main.cli, ['install', 'upgrade', '--filepath', test_val_file,
+                                          '--version', '1.2.3', '--operator-version', '1.2.0'])
+        expected_output = f"""{phrases.header_upgrade}
+{phrases.values_validating}
+
+kdb Insights Enterprise is already installed with version 1.2.1
+kxi-operator already installed with version 1.2.2
+Error: Cannot upgrade from version 1.2.2 to version 1.2.0. Target version must be higher than currently installed version.
+"""
+    assert result.exit_code == 1
+    assert result.output == expected_output
+
 
 def test_install_values_validated_on_run_and_upgrade(mocker):
     mock_helm_repo_list(mocker)
