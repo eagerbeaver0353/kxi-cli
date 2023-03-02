@@ -63,12 +63,14 @@ def set_config(profile):
         type=str,
         default=config.get(profile, 'namespace', fallback=''))
 
-    config[profile]['client.id'] = click.prompt(
+    key = 'client.id'
+    config[profile][key] = click.prompt(
         'Client ID',
         type=str,
-        default=config.get(profile, 'client.id', fallback=''))
+        default=config.get(profile, key, fallback=''))
 
-    config[profile]['client.secret'] = common.enter_password('Client Secret (input hidden)')
+    if len(config[profile][key]) > 0:
+        config[profile]['client.secret'] = common.enter_password('Client Secret (input hidden)')
 
     with open(config_file, 'w+') as f:
         config.write(f)
