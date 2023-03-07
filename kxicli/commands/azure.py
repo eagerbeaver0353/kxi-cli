@@ -35,7 +35,6 @@ arg_operator_version = partial(
 def azure():
     """Insights Azure related commands"""
 
-
 @azure.command()
 @arg_namespace()
 @arg_release()

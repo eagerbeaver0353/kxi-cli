@@ -5,9 +5,8 @@ import pytest
 from pytest_mock import MockerFixture
 from kxicli import main
 from kxicli.azure_ad import AppRegistration, Group, Web
-
-from kxicli.commands.azure_idp import _format_idp_list, _format_mapper_list, get_email_mapper_definition, \
-    get_idp_definition, get_preferred_username_mapper_definition, get_role_mapper_definition
+from kxicli.resources.keycloak_definitions import format_idp_list, format_mapper_list, get_email_mapper_definition, \
+   get_idp_definition, get_preferred_username_mapper_definition, get_role_mapper_definition
 
 
 @pytest.fixture
@@ -67,6 +66,8 @@ def test_azure_idp_add(mocker: MockerFixture,
                 --keycloak-idp-alias {keycloak_idp_alias}
                 --keycloak-idp-display-name {keycloak_idp_display_name}""")
 
+    assert result.exit_code == 0, result.output
+
     # Assert keycloak IdP and mappers were created
     mock_keycloak_admin_client.return_value.create_idp.assert_called_once_with(
         get_idp_definition(keycloak_idp_alias, keycloak_idp_display_name,
@@ -93,8 +94,6 @@ def test_azure_idp_add(mocker: MockerFixture,
 
     # Assert CLI result
 
-    assert result.exit_code == 0
-
 
 def test_azure_idp_add__groupmembershipclaim_all(
         mocker: MockerFixture, mock_keycloak_admin_client, mock_azure_ad_client):
@@ -119,6 +118,9 @@ def test_azure_idp_add__groupmembershipclaim_all(
                 --keycloak-idp-alias {keycloak_idp_alias}
                 --keycloak-idp-display-name {keycloak_idp_display_name}""")
 
+    # Assert CLI result
+    assert result.exit_code == 0, result.output
+
     # Assert keycloak IdP and mappers were created
     mock_keycloak_admin_client.return_value.create_idp.assert_called_once_with(
         get_idp_definition(keycloak_idp_alias, keycloak_idp_display_name,
@@ -142,10 +144,7 @@ def test_azure_idp_add__groupmembershipclaim_all(
 
     mock_azure_ad_client.return_value.patch_app_registration.assert_called_once_with(
         expectedAppRegistration)
-
-    # Assert CLI result
-
-    assert result.exit_code == 0
+    
 
 
 def test_azure_idp_add__idp_already_exists(
@@ -171,10 +170,12 @@ def test_azure_idp_add__idp_already_exists(
                 --keycloak-idp-alias {keycloak_idp_alias}
                 --keycloak-idp-display-name {keycloak_idp_display_name}""")
 
+    # Assert CLI result
+    assert result.exit_code == 1, result.output
+
     # Assert keycloak IdP and mappers were created
     assert not mock_keycloak_admin_client.return_value.create_idp.called
     assert f"IdP with alias {keycloak_idp_alias} already exists in keycloak realm." in result.output
-    assert result.exit_code == 1
 
 
 def test_azure_idp_add__appregistration_not_found(
@@ -199,11 +200,12 @@ def test_azure_idp_add__appregistration_not_found(
                 --keycloak-admin-password admin-pwd
                 --keycloak-idp-alias {keycloak_idp_alias}
                 --keycloak-idp-display-name {keycloak_idp_display_name}""")
+    # Assert CLI result
+    assert result.exit_code == 1, result.output
 
     # Assert keycloak IdP and mappers were created
     assert not mock_keycloak_admin_client.return_value.create_idp.called
     assert f"Could not find app registration" in result.output
-    assert result.exit_code == 1
 
 
 def test_azure_idp_list__returns_formatted_output(mocker: MockerFixture,
@@ -219,8 +221,10 @@ def test_azure_idp_list__returns_formatted_output(mocker: MockerFixture,
             --keycloak-idp-realm {keycloak_idp_realm}
             --keycloak-admin-username admin-usr
             --keycloak-admin-password admin-pwd""")
-    assert _format_idp_list(get_test_idp_list()) in result.output
-    assert result.exit_code == 0
+    assert format_idp_list(get_test_idp_list()) in result.output
+    
+    # Assert CLI result
+    assert result.exit_code == 0, result.output
 
 
 def test_azure_idp_mapper_add(mocker: MockerFixture,
@@ -258,7 +262,8 @@ def test_azure_idp_mapper_add(mocker: MockerFixture,
     assert f"Skipped 'mapper - role1' mapper because it already exists in '{keycloak_idp_alias}' IdP" in result.output
     assert f"Skipped 'mapper - notexistingrole' mapper because role 'notexistingrole' does not exists in {keycloak_idp_realm} realm" in result.output
 
-    assert result.exit_code == 0
+    # Assert CLI result
+    assert result.exit_code == 0, result.output
 
 
 def test_azure_idp_mapper_add__idp_does_not_exists(mocker: MockerFixture,
@@ -288,7 +293,8 @@ def test_azure_idp_mapper_add__idp_does_not_exists(mocker: MockerFixture,
 
     assert f"IdP with alias {keycloak_idp_alias} does not exists in keycloak realm." in result.output
 
-    assert result.exit_code == 1
+    # Assert CLI result
+    assert result.exit_code == 1, result.output
 
 
 def test_azure_idp_mapper_add__group_does_not_exists(mocker: MockerFixture,
@@ -318,7 +324,8 @@ def test_azure_idp_mapper_add__group_does_not_exists(mocker: MockerFixture,
 
     assert f"Could not find AD group '{azure_ad_group_name}'" in result.output
 
-    assert result.exit_code == 1
+    # Assert CLI result
+    assert result.exit_code == 1, result.output
 
 
 def test_azure_idp_mapper_list(mocker: MockerFixture,
@@ -339,9 +346,10 @@ def test_azure_idp_mapper_list(mocker: MockerFixture,
 
     expectedMappers = [x["name"]
                        for x in get_test_idp_mappers_for_alias(keycloak_idp_alias)]
-    assert _format_mapper_list(expectedMappers) in result.output
+    assert format_mapper_list(expectedMappers) in result.output
 
-    assert result.exit_code == 0
+    # Assert CLI result
+    assert result.exit_code == 0, result.output
 
 
 def test_azure_idp_mapper_list__idp_does_not_exists(mocker: MockerFixture,
@@ -361,7 +369,8 @@ def test_azure_idp_mapper_list__idp_does_not_exists(mocker: MockerFixture,
                 --keycloak-idp-alias {keycloak_idp_alias}""")
 
     assert f"IdP with alias {keycloak_idp_alias} does not exists in keycloak realm." in result.output
-    assert result.exit_code == 1
+    # Assert CLI result
+    assert result.exit_code == 1, result.output
 
 
 def create_app_registration(display_name: str, group_membership_claims: str, redirectUris: List[str]) -> AppRegistration:
