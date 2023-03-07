@@ -1,7 +1,6 @@
 import copy
 from typing import List
 import click
-from tabulate import tabulate
 
 from kxicli import azure_ad
 from keycloak import keycloak_admin
@@ -10,6 +9,9 @@ from kxicli import common
 from azure.identity import InteractiveBrowserCredential
 from kxicli.commands.azure import azure
 from functools import wraps, partial
+
+from kxicli.resources.keycloak_definitions import format_idp_list, format_mapper_list, get_email_mapper_definition, \
+   get_idp_definition, get_preferred_username_mapper_definition, get_role_mapper_definition
 
 arg_azure_tenant_id = partial(
     click.option, '--azure-tenant-id', help="Azure Tenant ID where the operations should point to",
@@ -206,7 +208,7 @@ def idp_list(hostname: str,
         keycloak_admin_clientid,
         keycloak_idp_realm)
 
-    click.secho(_format_idp_list(keycloak_client.get_idps()))
+    click.secho(format_idp_list(keycloak_client.get_idps()))
 
 
 @mapper.command("add")
@@ -315,7 +317,7 @@ def mapper_list(hostname: str,
     existing_mappers.sort(key=str.casefold)
 
     click.secho("\n")
-    click.secho(_format_mapper_list(existing_mappers))
+    click.secho(format_mapper_list(existing_mappers))
 
 
 def raise_if_keycloak_idp_does_not_exists(keycloak_client, keycloak_idp_alias):
@@ -363,17 +365,6 @@ def keycloak_idp_exists(keycloak_client: str, keycloak_idp_alias: str) -> bool:
 
     return len(idp)
 
-
-def _format_idp_list(idps) -> str:
-    selection = [(x["alias"], x["displayName"], x["config"]["clientId"])
-                 for x in idps]
-    return tabulate(selection, headers=["Alias", "DisplayName", "Azure App Registration Application ID"])
-
-
-def _format_mapper_list(existing_mappers):
-    return tabulate([[x] for x in existing_mappers], headers=["Mapper"])
-
-
 def print_available_azure_app_registrations(azure_client):
     registrations = [
         f"    {x.display_name}" for x in azure_client.get_app_registrations()]
@@ -385,85 +376,3 @@ def print_available_azure_app_registrations(azure_client):
 
 def get_azure_ad_client(tenant_id: str) -> azure_ad.AzureADClient:
     return azure_ad.AzureADClient(credential=InteractiveBrowserCredential(tenant_id=tenant_id))
-
-
-# https://www.keycloak.org/docs-api/18.0/rest-api/#_identityproviderrepresentation
-def get_idp_definition(
-    alias: str,
-    display_name: str,
-    client_id: str,
-    client_secret: str,
-    azure_tenant_id: str
-):
-    return {
-        "alias": f"{alias}",
-        "displayName": f"{display_name}",
-        "providerId": "oidc",
-        "enabled": "true",
-        "updateProfileFirstLoginMode": "on",
-        "trustEmail": "true",
-        "storeToken": "false",
-        "addReadTokenRoleOnCreate": "false",
-        "authenticateByDefault": "false",
-        "linkOnly": "false",
-        "firstBrokerLoginFlowAlias": "first broker login",
-        "config": {
-            "clientId": f"{client_id}",
-            "tokenUrl": f"https://login.microsoftonline.com/{azure_tenant_id}/oauth2/v2.0/token",
-            "authorizationUrl": f"https://login.microsoftonline.com/{azure_tenant_id}/oauth2/v2.0/authorize",
-            "clientAuthMethod": "client_secret_post",
-            "syncMode": "FORCE",
-            "clientSecret": f"{client_secret}",
-            "defaultScope": "openid profile email",
-            "useJwksUrl": "true"
-        }
-    }
-
-
-# https://www.keycloak.org/docs-api/18.0/rest-api/#_identityprovidermapperrepresentation
-def get_preferred_username_mapper_definition(
-        idp_alias: str):
-    return {
-        "name": "Preferred Username",
-        "identityProviderAlias": f"{idp_alias}",
-        "identityProviderMapper": "oidc-username-idp-mapper",
-        "config": {
-            "template": "${CLAIM.preferred_username | localpart}",
-            "syncMode": "INHERIT",
-            "target": "LOCAL"
-        }
-    }
-
-
-# https://www.keycloak.org/docs-api/18.0/rest-api/#_identityprovidermapperrepresentation
-def get_email_mapper_definition(
-        idp_alias: str):
-    return {
-        "name": "Email",
-        "identityProviderAlias": f"{idp_alias}",
-        "identityProviderMapper": "oidc-user-attribute-idp-mapper",
-        "config": {
-            "syncMode": "INHERIT",
-            "claim": "preferred_username",
-            "user.attribute": "email"
-        }
-    }
-
-
-# https://www.keycloak.org/docs-api/15.0/rest-api/#_identityprovidermapperrepresentation
-def get_role_mapper_definition(mapper_name: str,
-                               idp_alias: str,
-                               role: str,
-                               azure_ad_group: str
-                               ):
-    return {
-        "name": f"{mapper_name}",
-        "identityProviderAlias": f"{idp_alias}",
-        "identityProviderMapper": "oidc-role-idp-mapper",
-        "config": {
-            "syncMode": "INHERIT",
-            "claim": "groups",
-            "role": f"{role}",
-            "claim.value": f"{azure_ad_group}"
-        }
-    }

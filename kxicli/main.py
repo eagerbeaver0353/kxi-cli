@@ -6,7 +6,7 @@ import pkg_resources
 
 from kxicli import config
 from kxicli import log
-from kxicli.commands import client, assembly, auth, install, package, azure, user
+from kxicli.commands import client, assembly, auth, install, package, azure, azure_idp, user
 
 CLI_VERSION = pkg_resources.require('kxicli')[0].version
 PYTHON_VERSION = f'{sys.version_info.major}.{sys.version_info.minor}'
@@ -44,6 +44,8 @@ cli.add_command(client.client)
 cli.add_command(assembly.assembly)
 cli.add_command(auth.auth)
 cli.add_command(azure.azure)
+cli.add_command(azure_idp.idp)
+cli.add_command(azure_idp.mapper)
 cli.add_command(install.install)
 cli.add_command(configure)
 cli.add_command(package.package)
