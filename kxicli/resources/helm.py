@@ -4,6 +4,7 @@ import subprocess
 import sys
 from functools import lru_cache
 from typing import List
+import json
 
 import click
 from click import ClickException
@@ -181,3 +182,36 @@ def _get_helm_version() -> LocalHelmVersion:
 
 def repo_update():
     subprocess.run(['helm', 'repo', 'update'], check=True)
+
+def history(release, output, show_operator, current_operator_version, current_operator_release):
+    """Call 'helm history <release>' using subprocess.run"""
+    log.debug('Attempting to call: helm history' + f'{release}')
+    try:
+        if output == 'json':
+            result1 = subprocess.run(['helm', 'history', release, '--output', 'json'], check=True, capture_output=True, text=True)
+            res1 = json.loads(result1.stdout)
+            try:
+                result2 = subprocess.run(['helm', 'history', current_operator_release, '--namespace', 'kxi-operator', '--output', 'json'], check=True, capture_output=True, text=True)
+                res2 = json.loads(result2.stdout)
+            except subprocess.CalledProcessError as e:
+                res2 = []
+            return res1,res2
+        else:
+            result1 = subprocess.run(['helm', 'history', release],  stdout=subprocess.PIPE, check=True)
+            output1 = result1.stdout.decode('utf-8')
+            if not show_operator:
+                return print(output1)
+            try:
+                result2 = subprocess.run(['helm', 'history', current_operator_release, '--namespace', 'kxi-operator'],stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=True)
+                output2 = result2.stdout.decode('utf-8').split('\n')[1:]
+            except subprocess.CalledProcessError as e:                
+                if current_operator_version == []:
+                    output2 = {"Unable to retrieve operator version"}
+                else:
+                    output2 = {f"Operator is not managed by helm but is currently on version {current_operator_version}"}
+            
+            res = output1 + '\n' + '\n'.join(output2)
+            return print(res)
+    except subprocess.CalledProcessError as e:
+        click.echo(e)
+        return []

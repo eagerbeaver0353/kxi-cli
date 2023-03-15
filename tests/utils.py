@@ -128,8 +128,7 @@ def mocked_kube_deployment_list(namespace, **kwargs):
             metadata=k8s.client.V1ObjectMeta(
                 name='kxi-operator',
                 namespace=namespace,
-                labels={"helm.sh/chart":'kxi-operator-1.2.3'},
-                annotations={"meta.helm.sh/release-name": 'test-helm-name'}
+                labels={"helm.sh/chart":'kxi-operator-1.2.3', "app.kubernetes.io/instance": 'test-helm-name'}
             )
         )]
     )
@@ -178,3 +177,13 @@ def mock_list_kube_config_contexts(mocker):
             
 def mocked_helm_repo_list(name, url):
     return [{'name': name, 'url': url}]
+
+def mocked_helm_history_rollback(release, output, show_operator,current_operator_version, current_operator_release):
+        res1 =[{"release": release, "revision": 1, "chart": "insights-1.2.3", "app_version":"1.2.3", "status": "deployed"}, {"release": release, "revision": 2, "chart": "insights-1.4.0", "app_version": "1.4.0", "status": "uninstalled"}]
+        res2 =[{"release": release, "revision": 1, "chart": "kxi-operator-1.2.3", "app_version": "1.2.3", "status": "uninstalled"},{"release": release, "revision": 2, "chart": "kxi-operator-1.4.0", "app_version": "1.4.0", "status": "uninstalled"}]
+        return res1,res2
+
+def mocked_helm_history_rollback_same_operator(release, output, show_operator, current_operator_version, current_operator_release):
+        res1 =[{"release": release, "revision": 1, "chart": "insights-1.4.1", "app_version":"1.4.1", "status": "deployed"}, {"release": release, "revision": 2, "chart": "insights-1.4.0", "app_version": "1.4.0", "status": "uninstalled"}]
+        res2 =[{"release": release, "revision": 1, "chart": "kxi-operator-1.4.1", "app_version": "1.4.1", "status": "uninstalled"},{"release": release, "revision": 2, "chart": "kxi-operator-1.4.0", "app_version": "1.4.0", "status": "uninstalled"}]
+        return res1,res2

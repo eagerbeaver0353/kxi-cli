@@ -845,3 +845,23 @@ def test_is_valid_upgrade_version_raises_exception_upon_downgrade(mocker):
         install.is_valid_upgrade_version('test_release', test_ns, '1.0.0')
     assert isinstance(e.value, click.ClickException)
     assert 'Cannot upgrade from version 1.2.1 to version 1.0.0. Target version must be higher than currently installed version.' in e.value.message
+
+
+def test_check_upgrade_version_allows_upgrade():
+    assert install.check_operator_rollback_version('1.3.3', '1.3.0') == None
+    assert install.check_operator_rollback_version('1.3.3', '1.3.4') == None
+    assert install.check_operator_rollback_version('1.3.3', '1.3.6') == None
+    assert install.check_operator_rollback_version('1.3.3', '1.3.3') == None
+    assert install.check_operator_rollback_version('1.5.0-rc.18', '1.5.0-rc.19') == None
+    assert install.check_operator_rollback_version('1.5.0-rc.18', '1.5.0-rc.18') == None
+
+def test_check_operator_rollback_version_raises_exception_upon_downgrade():
+    with pytest.raises(Exception) as e:
+        install.check_operator_rollback_version('1.4.0', '1.3.3')
+    assert isinstance(e.value, click.ClickException)
+    assert 'Insights rollback target version 1.4.0 is incompatible with target operator version 1.3.3. Minor versions must match.' in e.value.message
+    with pytest.raises(Exception) as e:
+        install.check_operator_rollback_version('1.5.0-rc.18', '1.4.0-rc.17')
+    assert isinstance(e.value, click.ClickException)
+    assert 'Insights rollback target version 1.5.0-rc.18 is incompatible with target operator version 1.4.0-rc.17. Minor versions must match.' in e.value.message
+    

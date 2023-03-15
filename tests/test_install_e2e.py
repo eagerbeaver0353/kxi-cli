@@ -22,7 +22,7 @@ from kxicli.commands.assembly import CONFIG_ANNOTATION
 from utils import mock_kube_secret_api, return_none, return_true, return_false, raise_not_found, \
     test_val_file, mock_validate_secret, mock_kube_crd_api, mock_helm_env, mock_helm_fetch, mock_list_kube_config_contexts, \
     mocked_helm_repo_list, test_helm_repo_cache, mock_load_kube_config, mock_load_kube_config_incluster, \
-    fake_docker_config_secret
+    fake_docker_config_secret, mocked_helm_history_rollback, mocked_helm_history_rollback_same_operator
 from cli_io import cli_input, cli_output
 from const import test_namespace,  test_chart_repo_name, test_chart_repo_url, \
     test_user, test_pass, test_docker_config_json, test_cert, test_key, test_ingress_cert_secret
@@ -155,7 +155,6 @@ def mocked_empty_list():
 def mock_helm_repo_list(mocker, name='kx-insights', url=test_chart_repo_url):
     mocker.patch('kxicli.commands.install.helm_repo_list', lambda: mocked_helm_repo_list(name, url))
 
-
 def mock_empty_helm_repo_list(mocker):
     mocker.patch('kxicli.commands.install.helm_repo_list', mocked_empty_list)
 
@@ -244,6 +243,8 @@ def mocked_get_installed_operator_versions(namespace):
 def mocked_get_installed_operator_versions_without_release(namespace):
         return (['1.2.0'], [None])
 
+def mocked_get_installed_operator_versions_without_release_14(namespace):
+        return (['1.4.0'], [None])
 
 def mocked_subprocess_run(base_command, check=True, input=None, text=None, **kwargs):
     global insights_installed_flag
@@ -1939,7 +1940,6 @@ def test_install_run_upgrades_when_already_installed(mocker):
     mock_helm_env(mocker)
     mock_helm_fetch(mocker)
     mocker.patch('kxicli.commands.assembly._backup_filepath', lambda filepath, force: test_asm_backup)
-
     runner = CliRunner()
     user_input = f"""y
 y
@@ -2196,3 +2196,168 @@ def test_install_values_validated_on_run_and_upgrade(mocker):
     run_cli(cmd, test_cfg, expected_exit_code = 1)
     cmd = ['install', 'run', '--version', '1.2.3', '--filepath', test_val_file]
     run_cli(cmd, test_cfg, expected_exit_code = 1)
+
+
+def mock_helm_list_history_same_operator(mocker, release='kx-insights', output=None):
+    mocker.patch('kxicli.resources.helm.history', mocked_helm_history_rollback_same_operator)
+
+def mock_helm_list_history(mocker, release='kx-insights', output=None):
+    mocker.patch('kxicli.resources.helm.history', mocked_helm_history_rollback)
+
+def test_install_rollback(mocker):
+    mocker.patch('subprocess.check_output',return_value="")
+    mock_helm_list_history_same_operator(mocker)
+    upgrades_mocks(mocker)  
+    mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
+    mock_create_namespace(mocker)
+    mock_get_operator_version(mocker)
+    mock_validate_secret(mocker)
+    mock_kube_crd_api(mocker, create=mocked_create_crd, delete=mocked_delete_crd)
+    mock_helm_env(mocker)
+    mock_helm_fetch(mocker)
+    mocker.patch('kxicli.commands.install.get_installed_operator_versions', mocked_get_installed_operator_versions_without_release_14)
+    user_input = f"""y
+    y
+"""
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        # these are responses to the various prompts
+        result = runner.invoke(main.cli,
+            ['install', 'rollback', '--namespace', test_namespace, '--assembly-backup-filepath', test_asm_backup],
+            input=user_input
+        )
+    expected_output = f"""Rolling Insights back to version 1.4.1 and revision 1. Operator version remaining on 1.4.0.
+Proceed? [y/N]: y
+
+Backing up assemblies
+Persisted assembly definitions for ['basic-assembly'] to {test_asm_backup}
+
+Tearing down assemblies
+Assembly data will be persisted and state will be recovered post-rollback
+Tearing down assembly basic-assembly
+Are you sure you want to teardown basic-assembly [y/N]:     y
+Waiting for assembly to be torn down
+
+Rolling back Insights
+Rollback kdb Insights Enterprise complete for version 1.4.1
+
+Reapplying assemblies
+Submitting assembly from {test_asm_backup}
+Submitting assembly basic-assembly\nCustom assembly resource basic-assembly created!
+"""
+    assert result.exit_code == 0
+    assert expected_output == result.output
+
+def test_install_rollback_fail_version(mocker):
+    mocker.patch('subprocess.check_output',return_value="")
+    mock_helm_list_history(mocker)
+    expected_output = "Error: Insights rollback target version 1.2.3 is incompatible with target operator version 1.4.0. Minor versions must match.\n"
+    upgrades_mocks(mocker)
+    mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
+    mock_create_namespace(mocker)
+    mock_get_operator_version(mocker)
+    mock_validate_secret(mocker)
+    mock_kube_crd_api(mocker, create=mocked_create_crd, delete=mocked_delete_crd)
+    mock_helm_env(mocker)
+    mock_helm_fetch(mocker)
+    mocker.patch('kxicli.commands.install.get_installed_operator_versions', mocked_get_installed_operator_versions_without_release_14)
+      
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        # these are responses to the various prompts
+        result = runner.invoke(main.cli,
+            ['install', 'rollback', '--namespace', test_namespace]
+        )
+    assert result.exit_code == 1
+    assert expected_output ==  result.output
+
+def test_install_rollback_revision(mocker):
+    mocker.patch('subprocess.check_output',return_value="")
+    mock_helm_list_history(mocker)
+    upgrades_mocks(mocker)
+    mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
+    mock_create_namespace(mocker)
+    mock_get_operator_version(mocker)
+    mock_validate_secret(mocker)
+    mock_kube_crd_api(mocker, create=mocked_create_crd, delete=mocked_delete_crd)
+    mock_helm_env(mocker)
+    mock_helm_fetch(mocker)
+    user_input = f"""y
+    y
+"""
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        # these are responses to the various prompts
+        result = runner.invoke(main.cli,
+            ['install', 'rollback', '1', '--operator-revision', '1', '--namespace', test_namespace, '--assembly-backup-filepath', test_asm_backup],
+            input=user_input
+        )
+    expected_output = f"""Rolling Insights back to version 1.2.3 and revision 1. \nRolling operator back to version 1.2.3 and revision 1.
+Proceed? [y/N]: y
+
+Backing up assemblies
+Persisted assembly definitions for ['basic-assembly'] to {test_asm_backup}
+
+Tearing down assemblies
+Assembly data will be persisted and state will be recovered post-rollback
+Tearing down assembly basic-assembly
+Are you sure you want to teardown basic-assembly [y/N]:     y
+Waiting for assembly to be torn down
+Rollback kxi-operator complete for version 1.2.3
+Using image.pullSecret from embedded default values: kxi-nexus-pull-secret
+Reading CRD data from {test_helm_repo_cache}/kxi-operator-1.2.3.tgz
+Replacing CRD assemblies.insights.kx.com
+Replacing CRD assemblyresources.insights.kx.com
+
+Rolling back Insights
+Rollback kdb Insights Enterprise complete for version 1.2.3
+
+Reapplying assemblies
+Submitting assembly from {test_asm_backup}
+Submitting assembly basic-assembly\nCustom assembly resource basic-assembly created!
+"""
+    assert result.exit_code == 0
+    assert expected_output == result.output
+
+def test_install_rollback_insights_revision_fail(mocker):
+    mocker.patch('subprocess.check_output',return_value="")
+    expected_output = 'Error: Could not find revision 4 in history\n'
+    mocker.patch('kxicli.commands.install.get_installed_operator_versions', mocked_get_installed_operator_versions_without_release_14)
+    mock_helm_list_history(mocker)
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        # these are responses to the various prompts
+        result = runner.invoke(main.cli,
+            ['install', 'rollback', '4']
+        )
+    assert result.exit_code == 1
+    assert expected_output == result.output
+
+def test_install_rollback_operator_revision_fail(mocker):
+    mocker.patch('subprocess.check_output',return_value="")
+    mocker.patch('kxicli.commands.install.get_installed_operator_versions', mocked_get_installed_operator_versions_without_release_14)
+    expected_output = 'Error: Could not find revision 4 in kxi-operator history\n'
+    mock_helm_list_history(mocker)
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        # these are responses to the various prompts
+        result = runner.invoke(main.cli,
+            ['install', 'rollback', '--operator-revision', '4']
+        )
+    assert result.exit_code == 1
+    assert expected_output == result.output
+
+
+def test_install_rollback_operator_revision_fail_2(mocker):
+    mocker.patch('kxicli.commands.install.get_installed_operator_versions', mocked_get_installed_operator_versions_without_release_14)
+    mocker.patch('subprocess.check_output',return_value="")
+    expected_output = 'Error: Could not find revision 4 in kxi-operator history\n'
+    mock_helm_list_history(mocker)
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        # these are responses to the various prompts
+        result = runner.invoke(main.cli,
+            ['install', 'rollback', '1', '--operator-revision', '4']
+        )
+    assert result.exit_code == 1
+    assert expected_output == result.output

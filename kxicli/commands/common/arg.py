@@ -97,3 +97,7 @@ arg_admin_password = options.admin_password.decorator()
 arg_timeout = options.timeout.decorator()
 
 arg_temporary = options.temporary.decorator()
+
+arg_operator_revision = options.operator_revision.decorator()
+
+arg_operator_history = options.operator_history.decorator()

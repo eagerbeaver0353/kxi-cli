@@ -29,14 +29,14 @@ from kxicli.commands.common.arg import arg_force, arg_filepath, arg_version, arg
     arg_image_repo, arg_image_repo_user, arg_image_pull_secret, arg_gui_client_secret, arg_operator_client_secret, \
     arg_keycloak_secret, arg_keycloak_postgresql_secret, arg_keycloak_auth_url, \
     arg_ingress_cert_secret, arg_ingress_cert, arg_ingress_key, arg_ingress_certmanager_disabled,  \
-    arg_install_config_secret, arg_install_config_secret_data_name, arg_import_users
+    arg_install_config_secret, arg_install_config_secret_data_name, arg_import_users, arg_operator_revision, arg_operator_history
 from kxicli.commands.common.namespace import create_namespace
 from kxicli.common import get_default_val as default_val, key_gui_client_secret, key_operator_client_secret
 from kxicli.resources import secret, helm
 
 DOCKER_CONFIG_FILE_PATH = str(Path.home() / '.docker' / 'config.json')
 operator_namespace = 'kxi-operator'
-operator_release_name = 'meta.helm.sh/release-name'
+operator_release_name = 'app.kubernetes.io/instance'
 
 SECRET_TYPE_TLS = 'kubernetes.io/tls'
 SECRET_TYPE_DOCKERCONFIG_JSON = 'kubernetes.io/dockerconfigjson'
@@ -366,13 +366,7 @@ def perform_upgrade(namespace, release, chart_repo, assembly_backup_filepath, ve
         click.secho(str.format(phrases.upgrade_complete, version=version), bold=True)
         return
 
-    click.secho(phrases.upgrade_asm_backup, bold=True)
-    assembly_backup_filepath = assembly.backup_assemblies(namespace, assembly_backup_filepath, force)
-
-    click.secho(phrases.upgrade_asm_teardown, bold=True)
-    click.secho(phrases.upgrade_asm_persist)
-    deleted = assembly.delete_running_assemblies(namespace=namespace, wait=True, force=force)
-
+    deleted, assembly_backup_filepath = teardown_assemblies(namespace, assembly_backup_filepath, force, phrases.upgrade_asm_persist)
     if all(deleted):
         click.secho(phrases.upgrade_insights, bold=True)
         upgraded =  install_operator_and_release(release, namespace, version, operator_version, operator_release, 
@@ -380,12 +374,7 @@ def perform_upgrade(namespace, release, chart_repo, assembly_backup_filepath, ve
                                                 chart_repo, import_users, docker_config, install_operator, 
                                                 is_op_upgrade, crd_data, is_upgrade=True)
 
-    click.secho(phrases.upgrade_asm_reapply, bold=True)
-    if assembly_backup_filepath and all(assembly.create_assemblies_from_file( 
-                                            namespace=namespace, filepath=assembly_backup_filepath, use_kubeconfig=True
-                                            )
-                                        ):
-        os.remove(assembly_backup_filepath)
+    reapply_assemblies(assembly_backup_filepath, namespace, deleted)
 
     if upgraded:
         click.secho(str.format(phrases.upgrade_complete, version=version), bold=True)
@@ -1077,7 +1066,7 @@ def get_installed_operator_versions(namespace: str = operator_namespace):
     operator_releases = []
     for item in operators.items:
         operator_versions.append(item.metadata.labels.get("helm.sh/chart").lstrip("kxi-operator-"))
-        operator_releases.append(item.metadata.annotations.get(operator_release_name))
+        operator_releases.append(item.metadata.labels.get(operator_release_name))
     return (operator_versions, operator_releases)
 
 # Check if Keycloak is being deployed with Insights
@@ -1177,6 +1166,119 @@ def replace_chart_crds(crd_data):
     for body in crd_data:
         common.replace_crd(body['metadata']['name'], body)
 
+@install.command()
+@click.argument('insights_revision', default=None, required = False)
+@arg_release()
+@arg_operator_revision()
+@arg_image_pull_secret()
+@arg_namespace()
+@arg_force()
+@arg_assembly_backup_filepath()
+@arg_chart_repo_name()
+def rollback(insights_revision, release, operator_revision, namespace, image_pull_secret, force, assembly_backup_filepath, chart_repo_name):
+    common.load_kube_config()
+    argo_managed_operator = False
+    current_operator_version, current_operator_release  = get_installed_operator_versions(operator_namespace)
+    insights_history,operator_history = helm.history(release, 'json', None, current_operator_version, current_operator_release[0])
+
+    if insights_history == []:
+        raise click.ClickException(f'Cannot find a release history of: {release}')
+
+    if operator_history == []:
+        if current_operator_version == [] or operator_revision is not None:
+            raise click.ClickException(f'Cannot find an operator release history')
+        else:
+            argo_managed_operator = True
+
+    # Get the rollback base command for insights
+    base_command,insights_rollback_version,insights_revision = insights_rollback(release, insights_history, insights_revision)
+
+    # Get the rollback base command for operator
+    operator_details,base_command_operator = rollback_operator(operator_revision, argo_managed_operator, operator_history, current_operator_release, insights_rollback_version, insights_revision, current_operator_version, force)
+
+    # Teardown assemblies
+    deleted,assembly_backup_filepath  = teardown_assemblies(namespace, assembly_backup_filepath, force, phrases.rollback_asm_persist)
+
+    if operator_details[0] is not None:
+        # Rollback  operator
+        try_rollback(base_command_operator, 'Rollback kxi-operator complete for version ' + operator_details[1])
+        # Replace crds
+        replace_crds(image_pull_secret, namespace, operator_details, chart_repo_name)
+
+    click.secho(phrases.rollback_start, bold=True)
+    try_rollback(base_command, 'Rollback kdb Insights Enterprise complete for version ' + insights_rollback_version)
+
+    reapply_assemblies(assembly_backup_filepath, namespace, deleted)
+
+def insights_rollback(release, insights_history, insights_revision):
+    if insights_revision is None:
+        base_command = ['helm', 'rollback', release]
+        insights_revision = insights_history[len(insights_history)-2]['revision']
+        insights_rollback_version = insights_history[len(insights_history)-2]['app_version']
+    else:
+        base_command = ['helm', 'rollback', release, insights_revision]
+        try:
+            insights_rollback_version = next(entry['app_version'] for entry in insights_history if entry['revision'] == int(insights_revision))
+        except StopIteration:
+            raise click.ClickException(f'Could not find revision {insights_revision} in history')
+
+    return base_command,insights_rollback_version,insights_revision
+
+def rollback_operator(operator_revision, argo_managed_operator, operator_history, current_operator_release, insights_rollback_version, insights_revision, current_operator_version, force):
+    if operator_revision is not None and not argo_managed_operator:
+        try:
+            operator_details = (operator_revision, next(entry['app_version'] for entry in operator_history if entry['revision'] == int(operator_revision)))
+        except StopIteration:
+            raise click.ClickException(f'Could not find revision {operator_revision} in kxi-operator history')
+        base_command_operator = ['helm', 'rollback', current_operator_release[0], operator_details[0], '--namespace', 'kxi-operator']
+        check_operator_rollback_version(insights_rollback_version, operator_details[1])
+        click.echo(phrases.rollback_insights_operator.format(insights_version=insights_rollback_version, revision=insights_revision, operator_version=operator_details[1], operator_revision=operator_details[0]))
+        if not force and not click.confirm('Proceed?'):
+            return sys.exit(0)
+    else:
+        check_operator_rollback_version(insights_rollback_version, current_operator_version[0])
+        operator_details = (None, None)
+        base_command_operator = None
+        click.echo(phrases.rollback_insights.format(insights_version=insights_rollback_version, revision=insights_revision, operator_version=current_operator_version[0]))
+        if not force and not click.confirm('Proceed?'):
+                return sys.exit(0)
+
+    return operator_details,base_command_operator
+
+def operator_rollback_version(operator_history, rollback_version,  current_version):
+    operator_version_minor = get_minor_version(rollback_version)
+    current_version_op = get_minor_version(current_version)
+    data = [d for d in operator_history if d['app_version'].startswith(operator_version_minor)]
+    if len(data) == 1 and current_version_op == operator_version_minor:
+        return (None ,current_version_op) 
+    else:
+        return (str(data[len(data)-2]['revision']),data[len(data)-2]['app_version'])
+    
+def try_rollback(base_command, phrase):
+    try:
+        log.debug(f'List command {base_command}')
+        subprocess.check_output(base_command)
+        click.secho(phrase, bold=True)
+    except subprocess.CalledProcessError as e:
+        raise click.ClickException(e)
+
+@install.command()
+@arg_release()
+@arg_operator_history()
+def history(release, show_operator):
+    """
+    List the revision history of a kdb Insights Enterprise install
+    """
+    common.load_kube_config()    
+    current_operator_version, current_operator_release  = get_installed_operator_versions(operator_namespace)
+    helm.history(options.chart_repo_name.prompt(release, silent=True), None, show_operator, current_operator_version, current_operator_release[0])
+
+def check_operator_rollback_version(from_version, to_version):
+    v1 = semver.VersionInfo.parse(from_version)
+    v2 = semver.VersionInfo.parse(to_version)
+    if v1.major != v2.major or  v1.minor != v2.minor:
+        raise click.ClickException(f'Insights rollback target version {from_version} is incompatible with target operator version {to_version}. Minor versions must match.')
+        
 def check_upgrade_version(from_version, to_version):
     v1 = semver.VersionInfo.parse(from_version)
     v2 = semver.VersionInfo.parse(to_version)
@@ -1192,3 +1294,29 @@ def is_valid_upgrade_version(release, namespace, version):
         return True
     else:
         return False
+
+def teardown_assemblies(namespace, assembly_backup_filepath, force, phrase):
+    click.secho(phrases.upgrade_asm_backup, bold=True)
+    assembly_backup_filepath = assembly.backup_assemblies(namespace, assembly_backup_filepath, force)
+    # Teardown Assemblies
+    click.secho(phrases.upgrade_asm_teardown, bold=True)
+    click.secho(phrase)
+    deleted = assembly.delete_running_assemblies(namespace=namespace, wait=True, force=force)
+    return (deleted, assembly_backup_filepath)
+
+def reapply_assemblies(assembly_backup_filepath, namespace, deleted):
+    click.secho(phrases.upgrade_asm_reapply, bold=True)
+    if deleted and assembly_backup_filepath and all(assembly.create_assemblies_from_file(
+                                            namespace=namespace, filepath=assembly_backup_filepath, use_kubeconfig=True
+                                            )
+                                        ):
+        os.remove(assembly_backup_filepath)
+
+def replace_crds(image_pull_secret, namespace, operator_details, chart_repo_name):
+    crd_data = []
+    image_pull_secret = options.image_pull_secret.prompt(image_pull_secret)
+    docker_config = get_docker_config_secret(namespace, image_pull_secret, DOCKER_SECRET_KEY)
+    cache = helm.get_repository_cache()
+    helm.fetch(chart_repo_name, 'kxi-operator', cache,  operator_details[1], docker_config)
+    crd_data = read_cached_crd_files(operator_details[1])
+    replace_chart_crds(crd_data)
