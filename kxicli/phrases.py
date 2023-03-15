@@ -81,7 +81,7 @@ upgrade_asm_reapply = '\nReapplying assemblies'
 upgrade_asm_persist = 'Assembly data will be persisted and state will be recovered post-upgrade'
 upgrade_insights= '\nUpgrading insights'
 upgrade_complete = '\nUpgrade to version {version} complete'
-
+rollback_asm_persist = 'Assembly data will be persisted and state will be recovered post-rollback'
 # Passwords
 password_reenter = 'Re-enter to confirm (input hidden)'
 password_no_match = 'Entered values did not match'
@@ -92,3 +92,8 @@ hostname_none = 'Hostname is empty'
 
 # Users
 missing_user_argument = "'username' must be provided as a keyword argument"
+
+# Rollback
+rollback_insights = 'Rolling Insights back to version {insights_version} and revision {revision}. Operator version remaining on {operator_version}.'
+rollback_insights_operator = 'Rolling Insights back to version {insights_version} and revision {revision}. \nRolling operator back to version {operator_version} and revision {operator_revision}.'
+rollback_start = '\nRolling back Insights'

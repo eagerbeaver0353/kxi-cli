@@ -186,7 +186,7 @@ filepath = Option(
 version = Option(
     '--version',
     config_name = key_version,
-    required = True, 
+    required = True,
     help = help_text(key_version),
 )
 
@@ -466,6 +466,7 @@ import_users = Option (
     type = bool
 )
 
+
 admin_username = Option(
     '--admin-username',
     config_name = key_admin_username,
@@ -492,4 +493,18 @@ temporary = Option(
     '--temporary/--not-temporary',
     default=True,
     help='Controls whether user must reset password on first login'
+)
+
+operator_revision = Option(
+    '--operator-revision',
+    default = None,
+    help='Revision of operator to rollback to'
+    
+)
+
+operator_history = Option (
+    '--show-operator',
+    default = None,
+    help = 'Display the install history of the kxi-operator',
+    is_flag=True
 )

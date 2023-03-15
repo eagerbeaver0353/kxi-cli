@@ -6,6 +6,7 @@ from functools import partial
 from pathlib import Path
 from pytest_mock import MockerFixture
 from subprocess import CompletedProcess, CalledProcessError
+from kxicli.commands import install
 
 
 from kxicli.resources import helm
@@ -251,3 +252,44 @@ def test_get_helm_version_checked_fail():
             req_helm_version=helm.required_helm_version,
             local_helm_version=helm.LocalHelmVersion(subprocess_check_out_helm_version_invalid([]))
         )
+def mocked_helm_history(base_command, stdout=subprocess.PIPE, check=True, capture_output=True, text=True):
+    return subprocess.CompletedProcess(
+        args=base_command,
+        returncode=0,
+        stdout=b'[{"revision": 1, "status": "deployed"}, {"revision": 2, "status": "uninstalled"}]'
+    )
+
+def mocked_helm_history_json(base_command, check=True, capture_output=True, text=True):
+    return install.subprocess.CompletedProcess(
+        args=base_command,
+        returncode=0,
+        stdout='[{"revision": 1, "status": "deployed"}, {"revision": 2, "status": "uninstalled"}]'
+    )
+    
+def test_history_success_json(mocker):
+    mocker.patch('subprocess.run', mocked_helm_history_json)
+    release = "myrelease"
+    output = [{"revision": 1, "status": "deployed"}, {"revision": 2, "status": "uninstalled"}]
+    helm.history(release, 'json', None, None, 'kxi-operator') == output
+
+def test_history_success(mocker):
+    mocker.patch('subprocess.run', mocked_helm_history)
+    release = "myrelease"
+    output = [{"revision": 1, "status": "deployed"}, {"revision": 2, "status": "uninstalled"}]
+    res = helm.history(release, None, None, None, 'kxi-operator')
+    res == output
+
+def test_history_fail(mocker):
+    error_msg = "command not found: helm"
+    mocker.patch('subprocess.run').side_effect = subprocess.CalledProcessError(1, "helm", error_msg)
+    release = "myrelease"
+    output = []
+    helm.history(release, False, None, None, 'kxi-operator') == output
+    
+def test_history_fail_json(mocker):
+    error_msg = "command not found: helm"
+    mocker.patch('subprocess.run').side_effect = subprocess.CalledProcessError(1, "helm", error_msg)
+    release = "myrelease"
+    output = []
+    helm.history(release, False, None, None, 'kxi-operator') == output
+            
