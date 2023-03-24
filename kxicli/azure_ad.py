@@ -35,7 +35,7 @@ class Group:
 class AzureADClient:
 
     def __init__(self, credential):
-        self.graph_client = GraphClient(credential=credential)
+        self.graph_client = GraphClient(credential=credential, scopes=["https://graph.microsoft.com/.default"])
 
     def get_azure_app_registration_by_name(self,
                                            azure_app_registration_name: str
