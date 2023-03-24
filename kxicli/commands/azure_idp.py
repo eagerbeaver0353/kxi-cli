@@ -1,4 +1,5 @@
 import copy
+import os
 from typing import List
 import click
 
@@ -6,7 +7,7 @@ from kxicli import azure_ad
 from keycloak import keycloak_admin
 from kxicli import common
 
-from azure.identity import InteractiveBrowserCredential
+from azure.identity import DefaultAzureCredential
 from kxicli.commands.azure import azure
 from functools import wraps, partial
 
@@ -26,6 +27,11 @@ arg_azure_app_registration_name = partial(
 arg_azure_ad_group_name = partial(
     click.option, '--azure-ad-group-name', help="Azure AD group name",
     type=click.STRING, required=True
+)
+
+arg_azure_enable_interactive_login = partial(
+    click.option, '--azure-enable-interactive-login/--azure-disable-interactive-login', help="Switches interactive login for azure. Default is enabled.",
+    type=click.BOOL, default = True
 )
 
 arg_hostname = partial(
@@ -105,6 +111,7 @@ def mapper():
 @idp.command(name="add")
 @arg_azure_tenant_id()
 @arg_azure_app_registration_name()
+@arg_azure_enable_interactive_login()
 @arg_hostname()
 @arg_keycloak_admin_realm()
 @arg_keycloak_admin_username()
@@ -116,6 +123,7 @@ def mapper():
 @log_exception(handle=(Exception))
 def idp_add(azure_tenant_id: str,
             azure_app_registration_name: str,
+            azure_enable_interactive_login: bool,
             hostname: str,
             keycloak_admin_realm: str,
             keycloak_admin_username: str,
@@ -141,7 +149,9 @@ def idp_add(azure_tenant_id: str,
         raise click.Abort(
             f'IdP with alias {keycloak_idp_alias} already exists in keycloak realm.')
 
-    azure_client = get_azure_ad_client(tenant_id=azure_tenant_id)
+    azure_client = get_azure_ad_client(
+        use_interactive_login=azure_enable_interactive_login,
+        tenant_id=azure_tenant_id)
 
     click.secho(
         f'Trying to get {azure_app_registration_name} app registration from {azure_tenant_id} tenant.')
@@ -214,6 +224,7 @@ def idp_list(hostname: str,
 @mapper.command("add")
 @arg_azure_tenant_id()
 @arg_azure_ad_group_name()
+@arg_azure_enable_interactive_login()
 @arg_hostname()
 @arg_keycloak_admin_realm()
 @arg_keycloak_admin_username()
@@ -226,6 +237,7 @@ def idp_list(hostname: str,
 @log_exception(handle=(Exception))
 def mapper_add(azure_tenant_id: str,
                azure_ad_group_name: str,
+               azure_enable_interactive_login: bool,
                hostname: str,
                keycloak_admin_realm: str,
                keycloak_admin_username: str,
@@ -250,7 +262,9 @@ def mapper_add(azure_tenant_id: str,
 
     raise_if_keycloak_idp_does_not_exists(keycloak_client, keycloak_idp_alias)
 
-    azure_client = get_azure_ad_client(azure_tenant_id)
+    azure_client = get_azure_ad_client(
+        use_interactive_login=azure_enable_interactive_login,
+        tenant_id=azure_tenant_id)
 
     group = azure_client.get_azure_ad_group_by_name(azure_ad_group_name)
 
@@ -374,5 +388,18 @@ def print_available_azure_app_registrations(azure_client):
     print(*registrations, sep='\n', )
 
 
-def get_azure_ad_client(tenant_id: str) -> azure_ad.AzureADClient:
-    return azure_ad.AzureADClient(credential=InteractiveBrowserCredential(tenant_id=tenant_id))
+def get_azure_ad_client(use_interactive_login: bool, tenant_id: str) -> azure_ad.AzureADClient:
+    return azure_ad.AzureADClient(credential=DefaultAzureCredential(
+        exclude_cli_credential = use_interactive_login,
+        exclude_environment_credential = use_interactive_login,
+        exclude_managed_identity_credential = use_interactive_login,
+        # According to the documentation of DefaultCredential, managed_identity_client_id:
+        # "The client ID of a user-assigned managed identity. Defaults to the value of the environment variable AZURE_CLIENT_ID, if any."
+        # However, after testing if we don't set this here, it picks a random identity.
+        managed_identity_client_id = os.environ.get('AZURE_CLIENT_ID', ""),
+        exclude_powershell_credential = True,
+        exclude_visual_studio_code_credential = True,
+        exclude_shared_token_cache_credential = True,
+        exclude_interactive_browser_credential = not use_interactive_login,
+        interactive_browser_tenant_id=tenant_id
+    ))
