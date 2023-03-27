@@ -22,7 +22,7 @@ from kxicli.commands.assembly import CONFIG_ANNOTATION
 from utils import mock_kube_secret_api, return_none, return_true, return_false, raise_not_found, \
     test_val_file, mock_validate_secret, mock_kube_crd_api, mock_helm_env, mock_helm_fetch, mock_list_kube_config_contexts, \
     mocked_helm_repo_list, test_helm_repo_cache, mock_load_kube_config, mock_load_kube_config_incluster, \
-    fake_docker_config_secret, mocked_helm_history_rollback, mocked_helm_history_rollback_same_operator
+    fake_docker_config_secret, mocked_helm_history_rollback, mocked_helm_history_rollback_same_operator, test_asm_file, test_asm_file2
 from cli_io import cli_input, cli_output
 from const import test_namespace,  test_chart_repo_name, test_chart_repo_url, \
     test_user, test_pass, test_docker_config_json, test_cert, test_key, test_ingress_cert_secret
@@ -53,8 +53,6 @@ test_output_file_updated_hostname = str(Path(__file__).parent / 'files' / 'outpu
 test_output_file_updated_passwords_config = str(Path(__file__).parent / 'files' / 'output-values-updated-client-passwords.yaml')
 test_output_file_updated_passwords_cmd_line = str(Path(__file__).parent / 'files' / 'output-values-updated-client-passwords-from-command-line.yaml')
 test_val_file_shared_keycloak = str(Path(__file__).parent / 'files' / 'test-values-shared-keycloak.yaml')
-test_asm_file = str(Path(__file__).parent / 'files' / 'assembly-v1.yaml')
-test_asm_file2 = str(Path(__file__).parent / 'files' / 'assembly2-v1.yaml')
 test_asm_name = 'basic-assembly'  # As per contents of test_asm_file
 test_asm_name2 = 'basic-assembly2'  # As per contents of test_asm_file2
 test_asm_backup =  str(Path(__file__).parent / 'files' / 'test-assembly-backup.yaml')

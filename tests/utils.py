@@ -22,6 +22,8 @@ fake_docker_config_secret: k8s.client.V1Secret = k8s.client.V1Secret(
         '.dockerconfigjson': base64.b64encode(fake_docker_config_yaml.encode('ascii'))
     }
 )
+test_asm_file = str(Path(__file__).parent / 'files' / 'assembly-v1.yaml')
+test_asm_file2 = str(Path(__file__).parent / 'files' / 'assembly2-v1.yaml')
 
 IPATH_KUBE_COREV1API = 'kubernetes.client.CoreV1Api'
 IPATH_KUBE_APIEXTENSTIONSV1API = 'kubernetes.client.ApiextensionsV1Api'
@@ -187,3 +189,11 @@ def mocked_helm_history_rollback_same_operator(release, output, show_operator, c
         res1 =[{"release": release, "revision": 1, "chart": "insights-1.4.1", "app_version":"1.4.1", "status": "deployed"}, {"release": release, "revision": 2, "chart": "insights-1.4.0", "app_version": "1.4.0", "status": "uninstalled"}]
         res2 =[{"release": release, "revision": 1, "chart": "kxi-operator-1.4.1", "app_version": "1.4.1", "status": "uninstalled"},{"release": release, "revision": 2, "chart": "kxi-operator-1.4.0", "app_version": "1.4.0", "status": "uninstalled"}]
         return res1,res2
+
+def get_assembly_name(file_path: str):
+   with open(file_path, "r") as file:
+    yaml_data = yaml.safe_load(file)
+
+    # extract the value of metadata.name
+    name = yaml_data["metadata"]["name"]
+    return name
