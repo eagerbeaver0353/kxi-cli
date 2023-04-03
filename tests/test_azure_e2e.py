@@ -15,8 +15,7 @@ from kxicli import main
 from kxicli.commands.azure import default_insights_namespace, default_insights_release
 from kxicli.common import get_default_val
 from test_azure import fake_version, fake_values_yaml, helm_version_checked, fake_chart_repo_url, read_secret
-from utils import temp_file, mock_helm_env, mock_kube_crd_api, mock_kube_secret_api, mock_validate_secret, \
-    fake_docker_config_yaml, raise_not_found, return_none, return_true
+import utils
 from test_install_e2e import mock_copy_secret, mocked_crd_exists, mocked_create_crd, mocked_delete_crd, mocked_installed_chart_json, \
     mocked_installed_operator_versions, mock_get_operator_version, test_operator_helm_name, mock__delete_assembly, DELETE_ASSEMBLIES_FUNC
 from test_assembly import ASSEMBLY_BACKUP_LIST, CUSTOM_OBJECT_API, mock_list_assemblies
@@ -125,7 +124,7 @@ def test_assembly_restore(mocker: MockerFixture):
     mocker.patch(fun_assembly_create_assemblies_from_file, return_true_list)
 
     runner = CliRunner()
-    with temp_file(default_assembly_backup_file) as asm_file:
+    with utils.temp_file(default_assembly_backup_file) as asm_file:
         with open(asm_file, mode='w') as f:
             f.write(a_test_asm_str)
         result = runner.invoke(
@@ -160,9 +159,9 @@ def test_assembly_delete(mocker: MockerFixture):
     )
     assert result.exit_code == 0
     assert delete_assembly_args == [
-        {'name': 'test_asm',  'namespace': 'test'},
-        {'name': 'test_asm2', 'namespace': 'test'},
-        {'name': 'test_asm3', 'namespace': 'test'}
+        {'name': 'test_asm',  'namespace': utils.namespace()},
+        {'name': 'test_asm2', 'namespace': utils.namespace()},
+        {'name': 'test_asm3', 'namespace': utils.namespace()}
     ]
 
 
@@ -170,7 +169,7 @@ def test_assembly_delete(mocker: MockerFixture):
 def test_assembly_backup(mocker: MockerFixture):
     mock_list_assemblies(mocker.patch(CUSTOM_OBJECT_API).return_value)
     runner = CliRunner()
-    with temp_file(get_default_val('assembly.backup.file')) as asm_file:
+    with utils.temp_file(get_default_val('assembly.backup.file')) as asm_file:
         result = runner.invoke(typing.cast(BaseCommand, main.cli), 
                                ['azure', 'assembly', 'backup', 
                                 '--namespace', default_insights_namespace,
@@ -181,13 +180,13 @@ def test_assembly_backup(mocker: MockerFixture):
         with open(asm_file, 'rb') as f:
             expect = yaml.full_load(f)
             assert expect == ASSEMBLY_BACKUP_LIST
-        
+
 
 def test_backup_assemblies_none(mocker: MockerFixture):
     mock_instance = mocker.patch(CUSTOM_OBJECT_API).return_value
     mock_instance.list_namespaced_custom_object.return_value = {'items': []}
     runner = CliRunner()
-    with temp_file(get_default_val('assembly.backup.file')) as asm_file:
+    with utils.temp_file(get_default_val('assembly.backup.file')) as asm_file:
         result = runner.invoke(typing.cast(BaseCommand, main.cli), 
                                ['azure', 'assembly', 'backup', 
                                 '--namespace', default_insights_namespace,
@@ -203,19 +202,19 @@ def test_install(mocker: MockerFixture):
     subprocess_params = []
 
     subprocess_run_helm_success_helm_install_insights = partial(subprocess_run_helm_success_install_append_res, res=subprocess_params)
-    mock_kube_secret_api(mocker, read=read_secret)
+    utils.mock_kube_secret_api(mocker, read=read_secret)
     mocker.patch(fun_subprocess_run, subprocess_run_helm_success_helm_install_insights)
-    mocker.patch(fun_install_create_namespace, return_none)
+    mocker.patch(fun_install_create_namespace, utils.return_none)
     mocker.patch(fun_get_helm_version_checked, get_helm_version_checked)
     mocker.patch(fun_assembly_create_assemblies_from_file, return_true_list)
     mocker.patch('kxicli.commands.install.get_installed_charts', lambda *args: [])
     mocker.patch(fun_install_operator_versions, lambda *args: ([], []))
-    mock_validate_secret(mocker)
+    utils.mock_validate_secret(mocker)
     mock_get_operator_version(mocker)
     mock_copy_secret(mocker)
 
     runner = CliRunner()
-    with temp_file(file_name='values.yaml') as values_file:
+    with utils.temp_file(file_name='values.yaml') as values_file:
         values_file_name = values_file
         with open(values_file, mode='w') as vf:
             vf.write(fake_values_yaml)
@@ -236,18 +235,16 @@ def test_install(mocker: MockerFixture):
     operator_install = subprocess_params[0]
     insights_install = subprocess_params[1]
     assert 'DOCKER_CONFIG' in dict(insights_install['env'])
-    assert insights_install['dockerconfigjson'] == fake_docker_config_yaml
-    assert operator_install['dockerconfigjson'] == fake_docker_config_yaml
+    assert insights_install['dockerconfigjson'] == utils.fake_docker_config_yaml
+    assert operator_install['dockerconfigjson'] == utils.fake_docker_config_yaml
     assert operator_install['cmd'] == [
-                'helm', 'upgrade', '--install', '-f', values_file_name, default_insights_release, f'{fake_chart_repo_url}/kxi-operator',
-                '--version', fake_version,
+                'helm', 'upgrade', '--install', '--version', fake_version, '-f', values_file_name, default_insights_release, f'{fake_chart_repo_url}/kxi-operator',
                 '--namespace', 'kxi-operator'
             ]
     assert insights_install['cmd'] == [
-                'helm', 'upgrade', '--install', '-f', values_file_name, default_insights_release, f'{fake_chart_repo_url}/insights',
+                'helm', 'upgrade', '--install', '--version', fake_version, '-f', values_file_name, default_insights_release, f'{fake_chart_repo_url}/insights',
                 '--set', 'keycloak.importUsers=true',
-                '--version', fake_version,
-                '--namespace', 'test'
+                '--namespace', utils.namespace()
             ]
 
 
@@ -260,7 +257,7 @@ def test_uninstall(mocker: MockerFixture):
     mocker.patch(fun_assembly_get_assemblies_list, mocked_get_assemblies_list)
     mocker.patch(fun_common_get_existing_crds, common_get_existing_crds)
     mocker.patch(fun_common_delete_crd, common_delete_crd)
-    mocker.patch(fun_install_insights_installed, return_true)
+    mocker.patch(fun_install_insights_installed, utils.return_true)
     mocker.patch(fun_assembly_backup_assemblies, mocked_backup_assemblies)
     mocker.patch(fun_assembly_delete_running_assemblies, return_true_list)
     mocker.patch(fun_get_helm_version_checked, get_helm_version_checked)
@@ -268,7 +265,7 @@ def test_uninstall(mocker: MockerFixture):
 
 
     runner = CliRunner()
-    with temp_file(default_assembly_backup_file) as asm_file:
+    with utils.temp_file(default_assembly_backup_file) as asm_file:
         with open(asm_file, mode='w') as f:
             f.write(a_test_asm_str)
         result = runner.invoke(
@@ -285,10 +282,10 @@ def test_uninstall(mocker: MockerFixture):
     assert len(subprocess_params) == 2
     insights_uninstall = subprocess_params[0]
     operator_uninstall = subprocess_params[1]
-    
-    assert insights_uninstall['cmd'] == ['helm', 'uninstall', default_insights_release, '--namespace', 'test']
+
+    assert insights_uninstall['cmd'] == ['helm', 'uninstall', default_insights_release, '--namespace', utils.namespace()]
     assert operator_uninstall['cmd'] == ['helm', 'uninstall', 'test-op-helm', '--namespace', 'kxi-operator']
-    
+
 
 def test_upgrade(mocker: MockerFixture):
     global subprocess_params
@@ -296,30 +293,31 @@ def test_upgrade(mocker: MockerFixture):
 
     subprocess_run_helm_success_helm_install_insights = partial(subprocess_run_helm_success_install_append_res, res=subprocess_params)
     mocker.patch(fun_subprocess_run, subprocess_run_helm_success_helm_install_insights)
-    mock_kube_secret_api(mocker, read=read_secret)
-    mocker.patch(fun_install_create_namespace, return_none)
+    utils.mock_kube_secret_api(mocker, read=read_secret)
+    utils.mock_helm_get_values(mocker, utils.test_val_data)
+    mocker.patch(fun_install_create_namespace, utils.return_none)
     mocker.patch(fun_get_helm_version_checked, get_helm_version_checked)
     mocker.patch(fun_assembly_create_assemblies_from_file, return_true_list)
     mocker.patch(fun_assembly_get_assemblies_list, mocked_get_assemblies_list)
     mocker.patch(fun_common_get_existing_crds, common_get_existing_crds)
     mocker.patch(fun_common_delete_crd, common_delete_crd)
-    mocker.patch(fun_install_insights_installed, return_true)
+    mocker.patch(fun_install_insights_installed, utils.return_true)
     mocker.patch(fun_assembly_backup_assemblies, mocked_backup_assemblies)
     mocker.patch(fun_assembly_delete_running_assemblies, return_true_list)
     mocker.patch('kxicli.commands.install.get_installed_charts', mocked_installed_chart_json)
     mocker.patch(fun_install_operator_versions, mocked_installed_operator_versions)
     mocker.patch('kxicli.common.crd_exists', mocked_crd_exists)
-    mock_validate_secret(mocker)
+    utils.mock_validate_secret(mocker)
     mock_get_operator_version(mocker)
     mock_copy_secret(mocker)
-    mock_helm_env(mocker)
-    mock_kube_crd_api(mocker, create=mocked_create_crd, delete=mocked_delete_crd)
+    utils.mock_helm_env(mocker)
+    utils.mock_kube_crd_api(mocker, create=mocked_create_crd, delete=mocked_delete_crd)
 
     runner = CliRunner()
-    with temp_file(default_assembly_backup_file) as asm_file:
+    with utils.temp_file(default_assembly_backup_file) as asm_file:
         with open(asm_file, mode='w') as f:
             f.write(a_test_asm_str)
-        with temp_file(file_name='values.yaml') as values_file:
+        with utils.temp_file(file_name='values.yaml') as values_file:
             with open(values_file, mode='w') as vf:
                 vf.write(fake_values_yaml)
             values_file_name = values_file
@@ -342,22 +340,20 @@ def test_upgrade(mocker: MockerFixture):
     operator_install = subprocess_params[1]
     insights_install = subprocess_params[2]
     assert 'DOCKER_CONFIG' in dict(insights_install['env'])
-    assert insights_install['dockerconfigjson'] == fake_docker_config_yaml
-    assert operator_install['dockerconfigjson'] == fake_docker_config_yaml
-    
+    assert insights_install['dockerconfigjson'] == utils.fake_docker_config_yaml
+    assert operator_install['dockerconfigjson'] == utils.fake_docker_config_yaml
+
     assert helm_fetch['cmd'] == ['helm', 'fetch', f'{fake_chart_repo_url}/kxi-operator',
         '--destination', os.getcwd() + '/tests/files/helm',
         '--version', fake_version
         ]
     assert operator_install['cmd'] == [
-                'helm', 'upgrade', '--install', '-f', values_file_name, test_operator_helm_name, f'{fake_chart_repo_url}/kxi-operator',
-                '--version', fake_version,
+                'helm', 'upgrade', '--install', '--version', fake_version, '-f', values_file_name, test_operator_helm_name, f'{fake_chart_repo_url}/kxi-operator',
                 '--namespace', 'kxi-operator'
             ]
     assert insights_install['cmd'] == [
-                'helm', 'upgrade', '--install', '-f', values_file_name, default_insights_release, f'{fake_chart_repo_url}/insights',
-                '--version', fake_version,
-                '--namespace', 'test'
+                'helm', 'upgrade', '--install', '--version', fake_version, '-f', values_file_name, default_insights_release, f'{fake_chart_repo_url}/insights',
+                '--namespace', utils.namespace()
             ]
 
 def test_upgrade_with_no_assemblies_running(mocker: MockerFixture):
@@ -366,27 +362,28 @@ def test_upgrade_with_no_assemblies_running(mocker: MockerFixture):
 
     subprocess_run_helm_success_helm_install_insights = partial(subprocess_run_helm_success_install_append_res, res=subprocess_params)
     mocker.patch(fun_subprocess_run, subprocess_run_helm_success_helm_install_insights)
-    mock_kube_secret_api(mocker, read=read_secret)
-    mocker.patch(fun_install_create_namespace, return_none)
+    utils.mock_kube_secret_api(mocker, read=read_secret)
+    utils.mock_helm_get_values(mocker, utils.test_val_data)
+    mocker.patch(fun_install_create_namespace, utils.return_none)
     mocker.patch(fun_get_helm_version_checked, get_helm_version_checked)
     mocker.patch(fun_assembly_create_assemblies_from_file, return_true_list)
-    mocker.patch(fun_assembly_get_assemblies_list, raise_not_found)
+    mocker.patch(fun_assembly_get_assemblies_list, utils.raise_not_found)
     mocker.patch(fun_common_get_existing_crds, common_get_existing_crds)
     mocker.patch(fun_common_delete_crd, common_delete_crd)
-    mocker.patch(fun_install_insights_installed, return_true)
-    mocker.patch(fun_assembly_backup_assemblies, return_none)
+    mocker.patch(fun_install_insights_installed, utils.return_true)
+    mocker.patch(fun_assembly_backup_assemblies, utils.return_none)
     mocker.patch(fun_assembly_delete_running_assemblies, return_true_list)
     mocker.patch('kxicli.commands.install.get_installed_charts', mocked_installed_chart_json)
     mocker.patch(fun_install_operator_versions, mocked_installed_operator_versions)
     mocker.patch('kxicli.common.crd_exists', mocked_crd_exists)
-    mock_validate_secret(mocker)
+    utils.mock_validate_secret(mocker)
     mock_get_operator_version(mocker)
     mock_copy_secret(mocker)
-    mock_helm_env(mocker)
-    mock_kube_crd_api(mocker, create=mocked_create_crd, delete=mocked_delete_crd)
+    utils.mock_helm_env(mocker)
+    utils.mock_kube_crd_api(mocker, create=mocked_create_crd, delete=mocked_delete_crd)
 
     runner = CliRunner()
-    with temp_file(file_name='values.yaml') as values_file:
+    with utils.temp_file(file_name='values.yaml') as values_file:
         with open(values_file, mode='w') as vf:
             vf.write(fake_values_yaml)
         values_file_name = values_file
@@ -408,22 +405,20 @@ def test_upgrade_with_no_assemblies_running(mocker: MockerFixture):
     operator_install = subprocess_params[1]
     insights_install = subprocess_params[2]
     assert 'DOCKER_CONFIG' in dict(insights_install['env'])
-    assert insights_install['dockerconfigjson'] == fake_docker_config_yaml
-    assert operator_install['dockerconfigjson'] == fake_docker_config_yaml
+    assert insights_install['dockerconfigjson'] == utils.fake_docker_config_yaml
+    assert operator_install['dockerconfigjson'] == utils.fake_docker_config_yaml
 
     assert helm_fetch['cmd'] == ['helm', 'fetch', f'{fake_chart_repo_url}/kxi-operator',
         '--destination', os.getcwd() + '/tests/files/helm',
         '--version', fake_version
         ]
     assert operator_install['cmd'] == [
-                'helm', 'upgrade', '--install', '-f', values_file_name, test_operator_helm_name, f'{fake_chart_repo_url}/kxi-operator',
-                '--version', fake_version,
+                'helm', 'upgrade', '--install', '--version', fake_version, '-f', values_file_name, test_operator_helm_name, f'{fake_chart_repo_url}/kxi-operator',
                 '--namespace', 'kxi-operator'
             ]
     assert insights_install['cmd'] == [
-                'helm', 'upgrade', '--install', '-f', values_file_name, default_insights_release, f'{fake_chart_repo_url}/insights',
-                '--version', fake_version,
-                '--namespace', 'test'
+                'helm', 'upgrade', '--install', '--version', fake_version, '-f', values_file_name, default_insights_release, f'{fake_chart_repo_url}/insights',
+                '--namespace', utils.namespace()
             ]
 
 def test_restore_assemblies_exists(mocker: MockerFixture):
@@ -434,7 +429,7 @@ def test_restore_assemblies_exists(mocker: MockerFixture):
     mocker.patch(fun_assembly_create_assemblies_from_file, mocked_create_assemblies_from_file_exists)
     mocker.patch(fun_click_confirm, click_confirm_yes)
     runner = CliRunner()
-    with temp_file(get_default_val('assembly.backup.file')) as asm_file:
+    with utils.temp_file(get_default_val('assembly.backup.file')) as asm_file:
         with open(asm_file, mode='w') as f:
             f.write(asm_file_content)
         runner.invoke(typing.cast(BaseCommand, main.cli), 
@@ -448,10 +443,10 @@ def test_restore_assemblies_exists(mocker: MockerFixture):
     assert asm_file_content == mocked_assembly_res['asm_file_content']
 
 def test_restore_assemblies_not_exists(mocker: MockerFixture):
-    mocker.patch('kxicli.commands.assembly._create_assembly', return_true)
+    mocker.patch('kxicli.commands.assembly._create_assembly', utils.return_true)
     mocker.patch(fun_click_confirm, click_confirm_yes)
     runner = CliRunner()
-    with temp_file(get_default_val('assembly.backup.file')) as asm_file:
+    with utils.temp_file(get_default_val('assembly.backup.file')) as asm_file:
         result = runner.invoke(typing.cast(BaseCommand, main.cli), 
                             ['azure', 'assembly', 'restore', 
                             '--namespace', default_insights_namespace,

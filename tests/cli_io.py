@@ -44,8 +44,6 @@ def cli_input(
     deploy_keycloak=True,
     values_exist = False,
     overwrite_values = 'y',
-    install_config_exists = False,
-    overwrite_install_config = 'n',
     hostname = test_host,
     hostname_source='config',
     chart_repo_existing=None,
@@ -107,10 +105,6 @@ def cli_input(
     elif values_exist:
         inp = append_message(inp, f'{overwrite_values}\n{output_file}_new')
 
-    # install config
-    if install_config_exists:
-        inp = append_message(inp, overwrite_install_config)
-
     return inp
 
 
@@ -149,8 +143,6 @@ def cli_output(
     deploy_keycloak=True,
     values_exist = False,
     overwrite_values = 'y',
-    install_config_exists = False,
-    overwrite_install_config = 'n',
     hostname = test_host,
     hostname_source = 'config',
     chart_repo_existing=None,
@@ -183,12 +175,10 @@ def cli_output(
     keycloak = output_keycloak(cli_config, deploy_keycloak, kc_secret_exists, kc_secret_is_valid, kc_secret_overwrite,
         pg_secret_exists, pg_secret_is_valid, pg_secret_overwrite, gui_secret_source, operator_secret_source)
     values = output_values_file(output_file, values_exist, overwrite_values)
-    install_config = output_install_config(install_config_exists, overwrite_install_config)
 
     out = output_setup_start(incluster)
-    out = f'{out}\nUsing install.configSecret from embedded default values: kxi-install-config'
     out = f'{out}\n{ingress}\n{chart}\n{license}\n{image}'
-    out = f'{out}\n{client}\n{keycloak}{values}\n{install_config}'
+    out = f'{out}\n{client}\n{keycloak}{values}'
 
     if overwrite_values == 'n':
         output_file = f'{output_file}_new'
@@ -316,21 +306,6 @@ def output_ingress(hostname, hostname_source, ingress_sec_exists, provide_ingres
 
     return str
 
-
-def output_install_config(exists, overwrite):
-    secret_name = common.get_default_val('install.configSecret')
-    prompt = f'{phrases.secret_exist.format(name=secret_name)} [y/N]: {overwrite}'
-
-    if not exists:
-        str = phrases.secret_created.format(name=secret_name)
-    elif overwrite == 'y':
-        overwriting = phrases.secret_overwriting.format(name=secret_name)
-        updated = phrases.secret_updated.format(name=secret_name)
-        str = f'{prompt}\n{overwriting}\n{updated}'
-    else:
-        str = prompt
-
-    return str
 
 def output_keycloak_clients(cli_config, gui_secret_source, operator_secret_source):
     gui = output_client_prompt(cli_config, 'guiClientSecret', gui_secret_source)

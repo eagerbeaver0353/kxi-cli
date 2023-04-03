@@ -22,7 +22,6 @@ def create_user(remove_user):
     runner.invoke(main.cli, ["user", "create", TEST_USER, "--password", TEST_PASSWORD])
 
 # Tests
-
 def test_user_create(remove_user):
     runner = CliRunner()
     result = runner.invoke(main.cli, ["user", "create", TEST_USER, "--password", TEST_PASSWORD])

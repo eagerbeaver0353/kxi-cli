@@ -8,7 +8,6 @@ from pytest_mock import MockerFixture
 from subprocess import CompletedProcess, CalledProcessError
 from kxicli.commands import install
 
-
 from kxicli.resources import helm
 from utils import fake_docker_config_yaml, return_none
 
@@ -29,7 +28,6 @@ CHART = 'kxi-operator'
 DEST =  HELM_RESPOSITORY_CACHE_VAL
 VERSION = '1.2.3'
 NAMESPACE = 'test-namespace'
-VALUES_SECRET: dict = {'abc':'def'}
 
 fun_install_create_namespace: str = 'kxicli.resources.helm.create_namespace'
 fun_subprocess_check_out: str = 'subprocess.check_output'
@@ -136,19 +134,12 @@ def test_fetch_raises_exception(mocker):
     assert isinstance(e.value, click.ClickException)
     assert isinstance(e.value.message, subprocess.CalledProcessError)
 
-def test_helm_upgrade_install_without_file_or_secret_raises_exception():
-    with pytest.raises(Exception) as e:
-        helm.upgrade_install('test_release', 'test_chart', values_file=None, values_secret=None)
-
-    assert isinstance(e.value, click.ClickException)
-    assert e.value.message == 'Must provide one of values file or secret. Exiting install'
-
 def test_helm_upgrade_install_error_raises_exception(mocker):
-    mocker.patch('subprocess.run').side_effect = subprocess.CalledProcessError(1, ['helm', 'upgrade'])
+    mocker.patch('subprocess.run').side_effect = subprocess.CalledProcessError(1, ['helm', 'upgrade'], stderr=b'Deployment failed')
     with pytest.raises(Exception) as e:
         helm.upgrade_install('test_release', 'test_chart', values_file='test-values-file.yaml')
     assert isinstance(e.value, click.ClickException)
-    assert e.value.message == "Command '['helm', 'upgrade']' returned non-zero exit status 1."
+    assert e.value.message == 'Command "helm upgrade" failed with output:\n  Deployment failed'
 
 
 def test_helm_version_valid(mocker: MockerFixture):
@@ -170,8 +161,7 @@ def test_helm_version_exception(mocker: MockerFixture):
 def test_helm_install_success(mocker: MockerFixture):
     res: dict = {}
     expected_cmd: List[str] = [
-        'helm', 'upgrade', '--install', '-f', '-', RELEASE, CHART,
-        '--version', VERSION,
+        'helm', 'upgrade', '--install', '--version', VERSION, RELEASE, CHART,
         '--namespace', NAMESPACE
     ]
 
@@ -183,7 +173,6 @@ def test_helm_install_success(mocker: MockerFixture):
     actual_res = helm.upgrade_install(
         release=RELEASE,
         chart=CHART,
-        values_secret=VALUES_SECRET,
         version=VERSION,
         namespace=NAMESPACE,
         docker_config=fake_docker_config_yaml
@@ -205,7 +194,6 @@ def test_helm_install_fail(mocker: MockerFixture):
         helm.upgrade_install(
             release=RELEASE,
             chart=CHART,
-            values_secret=VALUES_SECRET,
             version=VERSION,
             namespace=NAMESPACE,
             docker_config=fake_docker_config_yaml

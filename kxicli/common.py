@@ -1,9 +1,12 @@
+from __future__ import annotations
+
 import sys
 
 import click
 import kubernetes as k8s
 from pathlib import Path
 import requests
+import subprocess
 import tarfile
 import time
 
@@ -18,8 +21,6 @@ key_chart_repo_url = 'chart.repo.url'
 key_chart_repo_username = 'chart.repo.username'
 key_chart_repo_password = 'chart.repo.password'
 key_client_cert_secret = 'client.cert.secret'
-key_install_config_secret = 'install.configSecret'
-key_install_config_secret_data_name = 'install.configSecretDataName'
 key_ingress_cert_secret = 'ingress.cert.secret'
 key_ingress_cert = 'ingress.cert'
 key_ingress_key ='ingress.key'
@@ -82,7 +83,6 @@ HELP_TEXT = {
     key_ingress_key: 'File path to TLS private key for the ingress',
     key_ingress_certmanager_disabled: 'Flag to disable usage of TLS certmanager',
     key_install_outputFile: 'Name for the generated values file',
-    key_install_config_secret: 'Secret containing helm install values',
     key_install_filepath: 'Values file to install with',
     key_assembly_backup_file: 'Filepath to store state of running assemblies',
     key_release_name: 'Release name for the install',
@@ -107,8 +107,6 @@ DEFAULT_VALUES = {
     key_keycloak_postgresqlSecret: 'kxi-postgresql',
     key_ingress_cert_secret: 'kxi-ingress-cert',
     key_install_outputFile: 'values.yaml',
-    key_install_config_secret: 'kxi-install-config',
-    key_install_config_secret_data_name: 'values.yaml',
     key_assembly_backup_file: 'kxi-assembly-state.yaml',
     key_release_name: 'insights',
     key_keycloak_realm: 'insights',
@@ -137,9 +135,9 @@ def get_default_val(option):
         return DEFAULT_VALUES[option]
 
     return None
-    
-            
-def validate_hostname(hostname): 
+
+
+def validate_hostname(hostname):
     if hostname is None:
         raise click.ClickException(phrases.hostname_none)
     elif not hostname.startswith(('http://', 'https://')):
@@ -291,3 +289,24 @@ def enter_password(msg: str):
         password = enter_password(msg)
 
     return password
+
+def try_decode(msg: bytes | str, **decode_args):
+    if isinstance(msg, bytes):
+        try:
+            msg = msg.decode(**decode_args)
+        except AttributeError:
+            msg = 'Could not decode message'
+    elif msg is None:
+        msg = ''
+    return msg
+
+
+def parse_called_process_error(exception: subprocess.CalledProcessError):
+    encoding = 'ascii'
+    stdout = try_decode(exception.stdout, encoding=encoding)
+    stderr = try_decode(exception.stderr, encoding=encoding)
+
+    # reconstruct the failed command into something that can be copy/pasted
+    command = " ".join(exception.cmd)
+
+    return f'Command "{command}" failed with output:\n {stdout} {stderr}'

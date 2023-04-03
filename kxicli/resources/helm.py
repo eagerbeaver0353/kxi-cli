@@ -1,16 +1,16 @@
 import click
 import os
 import subprocess
-import sys
 from functools import lru_cache
 from typing import List
 import json
+import yaml
 
-import click
 from click import ClickException
 from packaging.version import Version
 
 from kxicli import log
+from kxicli.common import parse_called_process_error
 from kxicli.commands.common.docker import temp_docker_config
 from kxicli.commands.common.namespace import create_namespace
 
@@ -84,53 +84,45 @@ def upgrade_install(
         version: str = None,
         namespace: str = None,
         values_file: str = None,
-        values_secret: str = None
+        existing_values: str = None
 ) -> subprocess.CompletedProcess:
     """Call 'helm upgrade install' using subprocess.run"""
 
     base_command = ['helm', 'upgrade', '--install']
 
-    if values_secret:
-        base_command = base_command + ['-f', '-']
-        input_arg = values_secret
-        text_arg = True
-    else:
-        input_arg=None
-        text_arg=None
-
-    if values_file:
-        base_command = base_command + ['-f', values_file]
-
-    base_command = base_command + [release, chart]
-    base_command = base_command + args    
-
+    input_arg = None
+    text_arg = None
     version_msg = ''
+
     if version:
         version_msg = ' version ' + version
         base_command = base_command + ['--version', version]
+
     if values_file:
-        if values_secret:
-            click.echo(f'Installing chart {chart}{version_msg} with values from secret and values file from {values_file}')
-        else:
-            click.echo(f'Installing chart {chart}{version_msg} with values file from {values_file}')
-    else:
-        if values_secret:
-            click.echo(f'Installing chart {chart}{version_msg} with values from secret')
-        else:
-            raise click.ClickException(f'Must provide one of values file or secret. Exiting install')
-            
+        click.echo(f'Installing chart {chart}{version_msg} with values file from {values_file}')
+        base_command = base_command + ['-f', values_file]
+    elif existing_values:
+        click.echo(f'Installing chart {chart}{version_msg} with previously used values')
+        base_command = base_command + ['-f', '-']
+        input_arg = existing_values
+        text_arg = True
+
+    base_command = base_command + [release, chart]
+    base_command = base_command + args
+
     if namespace:
         base_command = base_command + ['--namespace', namespace]
-        create_namespace(namespace)                
-        
+        create_namespace(namespace)
+
     try:
         log.debug(f'Upgrade install command {base_command}')
         with temp_docker_config(docker_config) as temp_dir:
             helm_env = os.environ.copy()
             helm_env['DOCKER_CONFIG'] = temp_dir
-            return subprocess.run(base_command, check=True, input=input_arg, text=text_arg, env=helm_env)
+            return subprocess.run(base_command, check=True, input=input_arg, text=text_arg, env=helm_env, capture_output=True)
     except subprocess.CalledProcessError as e:
-        raise ClickException(str(e))
+        msg = parse_called_process_error(e)
+        raise ClickException(msg)
 
 
 def uninstall(release, namespace=None):
@@ -183,6 +175,16 @@ def _get_helm_version() -> LocalHelmVersion:
 def repo_update():
     subprocess.run(['helm', 'repo', 'update'], check=True)
 
+def get_values(release, namespace=None):
+    cmd = ['helm', 'get', 'values', release]
+    if namespace is not None:
+        cmd = cmd + ['--namespace', namespace]
+
+    values = yaml.safe_load(subprocess.run(cmd, check=True, capture_output=True, text=True).stdout)
+    values.pop('USER-SUPPLIED VALUES', None)
+
+    return values
+
 def history(release, output, show_operator, current_operator_version, current_operator_release):
     """Call 'helm history <release>' using subprocess.run"""
     log.debug('Attempting to call: helm history' + f'{release}')
@@ -204,12 +206,12 @@ def history(release, output, show_operator, current_operator_version, current_op
             try:
                 result2 = subprocess.run(['helm', 'history', current_operator_release, '--namespace', 'kxi-operator'],stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=True)
                 output2 = result2.stdout.decode('utf-8').split('\n')[1:]
-            except subprocess.CalledProcessError as e:                
+            except subprocess.CalledProcessError as e:
                 if current_operator_version == []:
                     output2 = {"Unable to retrieve operator version"}
                 else:
                     output2 = {f"Operator is not managed by helm but is currently on version {current_operator_version}"}
-            
+
             res = output1 + '\n' + '\n'.join(output2)
             return print(res)
     except subprocess.CalledProcessError as e:

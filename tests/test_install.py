@@ -286,12 +286,12 @@ def test_copy_secret_409_exception_when_creating_secret_does_not_raise_exception
 
 
 def test_get_secret_returns_decoded_secret(mocker):
-    mock_kube_secret_api(mocker, read=mocked_read_namespaced_secret_return_values)
+    mock_kube_secret_api(mocker, read=mocked_read_namespaced_secret)
 
     s = secret.Secret(test_ns, test_secret)
-    res = install.get_secret(s, test_values_yaml)
+    res = install.get_secret(s, test_secret_key)
 
-    assert res == yaml.dump(test_vals)
+    assert res == base64.b64decode(test_secret_data[test_secret_key]).decode('ascii')
 
 
 def test_get_secret_when_does_not_exist(mocker):
@@ -319,88 +319,6 @@ def test_patch_secret_returns_updated_k8s_secret(mocker):
     assert res.type == test_secret_type
     assert res.metadata.name == test_secret
     assert res.data == s.data
-
-
-def test_create_install_config_secret_when_does_not_exists(mocker):
-    mock_kube_secret_api(mocker)
-
-    s = secret.Secret(test_ns, test_secret, install.SECRET_TYPE_OPAQUE, test_values_keys)
-    s = install.create_install_config(s, test_values_yaml, test_vals)
-    res = s.get_body()
-
-    assert res.type == test_secret_type
-    assert res.metadata.name == test_secret
-    assert 'values.yaml' in res.data
-    assert yaml.full_load(base64.b64decode(res.data['values.yaml'])) == test_vals
-
-
-def test_create_install_config_secret_when_secret_exists_and_user_overwrites(mocker,monkeypatch):
-    mock_kube_secret_api(mocker, read=mocked_read_namespaced_secret_return_values)
-
-    # Create new values to write to secret
-    new_values = {"secretName": "a_test_secret_name"}
-
-    # patch stdin to 'y' for the prompt confirming to overwrite the secret
-    monkeypatch.setattr(SYS_STDIN, io.StringIO('y'))
-    s = secret.Secret(test_ns, test_secret, install.SECRET_TYPE_OPAQUE, test_values_keys)
-    install.create_install_config(s, test_values_yaml, new_values)
-    res = s.get_body()
-
-    assert res.type == test_secret_type
-    assert res.metadata.name == test_secret
-    assert 'values.yaml' in res.data
-    # assert that secret is updated with new_values
-    assert yaml.full_load(base64.b64decode(res.data['values.yaml'])) == new_values
-
-
-def test_create_install_config_secret_when_secret_exists_and_user_declines_overwrite(mocker, monkeypatch):
-    mock_kube_secret_api(mocker, read=mocked_read_namespaced_secret_return_values)
-
-    # update contents of values to write to secret
-    new_values = {"secretName": "a_test_secret_name"}
-
-    # patch stdin to 'n' for the prompt, declining to overwrite the secret
-    monkeypatch.setattr(SYS_STDIN, io.StringIO('n'))
-    s = secret.Secret(test_ns, test_secret, install.SECRET_TYPE_OPAQUE, test_values_keys)
-    s = install.create_install_config(s, test_values_yaml, new_values)
-    res = s.read()
-
-    assert res.type == test_secret_type
-    assert res.metadata.name == test_secret
-    assert 'values.yaml' in res.data
-    # assert that secret is unchanged
-    assert yaml.full_load(base64.b64decode(res.data['values.yaml'])) == test_vals
-
-
-def test_create_install_config_secret_with_custom_data_key(mocker):
-    mock_kube_secret_api(mocker)
-
-    s = secret.Secret(test_ns, test_secret, install.SECRET_TYPE_OPAQUE, test_values_keys)
-    s = install.create_install_config(s, 'a_test_data_key', test_vals)
-    res = s.get_body()
-
-    assert res.type == test_secret_type
-    assert res.metadata.name == test_secret
-    assert 'a_test_data_key' in res.data
-    assert yaml.full_load(base64.b64decode(res.data['a_test_data_key'])) == test_vals
-
-
-def test_build_install_secret():
-    data = {"secretName": "a_test_secret_name"}
-    s = secret.Secret(test_ns, test_secret, install.SECRET_TYPE_OPAQUE, test_values_keys)
-    s = install.populate_install_secret(s, test_values_yaml, {'values': data})
-    res = s.get_body().data
-
-    assert 'values.yaml' in res
-    assert yaml.full_load(base64.b64decode(res['values.yaml'])) == data
-
-
-def test_get_install_values_returns_values_from_secret(mocker):
-    mock_kube_secret_api(mocker, read=mocked_read_namespaced_secret_return_values)
-    _, decoded_values = install.get_install_values(test_ns, test_secret, test_values_yaml)
-    assert decoded_values == yaml.dump(test_vals)
-    _, decoded_values = install.get_install_values(test_ns, None, test_values_yaml)
-    assert decoded_values == None
 
 
 def test_get_operator_version_returns_operator_version_if_passed_regardless_of_rc():
@@ -510,45 +428,20 @@ def test_sanitize_auth_url():
 
 
 def test_get_image_and_license_secret_from_values_returns_defaults():
-    assert install.get_image_and_license_secret_from_values(None, None, None, None) == (
+    assert install.get_image_and_license_secret_from_values(None, None, None) == (
     'kxi-nexus-pull-secret', 'kxi-license')
-
-
-def test_get_image_and_license_secret_from_values_returns_from_secret():
-    test_vals_secret = copy.deepcopy(test_vals)
-    test_vals_secret['global']['imagePullSecrets'] = [{'name': 'image-pull-from-secret'}]
-    test_vals_secret['global']['license']['secretName'] = 'license-from-secret'
-    assert install.get_image_and_license_secret_from_values(str(test_vals_secret), None, None, None) == (
-    'image-pull-from-secret', 'license-from-secret')
-
-
-def test_get_image_and_license_secret_from_values_file_overrides_secret():
-    test_vals_secret = copy.deepcopy(test_vals)
-    test_vals_secret['global']['imagePullSecrets'] = [{'name': 'image-pull-from-secret'}]
-    test_vals_secret['global']['license']['secretName'] = 'license-from-secret'
-    assert install.get_image_and_license_secret_from_values(str(test_vals_secret), test_val_file, None, None) == (
-    'kxi-nexus-pull-secret', 'kxi-license')
-
 
 def test_get_image_and_license_secret_from_values_args_overrides_secret_and_file():
     test_vals_secret = copy.deepcopy(test_vals)
     test_vals_secret['global']['imagePullSecrets'] = [{'name': 'image-pull-from-secret'}]
     test_vals_secret['global']['license']['secretName'] = 'license-from-secret'
-    assert install.get_image_and_license_secret_from_values(str(test_vals_secret), test_val_file, 'image-pull-from-arg',
+    assert install.get_image_and_license_secret_from_values(test_val_file, 'image-pull-from-arg',
                                                             'license-from-arg') == (
            'image-pull-from-arg', 'license-from-arg')
 
-
-def test_get_image_and_license_secret_returns_error_when_invalid_secret_passed():
-    with pytest.raises(Exception) as e:
-        install.get_image_and_license_secret_from_values(test_lic_file, None, None, None)
-    assert isinstance(e.value, click.ClickException)
-    assert 'Invalid values secret' in e.value.message
-
-
 def test_get_image_and_license_secret_returns_error_when_invalid_file_passed():
     with pytest.raises(Exception) as e:
-        install.get_image_and_license_secret_from_values(None, test_lic_file, None, None)
+        install.get_image_and_license_secret_from_values(test_lic_file, None, None)
     assert isinstance(e.value, click.ClickException)
     assert f'Invalid values file' in e.value.message
 
@@ -798,7 +691,7 @@ def test_check_for_operator_install_errors_when_incompatible_operator_is_not_man
 
 def test_load_values_stores_exception_when_values_file_does_not_exist():
     with pytest.raises(Exception) as e:
-        install.load_values_stores(test_secret, 'a-non-existant-file')
+        install.load_values_stores('a-non-existant-file')
     assert isinstance(e.value, click.ClickException)
     assert 'File not found: a-non-existant-file. Exiting' in e.value.message
 
@@ -808,7 +701,7 @@ def test_load_values_stores_exception_when_invalid_values_file_provided():
         with open(new_file, 'w') as f:
             f.write('test: {this is not a yaml')
         with pytest.raises(Exception) as e:
-            install.load_values_stores(test_secret, new_file)
+            install.load_values_stores(new_file)
         assert isinstance(e.value, click.ClickException)
         assert f'Invalid values file {new_file}' in e.value.message
 

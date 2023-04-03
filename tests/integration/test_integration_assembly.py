@@ -1,3 +1,4 @@
+from __future__ import annotations
 import json
 from click.testing import CliRunner
 import pytest
@@ -16,7 +17,7 @@ def setup_clean_slate():
 def test_basic_assembly(setup_clean_slate):
     runner = CliRunner()
     result = runner.invoke(main.cli, ["assembly", "list"])
-    
+
     # Check embedded assemblies in the list
     assert result.exit_code == 0
     check_assembly_list_output(['dfx-assembly', 'iot-assembly'], [ASM_NAME], result.output)
@@ -37,7 +38,8 @@ def test_basic_assembly(setup_clean_slate):
     assert True ==  res['running']
 
     # Teardown assembly
-    result = runner.invoke(main.cli, ["assembly", "teardown", "--name", ASM_NAME, "--force", "--wait"])
+    result = runner.invoke(main.cli, ["assembly", "teardown", "--name", ASM_NAME, "--force"])
+    time.sleep(5)
     assert result.exit_code == 0
 
     result = runner.invoke(main.cli, ["assembly", "list"])
