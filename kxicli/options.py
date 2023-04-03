@@ -9,12 +9,12 @@ from kxicli import config
 from kxicli import phrases
 from kxicli.common import get_default_val as default_val
 from kxicli.common import get_help_text as help_text
-from kxicli.common import key_install_outputFile, key_chart_repo_name, key_install_config_secret, \
+from kxicli.common import key_install_outputFile, key_chart_repo_name, \
     key_image_repository, key_image_repository_user, key_image_repository_password, key_image_pullSecret, \
     key_ingress_cert_secret, key_ingress_certmanager_disabled, key_ingress_cert, key_ingress_key, \
     key_keycloak_secret, key_keycloak_admin_password, key_keycloak_management_password, \
     key_keycloak_postgresqlSecret, key_postgresql_postgres_password, key_postgresql_user_password, \
-    key_keycloak_authURL, key_keycloak_realm, key_install_outputFile, key_install_config_secret_data_name, \
+    key_keycloak_authURL, key_keycloak_realm, key_install_outputFile, \
     key_license_secret, key_license_envVar, key_license_filepath, \
     key_chart_repo_url, key_chart_repo_username, key_chart_repo_password, \
     key_client_cert_secret, key_gui_client_secret, key_operator_client_secret, \
@@ -158,7 +158,7 @@ def get_namespace():
     try:
         _, active_context = k8s.config.list_kube_config_contexts()
     except k8s.config.config_exception.ConfigException:
-        try: 
+        try:
             k8s.config.load_incluster_config()
             in_cluster = True
         except k8s.config.config_exception.ConfigException:
@@ -166,8 +166,8 @@ def get_namespace():
     if not in_cluster and 'namespace' in active_context['context']:
         return  active_context['context']['namespace']
     if in_cluster:
-        return open("/var/run/secrets/kubernetes.io/serviceaccount/namespace").read() 
-        
+        return open("/var/run/secrets/kubernetes.io/serviceaccount/namespace").read()
+
 namespace = Option(
     '--namespace',
     config_name = key_namespace,
@@ -389,18 +389,6 @@ ingress_certmanager_disabled = Option (
     config_name = key_ingress_certmanager_disabled,
     help = help_text(key_ingress_certmanager_disabled),
     is_flag = True
-)
-
-install_config_secret = Option (
-    '--install-config-secret',
-    config_name = key_install_config_secret,
-    help=help_text(key_install_config_secret)
-)
-
-install_config_secret_data_name = Option (
-    '--install-config-secret-data-name',
-    config_name = key_install_config_secret_data_name,
-    help='Data key of the helm install values secret'
 )
 
 assembly_backup_filepath = Option (

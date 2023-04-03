@@ -7,11 +7,16 @@ from pathlib import Path
 from tempfile import mkdtemp
 import kubernetes as k8s
 from kxicli.resources import secret
+import subprocess
 
 test_secret_type = 'Opaque'
 test_secret_key = 'secret_key'
-test_secret_data = {test_secret_key: 'secret_value'}
+test_secret_data = {test_secret_key: 'c2VjcmV0X3ZhbHVl'}
 test_val_file = str(Path(__file__).parent / 'files' / 'test-values.yaml')
+
+with open(test_val_file, 'r') as f:
+    test_val_data = yaml.safe_load(f.read())
+
 test_helm_repo_cache = str(Path(__file__).parent / 'files' / 'helm')
 fake_docker_config: dict = {
     'asdf': 'asdf'
@@ -67,6 +72,13 @@ def return_false(*args, **kwargs):
 
 def return_V1status(*args, **kwargs):
     return k8s.client.V1Status()
+
+def namespace():
+    # tests assume you're running with an active context that has a namespace set
+    try:
+        return k8s.config.list_kube_config_contexts()[1]['context']['namespace']
+    except (TypeError, k8s.config.config_exception.ConfigException):
+        return 'test'
 
 def mocked_create_namespaced_secret(namespace, body):
     return secret.Secret(namespace, body.metadata.name, body.type, data=body.data, string_data=body.string_data).get_body()
@@ -158,25 +170,31 @@ def mock_helm_fetch(mocker):
         return args
     mocker.patch('kxicli.resources.helm.fetch', helm_fetch)
 
-      
+def mock_helm_get_values(mocker, data, throw_exception=False, exception_msg='Get values failed'):
+    def helm_get_values(*args):
+        if throw_exception:
+            raise subprocess.CalledProcessError(1, ['helm', 'get', 'values'], stderr=exception_msg)
+        return data
+    mocker.patch('kxicli.resources.helm.get_values', helm_get_values)
+
 def mock_config_exception():
     raise k8s.config.config_exception.ConfigException('Invalid kube-config file. No configuration found.')
 
 def mock_incluster_config_exception():
-    raise k8s.config.config_exception.ConfigException('Service host/port is not set.')    
-        
+    raise k8s.config.config_exception.ConfigException('Service host/port is not set.')
+
 def mock_load_kube_config(mocker):
     CUSTOM_OBJECT_API = 'kubernetes.config.load_kube_config'
-    mocker.patch(CUSTOM_OBJECT_API, mock_config_exception)       
-      
+    mocker.patch(CUSTOM_OBJECT_API, mock_config_exception)
+
 def mock_load_kube_config_incluster(mocker):
     CUSTOM_OBJECT_API = 'kubernetes.config.load_incluster_config'
-    mocker.patch(CUSTOM_OBJECT_API, mock_incluster_config_exception)      
-    
+    mocker.patch(CUSTOM_OBJECT_API, mock_incluster_config_exception)
+
 def mock_list_kube_config_contexts(mocker):
     CUSTOM_OBJECT_API = 'kubernetes.config.list_kube_config_contexts'
-    mocker.patch(CUSTOM_OBJECT_API, mock_config_exception)            
-            
+    mocker.patch(CUSTOM_OBJECT_API, mock_config_exception)
+
 def mocked_helm_repo_list(name, url):
     return [{'name': name, 'url': url}]
 

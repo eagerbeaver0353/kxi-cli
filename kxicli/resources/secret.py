@@ -36,10 +36,10 @@ class Secret():
         except Exception as e:
             log.debug(f'Exception when calling read_namespaced_secret  {e}')
             return None
-        
-        return secret        
-    
-    
+
+        return secret
+
+
     def patch(self):
         """Updates the Kubernetes secret"""
         log.debug(f'Updating secret {self.name} in namespace {self.namespace}')

@@ -76,8 +76,6 @@ arg_ingress_key = options.ingress_key.decorator()
 
 arg_ingress_certmanager_disabled = options.ingress_certmanager_disabled.decorator()
 
-arg_install_config_secret = options.install_config_secret.decorator()
-
 arg_client_id = options.client_id.decorator()
 
 arg_client_secret = options.client_secret.decorator()
@@ -87,8 +85,6 @@ arg_realm = options.realm.decorator()
 arg_use_kubeconfig = options.use_kubeconfig.decorator()
 
 arg_import_users = options.import_users.decorator()
-
-arg_install_config_secret_data_name = options.install_config_secret_data_name.decorator()
 
 arg_admin_username = options.admin_username.decorator()
 

@@ -3,6 +3,7 @@ from typing import Optional
 
 import click
 import yaml
+import subprocess
 from click import ClickException
 
 from kxicli.commands import assembly as assembly_lib
@@ -10,13 +11,10 @@ from kxicli.commands import install as install_lib
 from kxicli.commands.common.arg import arg_force, arg_filepath, arg_operator_version as arg_common_operator_version, \
     arg_version, arg_release as arg_common_release, arg_namespace, arg_assembly_backup_filepath
 from kxicli.common import get_help_text as help_text
-from kxicli.resources import secret
+from kxicli.resources import helm
 
 default_insights_namespace: str = 'insights'
 default_insights_release: str = 'insights'
-
-default_values_secret_name: str = 'kxi-config'
-default_values_secret_data_name: str = 'kxi-config.yaml'
 
 default_docker_config_secret_name: str = 'kxi-acr-pull-secret'
 
@@ -58,10 +56,10 @@ def upgrade(
 
     # Prepare
 
-    values: str = get_values(values_file=filepath, insights_namespace=namespace)
+    values: str = get_values(values_file=filepath, insights_namespace=namespace, release=release)
 
     chart_repo_url: str = get_repo_url(values)
-   
+
     ctx.invoke(install_lib.upgrade,
                 namespace=namespace,
                 release=release,
@@ -71,8 +69,6 @@ def upgrade(
                 chart_repo_url=chart_repo_url,
                 image_pull_secret=default_docker_config_secret_name,
                 assembly_backup_filepath=assembly_backup_filepath,
-                install_config_secret=default_values_secret_name,
-                install_config_secret_data_name=default_values_secret_data_name,
                 force=force
     )
 
@@ -130,10 +126,10 @@ def install(
 ):
     """Install kdb Insights Enterprise"""
 
-    values: str = get_values(values_file=filepath, insights_namespace=namespace)
+    values: str = get_values(values_file=filepath, insights_namespace=namespace, release=release)
 
     chart_repo_url: str = get_repo_url(values)
-  
+
     ctx.invoke(install_lib.run,
                 namespace=namespace,
                 release=release,
@@ -142,8 +138,6 @@ def install(
                 filepath=filepath,
                 chart_repo_url=chart_repo_url,
                 image_pull_secret=default_docker_config_secret_name,
-                install_config_secret=default_values_secret_name,
-                install_config_secret_data_name=default_values_secret_data_name,
                 force=force
     )
 
@@ -202,8 +196,7 @@ def restore(
 def get_values(
         values_file: Optional[str],
         insights_namespace: str = default_insights_namespace,
-        secret_name: str = default_values_secret_name,
-        secret_data_name: str = default_values_secret_data_name
+        release: str = default_insights_release
 ) -> str:
     if values_file is not None:
         with open(values_file) as f:
@@ -212,10 +205,11 @@ def get_values(
             except (IOError, ValueError, EOFError, FileNotFoundError):  # pragma: no cover
                 raise ClickException(f'Invalid values file {values_file}')
     else:
-        values = install_lib.get_secret(
-            secret_object=secret.Secret(insights_namespace, secret_name),
-            secret_data_name=secret_data_name
-        )
+        try:
+            values = yaml.safe_dump(helm.get_values(release, insights_namespace))
+        except subprocess.CalledProcessError:
+            values = None
+
         if not values:
             raise ClickException('Values not found stored in the deployment. --filepath must be provided')
         return values

@@ -69,6 +69,7 @@ values_save_path = 'Please enter the path to write the values file for the insta
 values_file_saved = '\nHelm values file for installation saved in {output_file}\n'
 values_validating = 'Validating values...'
 values_validation_fail = 'Validation failed, run "kxi install setup" to fix'
+values_filepath_missing = 'Please provide a values file with --filepath'
 
 # Footers
 footer_setup = '\nConfiguration saved, kdb Insights Enterprise is now ready for install'
@@ -82,6 +83,7 @@ upgrade_asm_persist = 'Assembly data will be persisted and state will be recover
 upgrade_insights= '\nUpgrading insights'
 upgrade_complete = '\nUpgrade to version {version} complete'
 rollback_asm_persist = 'Assembly data will be persisted and state will be recovered post-rollback'
+
 # Passwords
 password_reenter = 'Re-enter to confirm (input hidden)'
 password_no_match = 'Entered values did not match'
@@ -97,3 +99,6 @@ missing_user_argument = "'username' must be provided as a keyword argument"
 rollback_insights = 'Rolling Insights back to version {insights_version} and revision {revision}. Operator version remaining on {operator_version}.'
 rollback_insights_operator = 'Rolling Insights back to version {insights_version} and revision {revision}. \nRolling operator back to version {operator_version} and revision {operator_revision}.'
 rollback_start = '\nRolling back Insights'
+
+# Helm
+helm_get_values_fail = 'Failed to get values for release {release} in namespace {namespace}, error from helm is "{helm_error}"'
