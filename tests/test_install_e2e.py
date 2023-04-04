@@ -865,7 +865,7 @@ Installing chart internal-nexus-dev/insights version 1.2.3 with values file from
         assert result.output == expected_output
         assert subprocess_run_command == [
             ['helm', 'repo', 'update'],
-            ['helm', 'upgrade', '--install', '--version', '1.2.3', '-f', 'values.yaml', 'insights', test_chart_repo_name + '/insights', '--namespace', test_namespace]
+            ['helm', 'upgrade', '--install', '--version', '1.2.3', '-f', 'values.yaml', 'insights', test_chart_repo_name + '/insights', '--set', 'keycloak.importUsers=false', '--namespace', test_namespace]
         ]
 
 
@@ -1652,7 +1652,7 @@ Upgrade to version 1.2.3 complete
         ['helm', 'repo', 'update'],
         ['helm', 'upgrade', '--install', '--version', '1.2.3', '-f', '-', test_operator_helm_name, test_operator_chart, '--namespace',
          'kxi-operator'],
-        ['helm', 'upgrade', '--install', '--version', '1.2.3', '-f', '-', 'insights', test_chart, '--namespace', test_namespace]
+        ['helm', 'upgrade', '--install', '--version', '1.2.3', '-f', '-', 'insights', test_chart, '--set', 'keycloak.importUsers=false', '--namespace', test_namespace]
     ]
     assert subprocess_run_args == (True, values, True)
     assert delete_crd_params == ['assemblies.insights.kx.com', 'assemblyresources.insights.kx.com']
@@ -1662,6 +1662,81 @@ Upgrade to version 1.2.3 complete
     assert running_assembly[test_asm_name] == True
     assert not os.path.isfile(test_asm_backup)
 
+def test_upgrade_import_users(mocker):
+    upgrades_mocks(mocker)
+    mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
+    mock_get_operator_version(mocker)
+    utils.mock_validate_secret(mocker)
+    utils.mock_helm_env(mocker)
+    utils.mock_helm_fetch(mocker)
+    utils.mock_helm_get_values(mocker, utils.test_val_data)
+    utils.mock_kube_crd_api(mocker, create=mocked_create_crd, delete=mocked_delete_crd)
+    if os.path.exists(test_asm_backup):
+        os.remove(test_asm_backup)
+    with open(utils.test_asm_file) as f:
+        file = yaml.safe_load(f)
+        last_applied = file['metadata']['annotations'][CONFIG_ANNOTATION]
+        test_asm_file_contents = json.loads(last_applied)
+    with open(utils.test_val_file, 'r') as values_file:
+        values = str(values_file.read())
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        # these are responses to the various prompts
+        user_input = f"""y
+y
+y
+y
+y
+"""
+        result = runner.invoke(main.cli,
+            ['install', 'upgrade', '--version', '1.2.3', '--assembly-backup-filepath', test_asm_backup, '--import-users', 'True'],
+            input=user_input
+        )
+        expected_output = f"""{phrases.header_upgrade}
+{phrases.values_validating}
+
+kdb Insights Enterprise is already installed with version 1.2.1
+kxi-operator already installed with version 1.2.0
+Do you want to install kxi-operator version 1.2.3? [Y/n]: y
+Reading CRD data from {utils.test_helm_repo_cache}/kxi-operator-1.2.3.tgz
+
+Backing up assemblies
+Persisted assembly definitions for ['{test_asm_name}'] to {test_asm_backup}
+
+Tearing down assemblies
+Assembly data will be persisted and state will be recovered post-upgrade
+Tearing down assembly {test_asm_name}
+Are you sure you want to teardown {test_asm_name} [y/N]: y
+Waiting for assembly to be torn down
+
+Upgrading insights
+Installing chart kx-insights/kxi-operator version 1.2.3 with previously used values
+Replacing CRD assemblies.insights.kx.com
+Replacing CRD assemblyresources.insights.kx.com
+Installing chart kx-insights/insights version 1.2.3 with previously used values
+
+Reapplying assemblies
+Submitting assembly from {test_asm_backup}
+Submitting assembly {test_asm_name}
+Custom assembly resource {test_asm_name} created!
+
+Upgrade to version 1.2.3 complete
+"""
+    assert result.exit_code == 0
+    assert result.output == expected_output
+    assert subprocess_run_command == [
+        ['helm', 'repo', 'update'],
+        ['helm', 'upgrade', '--install', '--version', '1.2.3', '-f', '-', test_operator_helm_name, test_operator_chart, '--namespace',
+         'kxi-operator'],
+        ['helm', 'upgrade', '--install', '--version', '1.2.3', '-f', '-', 'insights', test_chart, '--set', 'keycloak.importUsers=true', '--namespace', test_namespace]
+    ]
+    assert subprocess_run_args == (True, values, True)
+    assert delete_crd_params == ['assemblies.insights.kx.com', 'assemblyresources.insights.kx.com']
+    assert insights_installed_flag == True
+    assert operator_installed_flag == True
+    assert crd_exists_flag == True
+    assert running_assembly[test_asm_name] == True
+    assert not os.path.isfile(test_asm_backup)
 
 def test_upgrade_without_backup_filepath(mocker):
     upgrades_mocks(mocker)
@@ -1692,7 +1767,7 @@ y
         ['helm', 'repo', 'update'],
         ['helm', 'upgrade', '--install', '--version', '1.2.3', '-f', '-', test_operator_helm_name, test_operator_chart, '--namespace',
          'kxi-operator'],
-        ['helm', 'upgrade', '--install', '--version', '1.2.3', '-f', '-', 'insights', test_chart, '--namespace', test_namespace]
+        ['helm', 'upgrade', '--install', '--version', '1.2.3', '-f', '-', 'insights', test_chart, '--set', 'keycloak.importUsers=false', '--namespace', test_namespace]
     ]
     assert subprocess_run_args == (True, values, True)
     assert delete_crd_params == ['assemblies.insights.kx.com', 'assemblyresources.insights.kx.com']
@@ -1933,7 +2008,7 @@ Upgrade to version 1.2.3 complete
     assert subprocess_run_command == [
         ['helm', 'repo', 'update'],
         ['helm', 'upgrade', '--install', '--version', '1.2.3', '-f', utils.test_val_file, test_operator_helm_name, test_operator_chart, '--namespace', 'kxi-operator'],
-        ['helm', 'upgrade', '--install', '--version', '1.2.3', '-f', utils.test_val_file, 'insights', test_chart, '--namespace', test_namespace]
+        ['helm', 'upgrade', '--install', '--version', '1.2.3', '-f', utils.test_val_file, 'insights', test_chart, '--set', 'keycloak.importUsers=false', '--namespace', test_namespace]
     ]
     assert insights_installed_flag == True
     assert operator_installed_flag ==True
@@ -2001,7 +2076,7 @@ Upgrade to version 1.2.3 complete
     assert result.output == expected_output
     assert subprocess_run_command == [
         ['helm', 'repo', 'update'],
-        ['helm', 'upgrade', '--install', '--version', '1.2.3', '-f', '-', 'insights', test_chart, '--namespace', test_namespace]
+        ['helm', 'upgrade', '--install', '--version', '1.2.3', '-f', '-', 'insights', test_chart, '--set', 'keycloak.importUsers=false', '--namespace', test_namespace]
     ]
     assert subprocess_run_args == (True, values, True)
     assert delete_crd_params == []
@@ -2034,7 +2109,7 @@ def test_upgrade_with_no_assemblies(mocker):
         ['helm', 'repo', 'update'],
         ['helm', 'upgrade', '--install', '--version', '1.2.3', '-f', '-', test_operator_helm_name, test_operator_chart, '--namespace',
          'kxi-operator'],
-        ['helm', 'upgrade', '--install', '--version', '1.2.3', '-f', '-', 'insights', test_chart, '--namespace', test_namespace]
+        ['helm', 'upgrade', '--install', '--version', '1.2.3', '-f', '-', 'insights', test_chart, '--set', 'keycloak.importUsers=false', '--namespace', test_namespace]
     ]
     assert insights_installed_flag == True
     assert operator_installed_flag == True

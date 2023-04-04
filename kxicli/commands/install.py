@@ -901,7 +901,7 @@ def install_operator_and_release(
     if ((import_users == None) and (not is_upgrade)) or import_users == True:
         args = ['--set', 'keycloak.importUsers=true']
     else:
-        args = []
+        args = ['--set', 'keycloak.importUsers=false']
 
     existing_values = None
 
