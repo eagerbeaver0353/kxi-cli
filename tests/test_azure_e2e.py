@@ -353,7 +353,7 @@ def test_upgrade(mocker: MockerFixture):
             ]
     assert insights_install['cmd'] == [
                 'helm', 'upgrade', '--install', '--version', fake_version, '-f', values_file_name, default_insights_release, f'{fake_chart_repo_url}/insights',
-                '--namespace', utils.namespace()
+                '--set', 'keycloak.importUsers=false', '--namespace', utils.namespace()
             ]
 
 def test_upgrade_with_no_assemblies_running(mocker: MockerFixture):
@@ -418,7 +418,7 @@ def test_upgrade_with_no_assemblies_running(mocker: MockerFixture):
             ]
     assert insights_install['cmd'] == [
                 'helm', 'upgrade', '--install', '--version', fake_version, '-f', values_file_name, default_insights_release, f'{fake_chart_repo_url}/insights',
-                '--namespace', utils.namespace()
+                '--set', 'keycloak.importUsers=false', '--namespace', utils.namespace()
             ]
 
 def test_restore_assemblies_exists(mocker: MockerFixture):
