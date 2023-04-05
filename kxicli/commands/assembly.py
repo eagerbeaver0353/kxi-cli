@@ -6,6 +6,7 @@ import sys
 import time
 from tempfile import mkstemp
 from functools import partial
+import requests
 
 import click
 import kubernetes as k8s
@@ -236,16 +237,21 @@ def create_assemblies_from_file(filepath, hostname=None, client_id=None, client_
 
     click.echo(f'Submitting assembly from {filepath}')
     created = []
-
     if 'items' in asm_list:
         for asm in asm_list['items']:
             click.echo(f"Submitting assembly {asm['metadata']['name']}")
-            try:
-                created.append(_create_assembly(hostname, client_id, client_secret, realm, namespace, asm, use_kubeconfig, wait))
-            except BaseException as e:
-                click.echo(f"Error applying assembly {asm['metadata']['name']}: {e}")
+            try_append(created, hostname, client_id, client_secret, realm, namespace, asm, use_kubeconfig, wait)
     else:
-        created.append(_create_assembly(hostname, client_id, client_secret, realm, namespace, asm_list, use_kubeconfig, wait))
+        try_append(created, hostname, client_id, client_secret, realm, namespace, asm_list, use_kubeconfig, wait)
+
+    return created
+
+def try_append(created = None, hostname=None, client_id=None, client_secret=None, realm=None, namespace=None, asm=None, use_kubeconfig=False, wait=None):
+    try:
+        created.append(_create_assembly(hostname, client_id, client_secret, realm, namespace, asm, use_kubeconfig, wait))
+    except requests.exceptions.HTTPError as e:
+        res = json.loads(e.response.text)
+        click.echo(f"Error: {res['message']}. {res['detail']['message']}")
 
     return created
 

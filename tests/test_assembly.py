@@ -1,6 +1,7 @@
 import click
 import json
 import os
+import requests
 import requests_mock
 import shutil
 from contextlib import contextmanager
@@ -17,6 +18,7 @@ from kxicli import main
 from kxicli.commands import assembly
 import utils
 from test_assembly_kxicontroller import build_assembly_object_kxic
+from functools import partial
 
 ASM_NAME = 'test_asm'
 ASM_NAME2 = 'test_asm2'
@@ -115,10 +117,17 @@ def append_args(**args):
 def mock_return_conflict_for_assembly(**kwargs):
     global appended_args
     if kwargs['body']['metadata']['name'] == ASM_NAME:
-        raise k8s.client.rest.ApiException(status=409)
+        mock_return_conflict(status_code=409, error_message='deploy failed',
+                             detail_message='assemblies.insights.kx.com sdk-sample-assembly already exists')
     else:
         appended_args.append(kwargs)
 
+def mock_return_conflict(status_code, error_message, detail_message, **kwargs):
+    response = requests.Response()
+    response.status_code = status_code
+    error_response = {'message': error_message, 'detail': {'message': detail_message}}
+    response._content = json.dumps(error_response).encode('utf-8')
+    raise requests.exceptions.HTTPError(response=response)
 
 # mock the response from the Kubernetes list function
 def mock_list_assemblies(mock_instance, response=ASSEMBLY_LIST):
@@ -301,6 +310,20 @@ def test_create_assemblies_from_file_creates_one_assembly_k8s_api(mocker):
     assert appended_args == [
         {'group': assembly.API_GROUP, 'version': PREFERRED_VERSION, 'namespace': 'test_ns', 'plural': 'assemblies',
          'body': assembly._add_last_applied_configuration_annotation(test_asm)}]
+
+
+def test_create_assembley_from_file_assembly_already_exists(mocker, capfd):
+    mock_instance = mocker.patch(CUSTOM_OBJECT_API).return_value
+    mock_list_assemblies(mock_instance)
+    global appended_args
+    appended_args = []
+    # mock the Kubernetes create function to return error upon creation of test_asm, success for test_asm2
+    mock_instance.create_namespaced_custom_object.side_effect = partial(mock_return_conflict, status_code=409, error_message='deploy failed',
+                                                                        detail_message='assemblies.insights.kx.com sdk-sample-assembly already exists')
+
+    assert assembly.create_assemblies_from_file(namespace='test_ns', filepath=test_asm_file, use_kubeconfig=True) == []
+    out, err = capfd.readouterr()
+    assert out == f"Submitting assembly from {test_asm_file}\nError: deploy failed. assemblies.insights.kx.com sdk-sample-assembly already exists\n"
 
 def test_create_assemblies_from_file_creates_two_assemblies(mocker):
     mocker.patch('kxicli.common.get_access_token', utils.return_none)
