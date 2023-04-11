@@ -7,6 +7,7 @@ import time
 from tempfile import mkstemp
 from functools import partial
 import requests
+from kubernetes.client.exceptions import ApiException
 
 import click
 import kubernetes as k8s
@@ -252,6 +253,9 @@ def try_append(created = None, hostname=None, client_id=None, client_secret=None
     except requests.exceptions.HTTPError as e:
         res = json.loads(e.response.text)
         click.echo(f"Error: {res['message']}. {res['detail']['message']}")
+    except ApiException as e:
+        res = json.loads(e.body)
+        click.echo(f"Error: {res['reason']}. {res['message']}")
 
     return created
 
