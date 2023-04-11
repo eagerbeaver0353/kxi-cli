@@ -19,6 +19,7 @@ from kxicli.commands import assembly
 import utils
 from test_assembly_kxicontroller import build_assembly_object_kxic
 from functools import partial
+from kubernetes.client.exceptions import ApiException
 
 ASM_NAME = 'test_asm'
 ASM_NAME2 = 'test_asm2'
@@ -128,6 +129,12 @@ def mock_return_conflict(status_code, error_message, detail_message, **kwargs):
     error_response = {'message': error_message, 'detail': {'message': detail_message}}
     response._content = json.dumps(error_response).encode('utf-8')
     raise requests.exceptions.HTTPError(response=response)
+
+def mock_return_conflict_kube(status_code, error_message, detail_message, **kwargs):
+    error_response = {'reason': error_message, 'message': detail_message}
+    exception = ApiException(status=status_code, reason='Conflict')
+    exception.body = json.dumps(error_response)
+    raise exception
 
 # mock the response from the Kubernetes list function
 def mock_list_assemblies(mock_instance, response=ASSEMBLY_LIST):
@@ -324,6 +331,20 @@ def test_create_assembley_from_file_assembly_already_exists(mocker, capfd):
     assert assembly.create_assemblies_from_file(namespace='test_ns', filepath=test_asm_file, use_kubeconfig=True) == []
     out, err = capfd.readouterr()
     assert out == f"Submitting assembly from {test_asm_file}\nError: deploy failed. assemblies.insights.kx.com sdk-sample-assembly already exists\n"
+
+def test_create_assembley_from_file_assembly_already_exists_kube(mocker, capfd):
+    mock_instance = mocker.patch(CUSTOM_OBJECT_API).return_value
+    mock_list_assemblies(mock_instance)
+    global appended_args
+    appended_args = []
+    # mock the Kubernetes create function to return error upon creation of test_asm, success for test_asm2
+    mock_instance.create_namespaced_custom_object.side_effect = partial(mock_return_conflict_kube, status_code=409, error_message='deploy failed',
+                                                                        detail_message='assemblies.insights.kx.com sdk-sample-assembly already exists')
+
+    assert assembly.create_assemblies_from_file(namespace='test_ns', filepath=test_asm_file, use_kubeconfig=True) == []
+    out, err = capfd.readouterr()
+    assert out == f"Submitting assembly from {test_asm_file}\nError: deploy failed. assemblies.insights.kx.com sdk-sample-assembly already exists\n"
+
 
 def test_create_assemblies_from_file_creates_two_assemblies(mocker):
     mocker.patch('kxicli.common.get_access_token', utils.return_none)
