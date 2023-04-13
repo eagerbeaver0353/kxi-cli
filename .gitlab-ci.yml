@@ -11,12 +11,14 @@ include:
       - 'insights/whitesource.yaml'
       - 'insights/test.yaml'
       - 'security/security.yaml'
+      - 'deploy/record-results.yml'
       - "insights/data-science/common.yaml"
 
 stages:
   - build
   - test
   - visualisation
+  - report-results
   - sonarqube
   - publish
   - docs
@@ -116,6 +118,8 @@ combine-test-metrics:
         coverage_format: cobertura
         path: coverage.xml
       junit: report.xml
+    paths:
+      - coverage.xml
   needs:
     - unit-tests-3.8
     - integration-tests
@@ -161,6 +165,24 @@ unit-tests-3.9:
 unit-tests-3.10:
   extends: .unit-tests
   image: python:3.10
+
+pytest-kpis:
+  stage: visualisation
+  needs:
+    - combine-test-metrics
+  variables:
+    ARTIFACT_PATH: "$CI_PROJECT_DIR/coverage.xml"
+  extends: .extract-pytest-kpis
+  rules:
+    - !reference [.default-rules, rules]
+  allow_failure: true
+
+send-report-to-insights:
+  stage: report-results
+  extends: .record-results
+  rules:
+    - !reference [.default-rules, rules]
+  allow_failure: true
 
 publish package:
   stage: publish
