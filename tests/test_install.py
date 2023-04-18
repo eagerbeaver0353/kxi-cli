@@ -14,8 +14,8 @@ from kxicli.commands import install
 from kxicli.resources import secret
 from utils import IPATH_KUBE_COREV1API, temp_file, test_secret_data, test_secret_type, test_secret_key, \
     mock_kube_deployment_api, mocked_kube_deployment_list, mock_kube_secret_api, mocked_read_namespaced_secret, \
-    raise_conflict, raise_not_found, test_val_file, mock_validate_secret, mock_helm_env, mocked_helm_repo_list, \
-    return_none, fake_docker_config_yaml
+    raise_conflict, raise_not_found, mock_validate_secret, mock_helm_env, mock_helm_get_values,  mocked_helm_repo_list, \
+    return_none, fake_docker_config_yaml, test_val_file
 from test_install_e2e import mocked_read_namespaced_secret_return_values, test_vals, mocked_read_secret, mocked_installed_chart_json
 from const import test_user, test_pass, test_lic_file, test_chart_repo_name, test_chart_repo_url
 
@@ -428,22 +428,20 @@ def test_sanitize_auth_url():
 
 
 def test_get_image_and_license_secret_from_values_returns_defaults():
-    assert install.get_image_and_license_secret_from_values(None, None, None) == (
+    assert install.get_image_and_license_secret_from_values({}, None, None) == (
     'kxi-nexus-pull-secret', 'kxi-license')
 
-def test_get_image_and_license_secret_from_values_args_overrides_secret_and_file():
-    test_vals_secret = copy.deepcopy(test_vals)
-    test_vals_secret['global']['imagePullSecrets'] = [{'name': 'image-pull-from-secret'}]
-    test_vals_secret['global']['license']['secretName'] = 'license-from-secret'
-    assert install.get_image_and_license_secret_from_values(test_val_file, 'image-pull-from-arg',
+def test_get_image_and_license_secret_from_values_args_overrides_values_dict():
+    assert install.get_image_and_license_secret_from_values(test_vals, 
+                                                            'image-pull-from-arg',
                                                             'license-from-arg') == (
            'image-pull-from-arg', 'license-from-arg')
 
-def test_get_image_and_license_secret_returns_error_when_invalid_file_passed():
+def test_get_image_and_license_secret_returns_error_when_invalid_dict_passed():
     with pytest.raises(Exception) as e:
         install.get_image_and_license_secret_from_values(test_lic_file, None, None)
     assert isinstance(e.value, click.ClickException)
-    assert f'Invalid values file' in e.value.message
+    assert f'Invalid values' in e.value.message
 
 
 def test_get_missing_key_with_no_dict_returns_all_keys():
@@ -688,6 +686,8 @@ def test_check_for_operator_install_errors_when_incompatible_operator_is_not_man
     assert isinstance(e.value, click.ClickException)
     assert 'Installed kxi-operator version 1.2.0 is incompatible with insights version 1.3.0' in e.value.message
 
+def test_load_values_stores_with_file():
+    assert install.load_values_stores(test_val_file) == test_vals
 
 def test_load_values_stores_exception_when_values_file_does_not_exist():
     with pytest.raises(Exception) as e:
@@ -757,4 +757,48 @@ def test_check_operator_rollback_version_raises_exception_upon_downgrade():
         install.check_operator_rollback_version('1.5.0-rc.18', '1.4.0-rc.17')
     assert isinstance(e.value, click.ClickException)
     assert 'Insights rollback target version 1.5.0-rc.18 is incompatible with target operator version 1.4.0-rc.17. Minor versions must match.' in e.value.message
-    
+
+def test_get_values_and_secrets_from_helm_values_exist(mocker):
+    mocker.patch('kxicli.commands.install.helm_repo_list', lambda: mocked_helm_repo_list(test_chart_repo_name, test_chart_repo_url))
+    mocker.patch('kxicli.commands.install.helm.repo_update')
+    test_val_data_updated = copy.deepcopy(test_vals)
+    test_lic_secret = 'license-from-helm-values'
+    test_val_data_updated['global']['license']['secretName'] = test_lic_secret
+    mock_helm_get_values(mocker, test_val_data_updated)
+    mock_validate_secret(mocker, True)
+    assert install.get_values_and_secrets(None,
+                                          test_ns,
+                                          'test_release',
+                                          test_chart_repo_name,
+                                          test_chart_repo_url,
+                                          None,
+                                          None
+                                          ) == (None, test_ns, test_chart_repo_name, 'kxi-nexus-pull-secret', test_lic_secret)
+
+def test_get_values_and_secrets_from_helm_values_dont_exist(mocker, capfd):
+    mocker.patch('kxicli.commands.install.helm_repo_list', lambda: mocked_helm_repo_list(test_chart_repo_name, test_chart_repo_url))
+    mocker.patch('kxicli.commands.install.helm.repo_update')
+    test_val_data_updated = copy.deepcopy(test_vals)
+    test_lic_secret = 'license-from-helm-values'
+    test_val_data_updated['global']['license']['secretName'] = test_lic_secret
+    mock_helm_get_values(mocker, test_val_data_updated)
+    mock_validate_secret(mocker, False)
+    with pytest.raises(click.ClickException) as e:
+        install.get_values_and_secrets(None,
+                                          test_ns,
+                                          'test_release',
+                                          test_chart_repo_name,
+                                          test_chart_repo_url,
+                                          None,
+                                          None
+                                          )
+    assert isinstance(e.value, click.ClickException)
+    assert e.value.message == 'Validation failed, run "kxi install setup" to fix'
+    out, _ = capfd.readouterr()
+    assert out == f"""Validating values...
+error=Required secret {test_lic_secret} does not exist
+error=Required secret kxi-certificate does not exist
+error=Required secret kxi-nexus-pull-secret does not exist
+error=Required secret kxi-keycloak does not exist
+error=Required secret kxi-postgresql does not exist
+""" 

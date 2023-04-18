@@ -1815,6 +1815,7 @@ def test_upgrade_skips_to_install_when_not_running_but_fails_with_no_values_file
     mock_set_insights_operator_and_crd_installed_state(mocker, False, False, False)
     mock_get_operator_version(mocker)
     utils.mock_validate_secret(mocker)
+    utils.mock_helm_get_values(mocker, None, True, 'Command returned non-zero exit status 1.')
     runner = CliRunner()
     user_input = f"""y
 """
