@@ -8,6 +8,8 @@ from tempfile import mkstemp
 from functools import partial
 import requests
 from kubernetes.client.exceptions import ApiException
+from tabulate import tabulate
+
 
 import click
 import kubernetes as k8s
@@ -148,24 +150,16 @@ def _format_assemblies_list_kxic(assembly_list):
     asm_list = []
     for asm in assembly_list:
         if 'name' in asm:
-            asm_list.append((asm['name'], asm['ready']))
+            asm_list.append((asm['name'], asm['running'], asm['ready']))
 
-    return (asm_list, ['ASSEMBLY NAME', 'READY'])
+    return (asm_list, ['ASSEMBLY NAME', 'RUNNING', 'READY'])
 
 
 def _print_2d_list(data, headers):
     """
     Prints a col-formatted 2d list
     """
-    first_col = [row[0] for row in data]
-    padding = len(max(headers, key=len)) + 2
-    if len(data) != 0:
-        padding = max(padding, len(max(first_col, key=len)) + 2)
-
-    click.echo(f'{headers[0]:{padding}}{headers[1]}')
-    for row in data:
-        click.echo(f'{row[0]:{padding}}{row[1]}')
-
+    click.echo(tabulate([headers] + (data), tablefmt="plain", numalign="left", stralign="left"))
 
 def backup_assemblies(namespace, filepath, force):
     """Get assemblies' definitions"""

@@ -764,17 +764,17 @@ def test_cli_assembly_list_if_assembly_deployed(mocker):
         mocker.patch('kxicli.common.get_access_token', utils.return_none)
         m.get('https://test.kx.com/kxicontroller/assembly/', 
             text=json.dumps([
-                build_assembly_object_kxic(ASM_NAME, ready=True),
-                build_assembly_object_kxic(ASM_NAME2, ready=False)
+                build_assembly_object_kxic(ASM_NAME, running=True, ready=True),
+                build_assembly_object_kxic(ASM_NAME2, running=False, ready=False)
                 ]
             )
         )
         result = TEST_CLI.invoke(main.cli, ['assembly', 'list'])
 
     assert result.exit_code == 0
-    assert result.output == f"""ASSEMBLY NAME  READY
-{ASM_NAME}       True
-{ASM_NAME2}      False
+    assert result.output == f"""ASSEMBLY NAME  RUNNING  READY
+{ASM_NAME}       True     True
+{ASM_NAME2}      False    False
 """
 
 def test_cli_assembly_list_if_assembly_deployed_k8s_api(mocker):
