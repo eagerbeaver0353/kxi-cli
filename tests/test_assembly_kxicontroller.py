@@ -14,7 +14,7 @@ TEST_HOSTNAME = 'https://test.kx.com'
 TEST_CLIENT_ID = 'test'
 TEST_CLIENT_SECRET = 'secret'
 
-def build_assembly_object_kxic(name, ready=True):
+def build_assembly_object_kxic(name, running= True, ready=True):
     """
     Create an assembly object as returned from the kxicontroller API
     Optionally add the status & last-applied-configuration annotation
@@ -23,7 +23,7 @@ def build_assembly_object_kxic(name, ready=True):
         "apiVersion": "insights.kx.com/v1",
         "name": name,
         "hasResources": True,
-        "running": True,
+        "running": running,
         "ready": ready,
         "syncStatus": False,
         "labels": {
