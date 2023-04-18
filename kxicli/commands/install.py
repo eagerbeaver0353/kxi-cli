@@ -284,7 +284,7 @@ def run(ctx, namespace, chart_repo_name, chart_repo_url, chart_repo_username,
         filepath, chart_repo_name = ctx.forward(setup)
 
     filepath, namespace, chart_repo, image_pull_secret, license_secret = get_values_and_secrets(filepath,
-        namespace, chart_repo_name, chart_repo_url,
+        namespace, release, chart_repo_name, chart_repo_url,
         image_pull_secret, license_secret)
 
     docker_config = get_docker_config_secret(namespace, image_pull_secret, DOCKER_SECRET_KEY)
@@ -322,7 +322,7 @@ def upgrade(namespace, release, chart_repo_name, chart_repo_url, assembly_backup
     click.secho(phrases.header_upgrade, bold=True)
 
     filepath, namespace, chart_repo, image_pull_secret, license_secret = get_values_and_secrets(filepath,
-        namespace, chart_repo_name, chart_repo_url,
+        namespace, release, chart_repo_name, chart_repo_url,
         image_pull_secret, license_secret)
 
     is_valid_upgrade_version(release, namespace, version)
@@ -408,6 +408,7 @@ def get_values(namespace, release):
 def get_values_and_secrets(
     filepath,
     namespace,
+    release,
     chart_repo_name,
     chart_repo_url,
     image_pull_secret,
@@ -426,9 +427,17 @@ def get_values_and_secrets(
 
     namespace = options.namespace.prompt(namespace)
 
-    image_pull_secret, license_secret = get_image_and_license_secret_from_values(filepath, image_pull_secret, license_secret)
-
-    validate_values(namespace, filepath)
+    if filepath:
+        values_dict = load_values_stores(filepath)
+    else:
+        try:
+            values_dict = helm.get_values(release, namespace)
+        except subprocess.CalledProcessError:
+            values_dict = {}
+    
+    image_pull_secret, license_secret = get_image_and_license_secret_from_values(values_dict, image_pull_secret, license_secret)
+    
+    validate_values(namespace, values_dict)
 
     return filepath, namespace, chart_repo, image_pull_secret, license_secret
 
@@ -740,20 +749,19 @@ def populate_tls_secret(secret: secret.Secret, cert, key):
 
     return secret
 
-def get_image_and_license_secret_from_values(values_file, image_pull_secret, license_secret):
+def get_image_and_license_secret_from_values(values_dict, image_pull_secret, license_secret):
     """Read image_pull_secret and license_secret from argument, values file, default"""
-    values_file_dict = load_values_stores(values_file)
     if image_pull_secret is None:
         image_pull_secret = get_from_values_store(
                                 ['global', 'imagePullSecrets', 0, 'name'],
-                                values_file_dict,
+                                values_dict,
                                 default_val(image_pull_key)
                                 )
 
     if license_secret is None:
         license_secret = get_from_values_store(
                                 ['global', 'license', 'secretName'],
-                                values_file_dict,
+                                values_dict,
                                 default_val(license_key)
                                 )
 
@@ -773,17 +781,17 @@ def load_values_stores(values_file):
 
     return values_file_dict
 
-def get_from_values_store(key, values_file_dict, default):
+def get_from_values_store(key, values_dict, default):
     try:
-        val = values_file_dict
+        val = values_dict
         for k in key:
             val = val[k]
-        log.debug(f'Using key {key} in values file')
+        log.debug(f'Using key {key} in values')
     except KeyError:
-        log.debug(f'Cannot find key {key} in values file. Using default {default}')
+        log.debug(f'Cannot find key {key} in values. Using default {default}')
         val = default
     except BaseException:
-        raise click.ClickException(f'Invalid values file')
+        raise click.ClickException(f'Invalid values')
 
     return val
 
@@ -1060,16 +1068,15 @@ def get_secret_config():
     }
 
 
-def validate_values(namespace, values_file):
+def validate_values(namespace, values_dict):
     click.echo(phrases.values_validating)
-    values_file_dict = load_values_stores(values_file)
 
     exit_execution = False
     for k, v in get_secret_config().items():
         # if the secret is mandatory, validate it
         if v[3]:
             default = default_val(k)
-            name = get_from_values_store(v[0], values_file_dict, default)
+            name = get_from_values_store(v[0], values_dict, default)
             exists, is_valid, _ = secret.Secret(namespace, name, v[1], v[2]).validate()
             if not exists:
                 log.error(phrases.secret_validation_not_exist.format(name=name))
