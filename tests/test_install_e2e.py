@@ -19,6 +19,8 @@ from kxicli import main
 from kxicli import phrases
 from kxicli.resources import secret
 from kxicli.commands.assembly import CONFIG_ANNOTATION
+from kxicli.commands import install
+
 import utils
 from cli_io import cli_input, cli_output
 from const import test_namespace,  test_chart_repo_name, test_chart_repo_url, \
@@ -56,6 +58,20 @@ test_crds = ['assemblies.insights.kx.com', 'assemblyresources.insights.kx.com']
 
 with open(utils.test_val_file, 'rb') as values_file:
     test_vals = yaml.full_load(values_file)
+
+# Read in slow-to-load CRD data once so it isn't loaded on each test
+# as reading this can take up to 5s
+GLOBAL_CRD_DATA = []
+tar_path = Path(__file__).parent / 'files/helm/kxi-operator-1.2.3.tgz'
+files = [f'kxi-operator/crds/{crd}' for crd in install.CRD_FILES]
+raw_data = common.extract_files_from_tar(tar_path, files)
+for blob in raw_data:
+    GLOBAL_CRD_DATA.append(yaml.safe_load(blob))
+
+def mock_read_cached_crd_data(*args, **kwargs):
+    print(f"Reading CRD data from {tar_path}")
+    return GLOBAL_CRD_DATA
+
 
 helm_add_repo_params = ()
 delete_crd_params = []
@@ -1592,6 +1608,7 @@ def test_upgrade(mocker):
     mock_get_operator_version(mocker)
     utils.mock_validate_secret(mocker)
     utils.mock_helm_env(mocker)
+    mocker.patch('kxicli.commands.install.read_cached_crd_files', mock_read_cached_crd_data)
     utils.mock_helm_fetch(mocker)
     utils.mock_helm_get_values(mocker, utils.test_val_data)
     utils.mock_kube_crd_api(mocker, create=mocked_create_crd, delete=mocked_delete_crd)
@@ -1668,6 +1685,7 @@ def test_upgrade_import_users(mocker):
     mock_get_operator_version(mocker)
     utils.mock_validate_secret(mocker)
     utils.mock_helm_env(mocker)
+    mocker.patch('kxicli.commands.install.read_cached_crd_files', mock_read_cached_crd_data)
     utils.mock_helm_fetch(mocker)
     utils.mock_helm_get_values(mocker, utils.test_val_data)
     utils.mock_kube_crd_api(mocker, create=mocked_create_crd, delete=mocked_delete_crd)
@@ -1744,6 +1762,7 @@ def test_upgrade_without_backup_filepath(mocker):
     mock_get_operator_version(mocker)
     utils.mock_validate_secret(mocker)
     utils.mock_helm_env(mocker)
+    mocker.patch('kxicli.commands.install.read_cached_crd_files', mock_read_cached_crd_data)
     utils.mock_helm_fetch(mocker)
     utils.mock_helm_get_values(mocker, utils.test_val_data)
     utils.mock_kube_crd_api(mocker, create=mocked_create_crd, delete=mocked_delete_crd)
@@ -1842,6 +1861,7 @@ def test_upgrade_when_user_declines_to_teardown_assembly(mocker):
     utils.mock_validate_secret(mocker)
     mock_get_operator_version(mocker)
     utils.mock_helm_env(mocker)
+    mocker.patch('kxicli.commands.install.read_cached_crd_files', mock_read_cached_crd_data)
     utils.mock_helm_fetch(mocker)
 
     if os.path.exists(test_asm_backup):
@@ -1898,6 +1918,7 @@ def test_upgrade_does_not_reapply_assemblies_when_upgrade_fails(mocker):
     mock_get_operator_version(mocker)
     utils.mock_validate_secret(mocker)
     utils.mock_helm_env(mocker)
+    mocker.patch('kxicli.commands.install.read_cached_crd_files', mock_read_cached_crd_data)
     utils.mock_helm_fetch(mocker)
     utils.mock_helm_get_values(mocker, utils.test_val_data)
     utils.mock_kube_crd_api(mocker, create=mocked_create_crd, delete=mocked_delete_crd)
@@ -1964,6 +1985,7 @@ def test_install_run_upgrades_when_already_installed(mocker):
     utils.mock_validate_secret(mocker)
     utils.mock_kube_crd_api(mocker, create=mocked_create_crd, delete=mocked_delete_crd)
     utils.mock_helm_env(mocker)
+    mocker.patch('kxicli.commands.install.read_cached_crd_files', mock_read_cached_crd_data)
     utils.mock_helm_fetch(mocker)
     utils.mock_helm_get_values(mocker, utils.test_val_data)
     mocker.patch('kxicli.commands.assembly._backup_filepath', lambda filepath, force: test_asm_backup)
@@ -2094,6 +2116,7 @@ def test_upgrade_with_no_assemblies(mocker):
     mock_get_operator_version(mocker)
     utils.mock_validate_secret(mocker)
     utils.mock_helm_env(mocker)
+    mocker.patch('kxicli.commands.install.read_cached_crd_files', mock_read_cached_crd_data)
     utils.mock_helm_fetch(mocker)
     utils.mock_helm_get_values(mocker, utils.test_val_data)
     utils.mock_kube_crd_api(mocker, create=mocked_create_crd, delete=mocked_delete_crd)
@@ -2297,6 +2320,7 @@ def test_install_rollback_revision(mocker):
     utils.mock_validate_secret(mocker)
     utils.mock_kube_crd_api(mocker, create=mocked_create_crd, delete=mocked_delete_crd)
     utils.mock_helm_env(mocker)
+    mocker.patch('kxicli.commands.install.read_cached_crd_files', mock_read_cached_crd_data)
     utils.mock_helm_fetch(mocker)
     user_input = f"""y
     y
