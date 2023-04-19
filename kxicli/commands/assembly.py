@@ -296,7 +296,6 @@ def _create_assembly(hostname, client_id, client_secret, realm, namespace, body,
     if wait:
         with click.progressbar(range(10), label='Waiting for assembly to enter "Ready" state') as bar:
             for n in bar:
-                time.sleep((2 ** n) + (random.randint(0, 1000) / 1000))
                 if _assembly_status(
                     hostname=hostname,
                     name=body['metadata']['name'],
@@ -307,6 +306,7 @@ def _create_assembly(hostname, client_id, client_secret, realm, namespace, body,
                     use_kubeconfig=use_kubeconfig
                 ):
                     break
+                time.sleep((2 ** n) + (random.randint(0, 1000) / 1000))
 
     click.echo(f'Custom assembly resource {body["metadata"]["name"]} created!')
     return True
@@ -361,7 +361,6 @@ def wait_for_assembly_teardown(namespace, name, hostname, client_id, client_secr
     asm_running = True
     with click.progressbar(range(10), label='Waiting for assembly to be torn down') as bar:
         for n in bar:
-            time.sleep((2 ** n) + (random.randint(0, 1000) / 1000))
             try:
                 _assembly_status(namespace, 
                     name,
@@ -375,7 +374,7 @@ def wait_for_assembly_teardown(namespace, name, hostname, client_id, client_secr
                 if exception.message == f'Assembly {name} not found':
                     asm_running = False
                     break
-
+            time.sleep((2 ** n) + (random.randint(0, 1000) / 1000))
     if asm_running:
         log.error('Assembly was not torn down in time, exiting')
     
@@ -450,9 +449,9 @@ def status(namespace, name, wait, hostname, client_id, client_secret, realm, use
     if wait:
         with click.progressbar(range(10), label='Waiting for assembly to enter "Ready" state') as bar:
             for n in bar:
-                time.sleep((2 ** n) + (random.randint(0, 1000) / 1000))
                 if _assembly_status(namespace, name, hostname, client_id, client_secret, realm, use_kubeconfig, print_status=True):
                     break
+                time.sleep((2 ** n) + (random.randint(0, 1000) / 1000))
     else:
         _assembly_status(namespace, name, hostname, client_id, client_secret, realm, use_kubeconfig, print_status=True)
 

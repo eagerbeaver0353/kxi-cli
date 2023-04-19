@@ -20,6 +20,7 @@ from test_install_e2e import mock_copy_secret, mocked_crd_exists, mocked_create_
     mocked_installed_operator_versions, mock_get_operator_version, test_operator_helm_name, mock__delete_assembly, DELETE_ASSEMBLIES_FUNC
 from test_assembly import ASSEMBLY_BACKUP_LIST, CUSTOM_OBJECT_API, mock_list_assemblies
 from test_helm import fun_subprocess_run
+from test_install_e2e import mock_read_cached_crd_data
 
 a_test_asm_str: str = 'a test asm file'
 default_config_file = str(Path(__file__).parent / 'files' / 'test-cli-config')
@@ -311,6 +312,7 @@ def test_upgrade(mocker: MockerFixture):
     mock_get_operator_version(mocker)
     mock_copy_secret(mocker)
     utils.mock_helm_env(mocker)
+    mocker.patch('kxicli.commands.install.read_cached_crd_files', mock_read_cached_crd_data)
     utils.mock_kube_crd_api(mocker, create=mocked_create_crd, delete=mocked_delete_crd)
 
     runner = CliRunner()
@@ -380,6 +382,7 @@ def test_upgrade_with_no_assemblies_running(mocker: MockerFixture):
     mock_get_operator_version(mocker)
     mock_copy_secret(mocker)
     utils.mock_helm_env(mocker)
+    mocker.patch('kxicli.commands.install.read_cached_crd_files', mock_read_cached_crd_data)
     utils.mock_kube_crd_api(mocker, create=mocked_create_crd, delete=mocked_delete_crd)
 
     runner = CliRunner()
