@@ -22,14 +22,7 @@ from kxicli import log
 from kxicli import options
 from kxicli import phrases
 from kxicli.commands import assembly
-from kxicli.commands.common.arg import arg_force, arg_filepath, arg_version, arg_operator_version, \
-    arg_release, arg_namespace, arg_assembly_backup_filepath, arg_output_file, arg_hostname, \
-    arg_chart_repo_name, arg_chart_repo_url, arg_chart_repo_username, \
-    arg_license_secret, arg_license_as_env_var, arg_license_filepath, arg_client_cert_secret, \
-    arg_image_repo, arg_image_repo_user, arg_image_pull_secret, arg_gui_client_secret, arg_operator_client_secret, \
-    arg_keycloak_secret, arg_keycloak_postgresql_secret, arg_keycloak_auth_url, \
-    arg_ingress_cert_secret, arg_ingress_cert, arg_ingress_key, arg_ingress_certmanager_disabled,  \
-    arg_import_users, arg_operator_revision, arg_operator_history
+from kxicli.commands.common import arg
 from kxicli.commands.common.namespace import create_namespace
 from kxicli.common import get_default_val as default_val, key_gui_client_secret, key_operator_client_secret
 from kxicli.resources import secret, helm
@@ -74,28 +67,9 @@ def install():
 
 
 @install.command()
-@arg_namespace()
-@arg_chart_repo_name()
-@arg_chart_repo_url()
-@arg_chart_repo_username()
-@arg_license_secret()
-@arg_license_as_env_var()
-@arg_license_filepath()
-@arg_client_cert_secret()
-@arg_image_repo()
-@arg_image_repo_user()
-@arg_image_pull_secret()
-@arg_gui_client_secret()
-@arg_operator_client_secret()
-@arg_keycloak_secret()
-@arg_keycloak_postgresql_secret()
-@arg_keycloak_auth_url()
-@arg_hostname()
-@arg_ingress_cert_secret()
-@arg_ingress_cert()
-@arg_ingress_key()
-@arg_ingress_certmanager_disabled()
-@arg_output_file()
+@arg.install_setup_group
+@arg.ingress_certmanager_disabled()
+@arg.output_file()
 def setup(namespace, chart_repo_name, chart_repo_url, chart_repo_username,
           license_secret, license_as_env_var, license_filepath,
           client_cert_secret, image_repo, image_repo_user, image_pull_secret, gui_client_secret, operator_client_secret,
@@ -242,40 +216,22 @@ def setup(namespace, chart_repo_name, chart_repo_url, chart_repo_username,
 
 
 @install.command()
-@arg_namespace()
-@arg_chart_repo_name()
-@arg_chart_repo_url()
-@arg_chart_repo_username()
-@arg_license_secret()
-@arg_license_as_env_var()
-@arg_license_filepath()
-@arg_client_cert_secret()
-@arg_image_repo()
-@arg_image_repo_user()
-@arg_image_pull_secret()
-@arg_gui_client_secret()
-@arg_operator_client_secret()
-@arg_keycloak_secret()
-@arg_keycloak_postgresql_secret()
-@arg_keycloak_auth_url()
-@arg_hostname()
-@arg_ingress_cert_secret()
-@arg_ingress_cert()
-@arg_ingress_key()
-@arg_output_file()
-@arg_filepath()
-@arg_release()
-@arg_version()
-@arg_operator_version()
-@arg_force()
-@arg_import_users()
+@arg.install_setup_group
+@arg.output_file()
+@arg.filepath()
+@arg.release()
+@arg.version()
+@arg.operator_version()
+@arg.force()
+@arg.import_users()
+@arg.chart()
 @click.pass_context
 def run(ctx, namespace, chart_repo_name, chart_repo_url, chart_repo_username, 
           license_secret, license_as_env_var, license_filepath,
           client_cert_secret, image_repo, image_repo_user, image_pull_secret, gui_client_secret, operator_client_secret,
           keycloak_secret, keycloak_postgresql_secret, keycloak_auth_url, hostname, 
           ingress_cert_secret, ingress_cert, ingress_key,
-          output_file, filepath, release, version, operator_version, force, import_users):
+          output_file, filepath, release, version, operator_version, force, import_users, chart):
     """Install kdb Insights Enterprise with a values file"""
 
     # Run setup prompts if necessary
@@ -304,20 +260,21 @@ def run(ctx, namespace, chart_repo_name, chart_repo_url, chart_repo_username,
                                  install_operator, is_op_upgrade, crd_data, is_upgrade=False)
 
 @install.command()
-@arg_namespace()
-@arg_release()
-@arg_chart_repo_name()
-@arg_chart_repo_url()
-@arg_assembly_backup_filepath()
-@arg_version()
-@arg_operator_version()
-@arg_image_pull_secret()
-@arg_license_secret()
-@arg_filepath()
-@arg_force()
-@arg_import_users()
+@arg.namespace()
+@arg.release()
+@arg.chart_repo_name()
+@arg.chart_repo_url()
+@arg.assembly_backup_filepath()
+@arg.version()
+@arg.operator_version()
+@arg.image_pull_secret()
+@arg.license_secret()
+@arg.filepath()
+@arg.force()
+@arg.import_users()
+@arg.chart()
 def upgrade(namespace, release, chart_repo_name, chart_repo_url, assembly_backup_filepath, version, operator_version, image_pull_secret,
-            license_secret, filepath, force, import_users):
+            license_secret, filepath, force, import_users, chart):
     """Upgrade kdb Insights Enterprise"""
     click.secho(phrases.header_upgrade, bold=True)
 
@@ -368,9 +325,9 @@ def perform_upgrade(namespace, release, chart_repo, assembly_backup_filepath, ve
 
 
 @install.command()
-@arg_release()
-@arg_namespace()
-@arg_force()
+@arg.release()
+@arg.namespace()
+@arg.force()
 @click.option('--uninstall-operator', is_flag=True, help='Remove KXI Operator installation')
 def delete(release, namespace, force, uninstall_operator):
     """Uninstall kdb Insights Enterprise"""
@@ -379,7 +336,7 @@ def delete(release, namespace, force, uninstall_operator):
 
 
 @install.command()
-@arg_chart_repo_name()
+@arg.chart_repo_name()
 def list_versions(chart_repo_name):
     """
     List available versions of kdb Insights Enterprise
@@ -388,8 +345,8 @@ def list_versions(chart_repo_name):
 
 
 @install.command()
-@arg_namespace()
-@arg_release()
+@arg.namespace()
+@arg.release()
 def get_values(namespace, release):
     """
     Display the values of the currently deployed kdb Insights Enterprise
@@ -1131,13 +1088,13 @@ def replace_chart_crds(crd_data):
 
 @install.command()
 @click.argument('insights_revision', default=None, required = False)
-@arg_release()
-@arg_operator_revision()
-@arg_image_pull_secret()
-@arg_namespace()
-@arg_force()
-@arg_assembly_backup_filepath()
-@arg_chart_repo_name()
+@arg.release()
+@arg.operator_revision()
+@arg.image_pull_secret()
+@arg.namespace()
+@arg.force()
+@arg.assembly_backup_filepath()
+@arg.chart_repo_name()
 def rollback(insights_revision, release, operator_revision, namespace, image_pull_secret, force, assembly_backup_filepath, chart_repo_name):
     common.load_kube_config()
     argo_managed_operator = False
@@ -1226,8 +1183,8 @@ def try_rollback(base_command, phrase):
         raise click.ClickException(e)
 
 @install.command()
-@arg_release()
-@arg_operator_history()
+@arg.release()
+@arg.operator_history()
 def history(release, show_operator):
     """
     List the revision history of a kdb Insights Enterprise install

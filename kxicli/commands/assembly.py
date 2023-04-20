@@ -5,7 +5,6 @@ import random
 import sys
 import time
 from tempfile import mkstemp
-from functools import partial
 import requests
 from kubernetes.client.exceptions import ApiException
 from tabulate import tabulate
@@ -32,7 +31,7 @@ API_PLURAL = 'assemblies'
 CONFIG_ANNOTATION = 'kubectl.kubernetes.io/last-applied-configuration'
 ASM_LABEL_SELECTOR = 'insights.kx.com/queryEnvironment!=true'
 
-arg_assembly_backup_filepath = assembly_backup_filepath.decorator(click_option_args=['--filepath'])
+local_arg_assembly_backup_filepath = assembly_backup_filepath.decorator(click_option_args=['--filepath'])
 
 
 @click.group(cls=ClickAliasedGroup)
@@ -395,9 +394,9 @@ def delete_running_assemblies(namespace, wait, force):
 
 
 @assembly.command()
-@arg.arg_namespace()
-@arg_assembly_backup_filepath()
-@arg.arg_force()
+@arg.namespace()
+@local_arg_assembly_backup_filepath()
+@arg.force()
 def backup(namespace, filepath, force):
     """Back up running assemblies to a file"""
 
@@ -407,14 +406,14 @@ def backup(namespace, filepath, force):
 
 
 @assembly.command(aliases=['create'])
-@arg.arg_hostname()
-@arg.arg_client_id()
-@arg.arg_client_secret()
-@arg.arg_realm()
-@arg.arg_namespace()
-@arg.arg_assembly_filepath()
-@arg.arg_assembly_wait()
-@arg.arg_use_kubeconfig()
+@arg.hostname()
+@arg.client_id()
+@arg.client_secret()
+@arg.realm()
+@arg.namespace()
+@arg.assembly_filepath()
+@arg.assembly_wait()
+@arg.use_kubeconfig()
 def deploy(hostname, client_id, client_secret, realm, namespace, filepath, use_kubeconfig, wait):
     """Create an assembly given an assembly file"""
 
@@ -433,14 +432,14 @@ def deploy(hostname, client_id, client_secret, realm, namespace, filepath, use_k
 
 
 @assembly.command()
-@arg.arg_namespace()
-@arg.arg_assembly_name()
-@arg.arg_assembly_wait()
-@arg.arg_hostname()
-@arg.arg_client_id()
-@arg.arg_client_secret()
-@arg.arg_realm()
-@arg.arg_use_kubeconfig()
+@arg.namespace()
+@arg.assembly_name()
+@arg.assembly_wait()
+@arg.hostname()
+@arg.client_id()
+@arg.client_secret()
+@arg.realm()
+@arg.use_kubeconfig()
 def status(namespace, name, wait, hostname, client_id, client_secret, realm, use_kubeconfig):
     """Print status of the assembly"""
 
@@ -457,12 +456,12 @@ def status(namespace, name, wait, hostname, client_id, client_secret, realm, use
 
 
 @assembly.command()
-@arg.arg_hostname()
-@arg.arg_client_id()
-@arg.arg_client_secret()
-@arg.arg_realm()
-@arg.arg_namespace()
-@arg.arg_use_kubeconfig()
+@arg.hostname()
+@arg.client_id()
+@arg.client_secret()
+@arg.realm()
+@arg.namespace()
+@arg.use_kubeconfig()
 def list(hostname, client_id, client_secret, realm, namespace, use_kubeconfig):
     """List assemblies"""
 
@@ -473,15 +472,15 @@ def list(hostname, client_id, client_secret, realm, namespace, use_kubeconfig):
 
 
 @assembly.command(aliases=['delete'])
-@arg.arg_namespace()
-@arg.arg_assembly_name()
-@arg.arg_assembly_wait()
-@arg.arg_force()
-@arg.arg_hostname()
-@arg.arg_client_id()
-@arg.arg_client_secret()
-@arg.arg_realm()
-@arg.arg_use_kubeconfig()
+@arg.namespace()
+@arg.assembly_name()
+@arg.assembly_wait()
+@arg.force()
+@arg.hostname()
+@arg.client_id()
+@arg.client_secret()
+@arg.realm()
+@arg.use_kubeconfig()
 def teardown(namespace, name, wait, force, hostname, client_id, client_secret, realm, use_kubeconfig):
     """Tears down an assembly given its name"""
 

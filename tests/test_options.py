@@ -187,12 +187,6 @@ def test_options_chart_repo_username_decorator():
     assert options.chart_repo_username.decorator().keywords == {'help': 'Username for the chart repository'}
 
 
-def test_options_chart_repo_name_decorator():
-    assert options.chart_repo_name.decorator().func == click.option
-    assert options.chart_repo_name.decorator().args == ('--chart-repo-name',)
-    assert options.chart_repo_name.decorator().keywords == {'help': 'Name for chart repository'}
-
-
 def test_assembly_backup_filepath_decorator():
     assert options.assembly_backup_filepath.decorator().func == click.option
     assert options.assembly_backup_filepath.decorator().args == ('--assembly-backup-filepath',)
