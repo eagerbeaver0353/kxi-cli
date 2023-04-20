@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from kxi.auth import Authorizer
-from kxicli import phrases
 
 class UserNotFoundException(Exception):
     pass

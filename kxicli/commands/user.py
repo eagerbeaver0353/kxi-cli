@@ -44,12 +44,12 @@ def user():
 @click.argument('username')
 @click.option('--password', required=True, help='Password for user')
 @click.option('--email', help='Email address for user')
-@arg.arg_temporary()
-@arg.arg_hostname()
-@arg.arg_realm()
-@arg.arg_admin_username()
-@arg.arg_admin_password()
-@arg.arg_timeout()
+@arg.temporary()
+@arg.hostname()
+@arg.realm()
+@arg.admin_username()
+@arg.admin_password()
+@arg.timeout()
 def create(
     username,
     password,
@@ -70,11 +70,11 @@ def create(
         handle_http_exception(e, "Creating user failed with")
 
 @user.command()
-@arg.arg_hostname()
-@arg.arg_realm()
-@arg.arg_admin_username()
-@arg.arg_admin_password()
-@arg.arg_timeout()
+@arg.hostname()
+@arg.realm()
+@arg.admin_username()
+@arg.admin_password()
+@arg.timeout()
 def list(
     hostname,
     realm,
@@ -95,11 +95,11 @@ def list(
     click.echo(tabulate.tabulate(users, headers=keys_of_interest))
 
 @user.command()
-@arg.arg_hostname()
-@arg.arg_realm()
-@arg.arg_admin_username()
-@arg.arg_admin_password()
-@arg.arg_timeout()
+@arg.hostname()
+@arg.realm()
+@arg.admin_username()
+@arg.admin_password()
+@arg.timeout()
 def get_available_roles(
     hostname,
     realm,
@@ -121,11 +121,11 @@ def get_available_roles(
 
 @user.command()
 @click.argument("username")
-@arg.arg_hostname()
-@arg.arg_realm()
-@arg.arg_admin_username()
-@arg.arg_admin_password()
-@arg.arg_timeout()
+@arg.hostname()
+@arg.realm()
+@arg.admin_username()
+@arg.admin_password()
+@arg.timeout()
 def get_assigned_roles(
     username,
     hostname,
@@ -149,12 +149,12 @@ def get_assigned_roles(
 @user.command()
 @click.argument("username")
 @click.option("--password", help="New password for the user")
-@arg.arg_temporary()
-@arg.arg_hostname()
-@arg.arg_realm()
-@arg.arg_admin_username()
-@arg.arg_admin_password()
-@arg.arg_timeout()
+@arg.temporary()
+@arg.hostname()
+@arg.realm()
+@arg.admin_username()
+@arg.admin_password()
+@arg.timeout()
 def reset_password(
     username,
     password,
@@ -176,11 +176,11 @@ def reset_password(
 @user.command()
 @click.argument("username")
 @click.option("--roles", required=True, help="Comma separated list of roles")
-@arg.arg_hostname()
-@arg.arg_realm()
-@arg.arg_admin_username()
-@arg.arg_admin_password()
-@arg.arg_timeout()
+@arg.hostname()
+@arg.realm()
+@arg.admin_username()
+@arg.admin_password()
+@arg.timeout()
 def assign_roles(
     username,
     roles,
@@ -205,11 +205,11 @@ def assign_roles(
 @user.command()
 @click.argument("username")
 @click.option("--roles", required=True, help="Comma separated list of roles")
-@arg.arg_hostname()
-@arg.arg_realm()
-@arg.arg_admin_username()
-@arg.arg_admin_password()
-@arg.arg_timeout()
+@arg.hostname()
+@arg.realm()
+@arg.admin_username()
+@arg.admin_password()
+@arg.timeout()
 def remove_roles(
     username,
     roles,
@@ -233,12 +233,12 @@ def remove_roles(
 
 @user.command()
 @click.argument("username")
-@arg.arg_hostname()
-@arg.arg_realm()
-@arg.arg_admin_username()
-@arg.arg_admin_password()
-@arg.arg_timeout()
-@arg.arg_force()
+@arg.hostname()
+@arg.realm()
+@arg.admin_username()
+@arg.admin_password()
+@arg.timeout()
+@arg.force()
 def delete(
     username,
     hostname,

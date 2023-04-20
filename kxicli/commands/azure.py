@@ -8,8 +8,7 @@ from click import ClickException
 
 from kxicli.commands import assembly as assembly_lib
 from kxicli.commands import install as install_lib
-from kxicli.commands.common.arg import arg_force, arg_filepath, arg_operator_version as arg_common_operator_version, \
-    arg_version, arg_release as arg_common_release, arg_namespace, arg_assembly_backup_filepath
+from kxicli.commands.common import arg
 from kxicli.common import get_help_text as help_text
 from kxicli.resources import helm
 
@@ -21,11 +20,11 @@ default_docker_config_secret_name: str = 'kxi-acr-pull-secret'
 
 # Possible arguments
 
-arg_release = partial(
-    arg_common_release, default=default_insights_release
+local_arg_release = partial(
+    arg.release, default=default_insights_release
 )
-arg_operator_version = partial(
-    arg_common_operator_version, required=True
+local_arg_operator_version = partial(
+    arg.operator_version, required=True
 )
 
 
@@ -34,13 +33,13 @@ def azure():
     """Insights Azure related commands"""
 
 @azure.command()
-@arg_namespace()
-@arg_release()
-@arg_version()
-@arg_operator_version()
-@arg_filepath()
-@arg_assembly_backup_filepath()
-@arg_force()
+@arg.namespace()
+@local_arg_release()
+@arg.version()
+@local_arg_operator_version()
+@arg.filepath()
+@arg.assembly_backup_filepath()
+@arg.force()
 @click.pass_context
 def upgrade(
         ctx,
@@ -76,10 +75,10 @@ def upgrade(
 
 
 @azure.command()
-@arg_namespace()
-@arg_release()
-@arg_assembly_backup_filepath()
-@arg_force()
+@arg.namespace()
+@local_arg_release()
+@arg.assembly_backup_filepath()
+@arg.force()
 def uninstall(
         namespace: str,
         release: str,
@@ -108,12 +107,12 @@ def uninstall(
 
 
 @azure.command()
-@arg_namespace()
-@arg_release()
-@arg_version()
-@arg_operator_version()
-@arg_filepath()
-@arg_force()
+@arg.namespace()
+@local_arg_release()
+@arg.version()
+@local_arg_operator_version()
+@arg.filepath()
+@arg.force()
 @click.pass_context
 def install(
         ctx,
@@ -150,9 +149,9 @@ def assembly():
 
 
 @assembly.command()
-@arg_namespace()
-@arg_assembly_backup_filepath()
-@arg_force()
+@arg.namespace()
+@arg.assembly_backup_filepath()
+@arg.force()
 def backup(
         namespace: str,
         assembly_backup_filepath: Optional[str] = None,
@@ -164,8 +163,8 @@ def backup(
 
 
 @assembly.command()
-@arg_namespace()
-@arg_force()
+@arg.namespace()
+@arg.force()
 def delete(
         namespace: str,
         force: bool = False
@@ -179,8 +178,8 @@ def delete(
 
 
 @assembly.command()
-@arg_namespace()
-@arg_assembly_backup_filepath()
+@arg.namespace()
+@arg.assembly_backup_filepath()
 def restore(
         namespace: str,
         assembly_backup_filepath: Optional[str] = None,

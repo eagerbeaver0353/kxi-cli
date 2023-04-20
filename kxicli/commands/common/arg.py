@@ -4,96 +4,135 @@ import click
 
 from kxicli.common import get_default_val as default_val
 from kxicli.common import get_help_text as help_text
+from kxicli.common import key_chart_repo_name
 from kxicli import options
 
 
-arg_force = partial(
+def combine_decorators(*decorators):
+    """
+    This method takes decorators as arguments and combines them into a single decorator to reduce duplication
+    """
+    def combined(func):
+        for decorator in reversed(decorators):
+            func = decorator(func)
+        return func
+    return combined
+
+force = partial(
     click.option, '--force', is_flag=True, help='Perform action without prompting for confirmation'
 )
 
-arg_filepath = options.filepath.decorator()
+filepath = options.filepath.decorator()
 
-arg_operator_version = options.operator_version.decorator()
+operator_version = options.operator_version.decorator()
 
-arg_version = options.version.decorator()
+version = options.version.decorator()
 
-arg_release = partial(
+release = partial(
     click.option, '--release', help=help_text('release.name'), default=lambda: default_val('release.name'),
     type=click.STRING
 )
 
-arg_namespace = options.namespace.decorator()
+namespace = options.namespace.decorator()
 
-arg_assembly_backup_filepath = options.assembly_backup_filepath.decorator()
+assembly_backup_filepath = options.assembly_backup_filepath.decorator()
 
-arg_assembly_filepath = options.assembly_filepath.decorator()
+assembly_filepath = options.assembly_filepath.decorator()
 
-arg_assembly_name = options.assembly_name.decorator()
+assembly_name = options.assembly_name.decorator()
 
-arg_assembly_wait = options.assembly_wait.decorator()
+assembly_wait = options.assembly_wait.decorator()
 
-arg_output_file = options.output_file.decorator()
+output_file = options.output_file.decorator()
 
-arg_license_secret = options.license_secret.decorator()
+license_secret = options.license_secret.decorator()
 
-arg_license_as_env_var = options.license_as_env_var.decorator()
+license_as_env_var = options.license_as_env_var.decorator()
 
-arg_license_filepath = options.license_filepath.decorator()
+license_filepath = options.license_filepath.decorator()
 
-arg_hostname = options.hostname.decorator()
+hostname = options.hostname.decorator()
 
-arg_chart_repo_name = options.chart_repo_name.decorator()
+chart_repo_name = options.chart_repo_name.decorator()
 
-arg_chart_repo_url = options.chart_repo_url.decorator()
+chart_repo_url = options.chart_repo_url.decorator()
 
-arg_chart_repo_username = options.chart_repo_username.decorator()
+chart_repo_username = options.chart_repo_username.decorator()
 
-arg_chart_repo_password = options.chart_repo_password.decorator()
+chart_repo_password = options.chart_repo_password.decorator()
 
-arg_client_cert_secret = options.client_cert_secret.decorator()
+client_cert_secret = options.client_cert_secret.decorator()
 
-arg_image_repo = options.image_repo.decorator()
+image_repo = options.image_repo.decorator()
 
-arg_image_repo_user= options.image_repo_user.decorator()
+image_repo_user= options.image_repo_user.decorator()
 
-arg_image_pull_secret = options.image_pull_secret.decorator()
+image_pull_secret = options.image_pull_secret.decorator()
 
-arg_gui_client_secret = options.gui_client_secret.decorator()
+gui_client_secret = options.gui_client_secret.decorator()
 
-arg_operator_client_secret = options.operator_client_secret.decorator()
+operator_client_secret = options.operator_client_secret.decorator()
 
-arg_keycloak_secret = options.keycloak_secret.decorator()
+keycloak_secret = options.keycloak_secret.decorator()
 
-arg_keycloak_postgresql_secret = options.keycloak_postgresql_secret.decorator()
+keycloak_postgresql_secret = options.keycloak_postgresql_secret.decorator()
 
-arg_keycloak_auth_url = options.keycloak_auth_url.decorator()
+keycloak_auth_url = options.keycloak_auth_url.decorator()
 
-arg_ingress_cert_secret = options.ingress_cert_secret.decorator()
+ingress_cert_secret = options.ingress_cert_secret.decorator()
 
-arg_ingress_cert = options.ingress_cert.decorator()
+ingress_cert = options.ingress_cert.decorator()
 
-arg_ingress_key = options.ingress_key.decorator()
+ingress_key = options.ingress_key.decorator()
 
-arg_ingress_certmanager_disabled = options.ingress_certmanager_disabled.decorator()
+ingress_certmanager_disabled = options.ingress_certmanager_disabled.decorator()
 
-arg_client_id = options.client_id.decorator()
+client_id = options.client_id.decorator()
 
-arg_client_secret = options.client_secret.decorator()
+client_secret = options.client_secret.decorator()
 
-arg_realm = options.realm.decorator()
+realm = options.realm.decorator()
 
-arg_use_kubeconfig = options.use_kubeconfig.decorator()
+use_kubeconfig = options.use_kubeconfig.decorator()
 
-arg_import_users = options.import_users.decorator()
+import_users = options.import_users.decorator()
 
-arg_admin_username = options.admin_username.decorator()
+admin_username = options.admin_username.decorator()
 
-arg_admin_password = options.admin_password.decorator()
+admin_password = options.admin_password.decorator()
 
-arg_timeout = options.timeout.decorator()
+timeout = options.timeout.decorator()
 
-arg_temporary = options.temporary.decorator()
+temporary = options.temporary.decorator()
 
-arg_operator_revision = options.operator_revision.decorator()
+operator_revision = options.operator_revision.decorator()
 
-arg_operator_history = options.operator_history.decorator()
+operator_history = options.operator_history.decorator()
+
+chart = partial(
+    click.argument, 'chart', default=f"{default_val(key_chart_repo_name)}/insights"
+)
+
+# Group of decorators for 'kxi install setup'
+install_setup_group = combine_decorators(
+    namespace(),
+    chart_repo_name(),
+    chart_repo_url(),
+    chart_repo_username(),
+    license_secret(),
+    license_as_env_var(),
+    license_filepath(),
+    client_cert_secret(),
+    image_repo(),
+    image_repo_user(),
+    image_pull_secret(),
+    gui_client_secret(),
+    operator_client_secret(),
+    keycloak_secret(),
+    keycloak_postgresql_secret(),
+    keycloak_auth_url(),
+    hostname(),
+    ingress_cert_secret(),
+    ingress_cert(),
+    ingress_key()
+)

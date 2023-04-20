@@ -144,7 +144,7 @@ class Option():
 
         if not click_option_args:
             click_option_args = self.click_option_args
-        
+
         return partial(
             click.option,
             *click_option_args,
