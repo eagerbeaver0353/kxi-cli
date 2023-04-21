@@ -21,15 +21,18 @@ VERSION_MSG = f'%(prog)s, version %(version)s from {PKG_DIR} (Python {PYTHON_VER
 @click.pass_context
 def cli(ctx, debug, profile):
     """kdb Insights Enterprise CLI"""
+    ctx.obj = {}
     if debug:
-        ctx.obj = {"debug":True}
+        ctx.obj["debug"] = True
         log.GLOBAL_DEBUG_LOG = True
         log.debug(f'Version {CLI_VERSION}')
         log.debug('Enabled global debug logging')
 
     config.load_config(profile)
-    if not profile in config.config and not ctx.invoked_subcommand == 'configure':
+    if profile not in config.config and ctx.invoked_subcommand != 'configure':
         config.set_config(profile)
+
+    ctx.obj["kxi_cli_profile"] = profile
 
 
 @click.command()
