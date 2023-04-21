@@ -8,14 +8,13 @@ from kxicli import config
 from kxicli import log
 from kxicli.commands import client, assembly, auth, install, package, azure, azure_idp, user
 
-CLI_VERSION = pkg_resources.require('kxicli')[0].version
 PYTHON_VERSION = f'{sys.version_info.major}.{sys.version_info.minor}'
 PKG_DIR = os.path.dirname(os.path.abspath(__file__))
 VERSION_MSG = f'%(prog)s, version %(version)s from {PKG_DIR} (Python {PYTHON_VERSION})'
 
 
 @click.group()
-@click.version_option(CLI_VERSION, message=VERSION_MSG)
+@click.version_option(message=VERSION_MSG)
 @click.option('--debug', is_flag=True, default=False, help='Enable debug logging.')
 @click.option('--profile', default='default', help='Name of configuration profile to use.')
 @click.pass_context
