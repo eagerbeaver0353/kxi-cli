@@ -1,5 +1,5 @@
 [default]
-hostname = https://insights-1-4.aws-red.kxi-dev.kx.com
+hostname = https://insights-main.aws-stable.kxi-dev.kx.com
 realm = insights
 client.id = test-publisher
 client.secret = special-secret
