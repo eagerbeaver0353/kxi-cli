@@ -26,6 +26,9 @@ stages:
 variables:
   PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
   KX_PIP_EXTRA_INSTALL_URL: "https://${INT_NEXUS_USER_RW}:${INT_NEXUS_PASS_RW}@${INSIGHTS_DEV_NEXUS_URL_NOPREFIX}/repository/kxi/simple"
+  PIP_ROOT_USER_ACTION: ignore
+  PIP_DISABLE_PIP_VERSION_CHECK: 1
+  PYTHONUNBUFFERED: 1
 
 cache:
   paths:

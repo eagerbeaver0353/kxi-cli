@@ -49,6 +49,11 @@
     "devel",
     "tablefmt",
     "numalign",
-    "stralign"
+    "stralign",
+    "restic",
+    "backupcommand",
+    "PGDATABASE",
+    "PGUSER",
+    "yamlcontent"
   ]
 }
