@@ -766,6 +766,7 @@ def test_get_values_and_secrets_from_helm_values_exist(mocker):
     test_val_data_updated['global']['license']['secretName'] = test_lic_secret
     mock_helm_get_values(mocker, test_val_data_updated)
     mock_validate_secret(mocker, True)
+    mocker.patch('click.get_current_context')
     assert install.get_values_and_secrets(None,
                                           test_ns,
                                           'test_release',
@@ -783,6 +784,7 @@ def test_get_values_and_secrets_from_helm_values_dont_exist(mocker, capfd):
     test_val_data_updated['global']['license']['secretName'] = test_lic_secret
     mock_helm_get_values(mocker, test_val_data_updated)
     mock_validate_secret(mocker, False)
+    mocker.patch('click.get_current_context')
     with pytest.raises(click.ClickException) as e:
         install.get_values_and_secrets(None,
                                           test_ns,
@@ -802,3 +804,19 @@ error=Required secret kxi-nexus-pull-secret does not exist
 error=Required secret kxi-keycloak does not exist
 error=Required secret kxi-postgresql does not exist
 """ 
+
+def test_get_values_and_secrets_from_helm_values_exist_called_from_azure(mocker):
+    test_val_data_updated = copy.deepcopy(test_vals)
+    test_val_data_updated['global']['image']['repository'] = 'test-repo.com'
+    mock_helm_get_values(mocker, test_val_data_updated)
+    mock_validate_secret(mocker, True)
+    ctx_mock = mocker.patch('click.get_current_context')
+    ctx_mock.return_value.parent.info_name = 'azure'
+    assert install.get_values_and_secrets(None,
+                                          test_ns,
+                                          'test_release',
+                                          test_chart_repo_name,
+                                          None,
+                                          None,
+                                          None
+                                          ) == (None, test_ns, 'oci://test-repo.com', 'kxi-nexus-pull-secret', 'kxi-license')

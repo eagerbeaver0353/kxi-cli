@@ -8,7 +8,7 @@ from keycloak import keycloak_admin
 from kxicli import common
 
 from azure.identity import DefaultAzureCredential
-from kxicli.commands.azure import azure
+from kxicli.commands.install import install
 from functools import wraps, partial
 
 from kxicli.resources.keycloak_definitions import format_idp_list, format_mapper_list, get_email_mapper_definition, \
@@ -98,7 +98,7 @@ def log_exception(func=None, *, handle):
     return wrapper
 
 
-@azure.group()
+@install.group()
 def idp():
     """Azure Identity Provider commands"""
 
