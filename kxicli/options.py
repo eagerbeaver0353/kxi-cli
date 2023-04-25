@@ -243,14 +243,16 @@ chart_repo_url = Option (
     '--chart-repo-url',
     config_name = key_chart_repo_url,
     prompt_message = phrases.chart_repo_url,
-    help = help_text(key_chart_repo_url)
+    help = help_text(key_chart_repo_url),
+    hidden=True
 )
 
 chart_repo_username = Option (
     '--chart-repo-username',
     config_name = key_chart_repo_username,
     prompt_message = phrases.chart_user,
-    help = help_text(key_chart_repo_username)
+    help = help_text(key_chart_repo_username),
+    hidden=True
 )
 
 chart_repo_password = Option (

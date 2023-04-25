@@ -116,7 +116,7 @@ chart = partial(
 # Group of decorators for 'kxi install setup'
 install_setup_group = combine_decorators(
     namespace(),
-    chart_repo_name(),
+    chart_repo_name(hidden=True),
     chart_repo_url(),
     chart_repo_username(),
     license_secret(),

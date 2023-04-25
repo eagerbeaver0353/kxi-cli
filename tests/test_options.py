@@ -184,7 +184,7 @@ def test_options_chart_repo_name_decorator():
 def test_options_chart_repo_username_decorator():
     assert options.chart_repo_username.decorator().func == click.option
     assert options.chart_repo_username.decorator().args == ('--chart-repo-username',)
-    assert options.chart_repo_username.decorator().keywords == {'help': 'Username for the chart repository'}
+    assert options.chart_repo_username.decorator().keywords == {'help': 'Username for the chart repository', 'hidden': True}
 
 
 def test_assembly_backup_filepath_decorator():

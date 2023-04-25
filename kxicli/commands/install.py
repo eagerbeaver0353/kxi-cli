@@ -264,7 +264,7 @@ def run(ctx, namespace, chart_repo_name, chart_repo_url, chart_repo_username,
 @install.command()
 @arg.namespace()
 @arg.release()
-@arg.chart_repo_name()
+@arg.chart_repo_name(hidden=True)
 @arg.chart_repo_url()
 @arg.assembly_backup_filepath()
 @arg.version()
