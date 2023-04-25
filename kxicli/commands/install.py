@@ -5,7 +5,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-from typing import Callable, Dict
+from typing import Callable
 
 import click
 import semver
@@ -13,6 +13,7 @@ import re
 import kubernetes as k8s
 import yaml
 from click import ClickException
+from click_aliases import ClickAliasedGroup
 from cryptography import x509
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization, asymmetric, hashes
@@ -21,6 +22,7 @@ from kxicli import common
 from kxicli import log
 from kxicli import options
 from kxicli import phrases
+from kxicli.cli_group import cli
 from kxicli.commands import assembly
 from kxicli.commands.common import arg
 from kxicli.commands.common.namespace import create_namespace
@@ -61,10 +63,10 @@ CRD_NAMES = [
 license_key = 'license.secret'
 image_pull_key = 'image.pullSecret'
 
-@click.group()
+
+@cli.group('install', cls=ClickAliasedGroup, aliases=['azure'])
 def install():
     """Insights installation commands"""
-
 
 @install.command()
 @arg.install_setup_group
@@ -215,7 +217,7 @@ def setup(namespace, chart_repo_name, chart_repo_url, chart_repo_username,
     return output_file, chart_repo_name
 
 
-@install.command()
+@install.command(aliases=['install'])
 @arg.install_setup_group
 @arg.output_file()
 @arg.filepath()
@@ -324,15 +326,21 @@ def perform_upgrade(namespace, release, chart_repo, assembly_backup_filepath, ve
         click.secho(str.format(phrases.upgrade_complete, version=version), bold=True)
 
 
-@install.command()
+@install.command(aliases=['uninstall'])
 @arg.release()
 @arg.namespace()
 @arg.force()
 @click.option('--uninstall-operator', is_flag=True, help='Remove KXI Operator installation')
-def delete(release, namespace, force, uninstall_operator):
+@arg.assembly_backup_filepath()
+def delete(release, namespace, force, uninstall_operator, assembly_backup_filepath):
     """Uninstall kdb Insights Enterprise"""
-    namespace = options.namespace.prompt(namespace)
-    delete_release_operator_and_crds(release=release, namespace=namespace, force=force, uninstall_operator=uninstall_operator)
+    namespace = options.namespace.prompt(namespace)    
+    delete_release_operator_and_crds(release=release,
+                                     namespace=namespace,
+                                     force=force,
+                                     uninstall_operator=uninstall_operator,
+                                     assembly_backup_filepath=assembly_backup_filepath
+                                     )
 
 
 @install.command()
@@ -372,16 +380,6 @@ def get_values_and_secrets(
     license_secret
     ):
 
-    if chart_repo_url and 'oci://' in chart_repo_url:
-            helm_version_checked=helm.get_helm_version_checked()
-            helm_version_checked.ok()
-            chart_repo = chart_repo_url
-    else:
-        chart_repo_name = options.chart_repo_name.prompt(chart_repo_name, silent=True)
-        check_helm_repo_exists(chart_repo_name)
-        helm.repo_update()
-        chart_repo = chart_repo_name
-
     namespace = options.namespace.prompt(namespace)
 
     if filepath:
@@ -391,6 +389,17 @@ def get_values_and_secrets(
             values_dict = helm.get_values(release, namespace)
         except subprocess.CalledProcessError:
             values_dict = {}
+
+    chart_repo_url = check_azure_oci_repo(values_dict, chart_repo_url)
+    if chart_repo_url and 'oci://' in chart_repo_url:
+            helm_version_checked=helm.get_helm_version_checked()
+            helm_version_checked.ok()
+            chart_repo = chart_repo_url
+    else:
+        chart_repo_name = options.chart_repo_name.prompt(chart_repo_name, silent=True)
+        check_helm_repo_exists(chart_repo_name)
+        helm.repo_update()
+        chart_repo = chart_repo_name
     
     image_pull_secret, license_secret = get_image_and_license_secret_from_values(values_dict, image_pull_secret, license_secret)
     
@@ -398,6 +407,14 @@ def get_values_and_secrets(
 
     return filepath, namespace, chart_repo, image_pull_secret, license_secret
 
+
+def check_azure_oci_repo(values_dict, chart_repo_url):
+    ctx = click.get_current_context()
+    if chart_repo_url or ctx.parent.info_name != 'azure':
+        return chart_repo_url
+    global_image_repository: str = values_dict['global']['image']['repository']
+    # we only need the first part of the url
+    return f'oci://{global_image_repository.split("/")[0]}'
 
 def get_secret(secret_object: secret.Secret,
                secret_data_name: str
@@ -894,13 +911,14 @@ def install_operator_and_release(
     return True
 
 
-def delete_release_operator_and_crds(release, namespace, force, uninstall_operator):
+def delete_release_operator_and_crds(release, namespace, force, uninstall_operator, assembly_backup_filepath):
     """Delete insights, operator and CRDs"""
     common.load_kube_config()
     
     if not insights_installed(release, namespace):
         click.echo('\nkdb Insights Enterprise installation not found')
     elif force or click.confirm('\nkdb Insights Enterprise is deployed. Do you want to uninstall?'):
+        assembly.backup_assemblies(namespace, assembly_backup_filepath, force)
         assembly.delete_running_assemblies(namespace, True, True)
         helm.uninstall(release=release, namespace=namespace)
 

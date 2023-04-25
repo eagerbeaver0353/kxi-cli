@@ -18,6 +18,8 @@ from kxicli import common
 from kxicli import main
 from kxicli import phrases
 from kxicli.resources import secret
+from kxicli.resources.helm import LocalHelmVersion, minimum_helm_version, HelmVersionChecked, \
+    required_helm_version
 from kxicli.commands.assembly import CONFIG_ANNOTATION
 from kxicli.commands import install
 
@@ -25,7 +27,6 @@ import utils
 from cli_io import cli_input, cli_output
 from const import test_namespace,  test_chart_repo_name, test_chart_repo_url, \
     test_user, test_pass, test_docker_config_json, test_cert, test_key, test_ingress_cert_secret
-from test_azure import helm_version_checked
 
 common.config.config_file = os.path.dirname(__file__) + '/files/test-cli-config'
 common.config.load_config("default")
@@ -169,6 +170,10 @@ def mock_empty_helm_repo_list(mocker):
     mocker.patch('kxicli.commands.install.helm_repo_list', mocked_empty_list)
 
 def mocked_helm_version_checked():
+    helm_version_checked: HelmVersionChecked = HelmVersionChecked(
+        req_helm_version=required_helm_version,
+        local_helm_version=LocalHelmVersion(minimum_helm_version)
+    )
     return helm_version_checked
 
 def mock_delete_crd(mocker):
@@ -362,6 +367,10 @@ def mocked_generate_password():
 
 def mock_generate_password(mocker):
     mocker.patch('kxicli.options.generate_password', mocked_generate_password)
+
+
+def mock_asm_backup_path(mocker):
+    mocker.patch('kxicli.commands.assembly._backup_filepath', lambda filepath, force: test_asm_backup)
 
 
 def setup_mocks(mocker):
@@ -1193,6 +1202,7 @@ def test_delete(mocker):
     mock_subprocess_run(mocker)
     mock_set_insights_operator_and_crd_installed_state(mocker, True, False, False)
     mock_delete_crd(mocker)
+    mock_asm_backup_path(mocker)
     mocker.patch(GET_ASSEMBLIES_LIST_FUNC, mock_list_assembly_multiple)
     mocker.patch(DELETE_ASSEMBLIES_FUNC, mock__delete_assembly)
     
@@ -1204,6 +1214,7 @@ def test_delete(mocker):
         result = runner.invoke(main.cli, ['install', 'delete'], input=user_input)
         expected_output = f"""
 kdb Insights Enterprise is deployed. Do you want to uninstall? [y/N]: y
+Persisted assembly definitions for ['{test_asm_name}', '{test_asm_name2}'] to {test_asm_backup}
 Uninstalling release insights in namespace {test_namespace}
 """
     assert result.exit_code == 0
@@ -1246,6 +1257,7 @@ def test_delete_specify_release(mocker):
     mock_subprocess_run(mocker)
     mock_set_insights_operator_and_crd_installed_state(mocker, True, False, False)
     mock_delete_crd(mocker)
+    mock_asm_backup_path(mocker)
     mocker.patch(GET_ASSEMBLIES_LIST_FUNC, mock_list_assembly_multiple)
     mocker.patch(DELETE_ASSEMBLIES_FUNC, mock__delete_assembly)
     
@@ -1261,6 +1273,7 @@ def test_delete_specify_release(mocker):
         result = runner.invoke(main.cli, ['install', 'delete', '--release', 'atestrelease'], input=user_input)
         expected_output = f"""
 kdb Insights Enterprise is deployed. Do you want to uninstall? [y/N]: y
+Persisted assembly definitions for ['{test_asm_name}', '{test_asm_name2}'] to {test_asm_backup}
 Uninstalling release atestrelease in namespace {test_namespace}
 """
     assert result.exit_code == 0
@@ -1290,6 +1303,7 @@ def test_delete_specific_release_no_assemblies(mocker):
         result = runner.invoke(main.cli, ['install', 'delete', '--release', 'atestrelease'], input=user_input)
         expected_output = f"""
 kdb Insights Enterprise is deployed. Do you want to uninstall? [y/N]: y
+No assemblies to back up
 Uninstalling release atestrelease in namespace {test_namespace}
 """
     assert result.exit_code == 0
@@ -1304,6 +1318,7 @@ def test_delete_specific_release_one_assemblies(mocker):
     mock_subprocess_run(mocker)
     mock_set_insights_operator_and_crd_installed_state(mocker, True, False, False)
     mock_delete_crd(mocker)
+    mock_asm_backup_path(mocker)
     mocker.patch(GET_ASSEMBLIES_LIST_FUNC, mock_list_assembly)
     mocker.patch(DELETE_ASSEMBLIES_FUNC, mock__delete_assembly)
     
@@ -1318,6 +1333,7 @@ def test_delete_specific_release_one_assemblies(mocker):
         result = runner.invoke(main.cli, ['install', 'delete', '--release', 'atestrelease'], input=user_input)
         expected_output = f"""
 kdb Insights Enterprise is deployed. Do you want to uninstall? [y/N]: y
+Persisted assembly definitions for ['{test_asm_name}'] to {test_asm_backup}
 Uninstalling release atestrelease in namespace {test_namespace}
 """
     assert result.exit_code == 0
@@ -1331,7 +1347,7 @@ Uninstalling release atestrelease in namespace {test_namespace}
 
 def test_delete_does_not_prompt_to_remove_operator_and_crd_when_insights_exists(mocker):
     """
-    Tests if a user answers n to removing insights, the kxi exits withotu furterh prompts
+    Tests if a user answers 'n' to removing insights, the kxi exits without further prompts
     """
     global delete_assembly_args
 
@@ -1364,6 +1380,7 @@ def test_delete_removes_insights_and_operator(mocker):
 
     mock_subprocess_run(mocker)
     mock_delete_crd(mocker)
+    mock_asm_backup_path(mocker)
     mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
     mocker.patch(GET_ASSEMBLIES_LIST_FUNC, mock_list_assembly_multiple)
     mocker.patch(DELETE_ASSEMBLIES_FUNC, mock__delete_assembly)
@@ -1378,6 +1395,7 @@ def test_delete_removes_insights_and_operator(mocker):
         result = runner.invoke(main.cli, ['install', 'delete','--uninstall-operator'], input=user_input)
         expected_output = f"""
 kdb Insights Enterprise is deployed. Do you want to uninstall? [y/N]: y
+Persisted assembly definitions for ['{test_asm_name}', '{test_asm_name2}'] to {test_asm_backup}
 Uninstalling release insights in namespace {test_namespace}
 Deleting CRD assemblies.insights.kx.com
 Deleting CRD assemblyresources.insights.kx.com
@@ -1445,6 +1463,7 @@ def test_delete_removes_insights(mocker):
 
     mock_subprocess_run(mocker)
     mock_delete_crd(mocker)
+    mock_asm_backup_path(mocker)
     mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
     mocker.patch(GET_ASSEMBLIES_LIST_FUNC, mock_list_assembly_multiple)
     mocker.patch(DELETE_ASSEMBLIES_FUNC, mock__delete_assembly)
@@ -1460,6 +1479,7 @@ def test_delete_removes_insights(mocker):
         result = runner.invoke(main.cli, ['install', 'delete'], input=user_input)
         expected_output = f"""
 kdb Insights Enterprise is deployed. Do you want to uninstall? [y/N]: y
+Persisted assembly definitions for ['{test_asm_name}', '{test_asm_name2}'] to {test_asm_backup}
 Uninstalling release insights in namespace {test_namespace}
 """
     assert result.exit_code == 0
@@ -1475,6 +1495,7 @@ def test_delete_force_removes_insights_operator_and_crd(mocker):
 
     mock_subprocess_run(mocker)
     mock_delete_crd(mocker)
+    mock_asm_backup_path(mocker)
     mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
     mocker.patch(GET_ASSEMBLIES_LIST_FUNC, mock_list_assembly_multiple)
     mocker.patch(DELETE_ASSEMBLIES_FUNC, mock__delete_assembly)
@@ -1485,7 +1506,8 @@ def test_delete_force_removes_insights_operator_and_crd(mocker):
     runner = CliRunner()
     with runner.isolated_filesystem():
         result = runner.invoke(main.cli, ['install', 'delete', '--force'])
-        expected_output = f"""Uninstalling release insights in namespace {test_namespace}
+        expected_output = f"""Persisted assembly definitions for ['{test_asm_name}', '{test_asm_name2}'] to {test_asm_backup}
+Uninstalling release insights in namespace {test_namespace}
 Deleting CRD assemblies.insights.kx.com
 Deleting CRD assemblyresources.insights.kx.com
 Uninstalling release test-op-helm in namespace kxi-operator
@@ -1504,6 +1526,7 @@ Uninstalling release test-op-helm in namespace kxi-operator
 
 def test_delete_from_given_namespace(mocker):
     mock_subprocess_run(mocker)
+    mock_asm_backup_path(mocker)
     mock_set_insights_operator_and_crd_installed_state(mocker, True, False, False)
     mocker.patch(GET_ASSEMBLIES_LIST_FUNC, mock_list_assembly_multiple)
     mocker.patch(DELETE_ASSEMBLIES_FUNC, mock__delete_assembly)
@@ -1526,6 +1549,7 @@ def test_delete_from_given_namespace(mocker):
         result = runner.invoke(main.cli, cmd, input=user_input)
         expected_output = f"""
 kdb Insights Enterprise is deployed. Do you want to uninstall? [y/N]: y
+Persisted assembly definitions for ['{test_asm_name}', '{test_asm_name2}'] to {test_asm_backup}
 Uninstalling release insights in namespace a_test_namespace
 """
     assert result.exit_code == 0
@@ -1534,6 +1558,42 @@ Uninstalling release insights in namespace a_test_namespace
     for deleted_asm in delete_assembly_args:
         assert deleted_asm['name'] in asms_array
     assert subprocess_run_command == [['helm', 'uninstall', 'insights', '--namespace', 'a_test_namespace']]
+    assert delete_crd_params == []
+
+def test_delete_given_assembly_backup_filepath(mocker):
+    mock_subprocess_run(mocker)
+    mock_set_insights_operator_and_crd_installed_state(mocker, True, False, False)
+    mocker.patch(GET_ASSEMBLIES_LIST_FUNC, mock_list_assembly_multiple)
+    mocker.patch(DELETE_ASSEMBLIES_FUNC, mock__delete_assembly)
+    
+    global delete_crd_params
+    global delete_assembly_args
+    
+    delete_assembly_args = []
+    delete_crd_params = []
+    asms_array = [test_asm_name, test_asm_name2]
+
+    cmd = ['install', 'delete', '--assembly-backup-filepath', 'a_test_file']
+    mocker.patch('sys.argv', cmd)
+
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        # these are responses to the various prompts
+        user_input = f"""y
+"""
+        result = runner.invoke(main.cli, cmd, input=user_input)
+        expected_output = f"""
+kdb Insights Enterprise is deployed. Do you want to uninstall? [y/N]: y
+Persisted assembly definitions for ['{test_asm_name}', '{test_asm_name2}'] to a_test_file
+Uninstalling release insights in namespace {test_namespace}
+"""
+        assert os.path.exists('a_test_file')
+    assert result.exit_code == 0
+    assert result.output == expected_output
+    assert len(delete_assembly_args) == len(asms_array)
+    for deleted_asm in delete_assembly_args:
+        assert deleted_asm['name'] in asms_array
+    assert subprocess_run_command == [['helm', 'uninstall', 'insights', '--namespace', test_namespace]]
     assert delete_crd_params == []
 
 
