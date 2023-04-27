@@ -58,3 +58,8 @@ packages = [
 
 [tool.setuptools_scm]
 write_to = "kxicli/__version__.py"
+
+[tool.pytest.ini_options]
+markers = [
+    "integration: marks tests that need a live environment to run against (deselect with '-m \"not integration\"')",
+]

@@ -1,12 +1,18 @@
 from __future__ import annotations
+from pathlib import Path
 import json
 from click.testing import CliRunner
 import pytest
-from kxicli import main
+from kxicli import main, common
 import time
-from tests.utils import get_assembly_name, test_asm_file2
+from utils import get_assembly_name, test_asm_file2
 
 ASM_NAME = get_assembly_name(test_asm_file2)
+
+@pytest.fixture
+def use_default_config():
+    common.config.config_file = str(Path.home() / '.insights' / 'cli-config')
+    common.config.load_config("default")
 
 @pytest.fixture
 def setup_clean_slate():
@@ -14,7 +20,8 @@ def setup_clean_slate():
     result = runner.invoke(main.cli, ["assembly", "list"])
     assert ASM_NAME not in result.output
 
-def test_basic_assembly(setup_clean_slate):
+@pytest.mark.integration
+def test_basic_assembly(setup_clean_slate, use_default_config):
     runner = CliRunner()
     result = runner.invoke(main.cli, ["assembly", "list"])
 
@@ -48,8 +55,8 @@ def test_basic_assembly(setup_clean_slate):
 def check_assembly_list_output(includes: list[str], excludes: list[str], output: str):
     # check all includes in the output
     if includes is not None:
-        assert  all(elem in output for elem in includes)
+        assert all(elem in output for elem in includes)
     
     # check excluded from output
     if excludes is not None:
-        assert all(elem not in output for elem  in excludes)
+        assert all(elem not in output for elem in excludes)
