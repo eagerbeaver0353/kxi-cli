@@ -5,9 +5,12 @@ import os
 import shutil
 import subprocess
 from contextlib import contextmanager
+from dataclasses import dataclass, field
 from functools import partial
 from pathlib import Path
+from subprocess import CompletedProcess
 from tempfile import mkdtemp
+from typing import List, Optional
 import pytest
 import click
 import requests_mock
@@ -36,7 +39,8 @@ DELETE_ASSEMBLIES_FUNC='kxicli.commands.assembly._delete_assembly'
 TEST_VALUES_FILE="a test values file"
 
 test_auth_url = 'http://keycloak.keycloak.svc.cluster.local/auth/'
-test_chart = 'kx-insights/insights'
+test_chart_repo = 'kx-insights'
+test_chart = f'{test_chart_repo}/insights'
 test_chart_repo_url_oci = 'oci://kxinsightsprod.azurecr.io'
 test_operator_chart = 'kx-insights/kxi-operator'
 test_operator_helm_name = 'test-op-helm'
@@ -56,6 +60,7 @@ test_asm_name = 'basic-assembly'  # As per contents of test_asm_file
 test_asm_name2 = 'basic-assembly2'  # As per contents of test_asm_file2
 test_asm_backup =  str(Path(__file__).parent / 'files' / 'test-assembly-backup.yaml')
 test_crds = ['assemblies.insights.kx.com', 'assemblyresources.insights.kx.com']
+config_json_file_name: str = 'config.json'
 
 with open(utils.test_val_file, 'rb') as values_file:
     test_vals = yaml.full_load(values_file)
@@ -82,6 +87,7 @@ operator_installed_flag = True
 crd_exists_flag = True
 running_assembly = {}
 copy_secret_params = []
+subprocess_run_command = []
 
 # override where the command looks for the docker config json
 # by default this is $HOME/.docker/config.json
@@ -177,13 +183,10 @@ def mock_delete_crd(mocker):
     delete_crd_params = []
     global crd_exists_flag
     crd_exists_flag = True
-    mocker.patch('kxicli.common.delete_crd', mocked_delete_crd_with_log)
-
-
-def mocked_delete_crd_with_log(name):
-    print(f'Deleting CRD {name}')
-    mocked_delete_crd(name)
-
+    utils.mock_kube_crd_api(mocker, 
+                            create=mocked_create_crd, 
+                            delete=mocked_delete_crd
+                            )
 
 def mocked_delete_crd(name):
     global delete_crd_params
@@ -257,23 +260,35 @@ def mocked_get_installed_operator_versions_without_release(namespace):
 def mocked_get_installed_operator_versions_without_release_14(namespace):
         return (['1.4.0'], [None])
 
-def mocked_subprocess_run(base_command, check=True, input=None, text=None, **kwargs):
+
+def mocked_subprocess_run(
+        *popenargs, **kwargs
+):
     global insights_installed_flag
     global operator_installed_flag
     global crd_exists_flag
     global subprocess_run_command
-    global subprocess_run_args
-    subprocess_run_command.append(base_command)
-    subprocess_run_args = (check, input, text)
-    if base_command == ['helm', 'uninstall', 'insights', '--namespace', test_namespace]:
+    env: dict = kwargs.get('env')
+    res_item = SubprocessRunInput(cmd=popenargs[0],
+                                  env=env,
+                                  kwargs=kwargs
+                                  )
+    try:
+        with open(str(Path(env['DOCKER_CONFIG']) / config_json_file_name)) as dc:
+            res_item.dockerconfigjson = dc.read()
+    except BaseException:
+        pass
+    subprocess_run_command.append(res_item)
+    if res_item.cmd == ['helm', 'uninstall', 'insights', '--namespace', test_namespace]:
         insights_installed_flag = False
-    elif base_command == ['helm', 'uninstall', 'insights', '--namespace', 'kxi-operator']:
+    elif res_item.cmd == ['helm', 'uninstall', 'insights', '--namespace', 'kxi-operator']:
         operator_installed_flag = False
-    elif [base_command[i] for i in [0, 1, -2, -1]] == ['helm', 'upgrade', '--install', '--namespace', 'kxi-operator']:
+    elif res_item.cmd[0:2]+res_item.cmd[-2:] == ['helm', 'upgrade', '--install', '--namespace', 'kxi-operator']:
         operator_installed_flag = True
-    elif [base_command[i] for i in [0, 1, -2, -1]] == ['helm', 'upgrade', '--install', '--namespace', test_namespace]:
+    elif res_item.cmd[0:2]+res_item.cmd[-2:] == ['helm', 'upgrade', '--install', '--namespace', test_namespace]:
         insights_installed_flag = True
         crd_exists_flag = True
+    return CompletedProcess(args=popenargs[0], returncode=0, stdout='', stderr='')
 
 
 def mock_subprocess_run(mocker):
@@ -382,6 +397,8 @@ def upgrades_mocks(mocker):
     mock_delete_crd(mocker)
     mock_delete_assembly(mocker)
     utils.mock_helm_repo_list(mocker)
+    global running_assembly
+    running_assembly = {test_asm_name:True}
     mocker.patch(GET_ASSEMBLIES_LIST_FUNC, mock_list_assembly)
     mocker.patch('kxicli.commands.assembly._create_assembly', mock_create_assembly)
 
@@ -404,6 +421,109 @@ def run_cli(cmd, test_cfg, cli_config = None, output_file = None, expected_exit_
     assert result.exit_code == expected_exit_code
     assert result.output == expected_output
 
+
+@dataclass
+class HelmCommand():
+    version: str = '1.2.3'
+    values: str = utils.test_val_file
+    release: str = 'insights'
+    chart: str = test_chart
+    namespace: str = test_namespace
+    keycloak_importUsers: Optional[str] = 'true'
+    helm_cmd: list = field(default_factory=list)
+
+    def cmd(self):
+        return self.helm_cmd
+
+
+@dataclass
+class HelmCommandRepoUpdate(HelmCommand):
+    repo: str = test_chart_repo
+    
+    def cmd(self):
+        cmd = ['helm', 'repo', 'update']
+        if self.repo:
+            cmd = cmd + [self.repo]
+        return cmd
+
+
+@dataclass
+class HelmCommandInsightsInstall(HelmCommand):
+    def cmd(self):
+        cmd = [
+            'helm', 'upgrade', '--install', 
+            '--version', self.version,
+            '-f', self.values,
+            self.release, 
+            self.chart
+        ]
+        if self.keycloak_importUsers:
+            cmd = cmd + [ '--set', f'keycloak.importUsers={self.keycloak_importUsers}' ]
+        cmd = cmd + ['--namespace', self.namespace]    
+        return cmd
+
+
+@dataclass
+class HelmCommandOperatorInstall(HelmCommandInsightsInstall):
+    chart: str = f'{test_chart_repo}/kxi-operator'
+    namespace: str = 'kxi-operator'
+    keycloak_importUsers: Optional[str] = None
+
+
+@dataclass
+class HelmCommandDelete(HelmCommand):
+    def cmd(self):
+        return [
+            'helm', 'uninstall',
+            self.release,
+            '--namespace', self.namespace
+        ]
+
+
+def default_helm_commands():
+    repo_update_command = HelmCommandRepoUpdate()
+    operator_command = HelmCommandOperatorInstall(values = '-', release = test_operator_helm_name)
+    insights_command = HelmCommandInsightsInstall(values = '-', keycloak_importUsers= 'false')
+    return repo_update_command, operator_command, insights_command
+
+
+def check_subprocess_run_commands(helm_commands):
+    assert len(subprocess_run_command) == len(helm_commands)
+    for i in range(len(subprocess_run_command)):
+        assert subprocess_run_command[i].cmd == helm_commands[i].cmd()
+
+
+def install_upgrade_checks(result,
+                           helm_commands=default_helm_commands(),
+                           docker_config_check=True,
+                           expected_subprocess_args=[True, yaml.dump(utils.test_val_data), True],
+                           expected_delete_crd_params=test_crds,
+                           expected_running_assembly={test_asm_name:True},
+                        ):
+    assert result.exit_code == 0
+    check_subprocess_run_commands(helm_commands)
+    if docker_config_check:
+        insights_install = subprocess_run_command[1]
+        assert 'DOCKER_CONFIG' in dict(insights_install.env)
+        assert insights_install.dockerconfigjson == utils.fake_docker_config_yaml
+    assert [subprocess_run_command[-1].kwargs.get(key) for key in ['check', 'input', 'text']] == expected_subprocess_args
+    assert delete_crd_params == expected_delete_crd_params
+    assert insights_installed_flag == True
+    assert operator_installed_flag == True
+    assert crd_exists_flag == True
+    assert running_assembly == expected_running_assembly
+    assert not os.path.isfile(test_asm_backup)
+
+
+@dataclass
+class SubprocessRunInput():
+    cmd: List[str]
+    dockerconfigjson: str = ''
+    kwargs: list = field(default_factory=dict)
+    env: list = field(default_factory=dict)
+
+
+# Tests
 
 def test_install_setup_when_creating_secrets(mocker):
     install_setup_output_check(mocker, {}, 0)
@@ -794,11 +914,10 @@ Installing chart kx-insights/insights version 1.2.3 with values file from {utils
 """
     assert result.exit_code == 0
     assert result.output == expected_output
-    assert subprocess_run_command == [
-        ['helm', 'repo', 'update', 'kx-insights'],
-        ['helm', 'upgrade', '--install', '--version', '1.2.3', '-f', utils.test_val_file, 'insights', test_chart, '--set', 'keycloak.importUsers=true', '--namespace',
-         test_namespace]
-    ]
+    check_subprocess_run_commands([
+        HelmCommandRepoUpdate(),
+        HelmCommandInsightsInstall()
+    ])
 
 
 def test_install_run_when_no_file_provided(mocker):
@@ -840,10 +959,10 @@ Installing chart internal-nexus-dev/insights version 1.2.3 with values file from
 
         assert result.exit_code == 0
         assert result.output == expected_output
-        assert subprocess_run_command == [
-            ['helm', 'repo', 'update', test_chart_repo_name],
-            ['helm', 'upgrade', '--install', '--version', '1.2.3', '-f', 'values.yaml', 'insights', test_chart_repo_name + '/insights', '--set', 'keycloak.importUsers=true', '--namespace', test_namespace]
-        ]
+        check_subprocess_run_commands([
+            HelmCommandRepoUpdate(repo=test_chart_repo_name),
+            HelmCommandInsightsInstall(values = 'values.yaml', chart = test_chart_repo_name + '/insights')
+        ])
 
 def test_install_run_when_no_file_provided_import_users_false(mocker):
     setup_mocks(mocker)
@@ -884,10 +1003,13 @@ Installing chart internal-nexus-dev/insights version 1.2.3 with values file from
 
         assert result.exit_code == 0
         assert result.output == expected_output
-        assert subprocess_run_command == [
-            ['helm', 'repo', 'update', test_chart_repo_name],
-            ['helm', 'upgrade', '--install', '--version', '1.2.3', '-f', 'values.yaml', 'insights', test_chart_repo_name + '/insights', '--set', 'keycloak.importUsers=false', '--namespace', test_namespace]
-        ]
+        check_subprocess_run_commands([
+            HelmCommandRepoUpdate(repo=test_chart_repo_name),
+            HelmCommandInsightsInstall(values = 'values.yaml',
+                                   chart = test_chart_repo_name + '/insights',
+                                   keycloak_importUsers='false'
+                                   )
+        ])
 
 
 def test_install_run_installs_operator(mocker):
@@ -919,13 +1041,11 @@ Installing chart kx-insights/insights version 1.2.3 with values file from {utils
     assert result.output == expected_output
     assert copy_secret_params == [('kxi-nexus-pull-secret', test_namespace, 'kxi-operator'),
                                   ('kxi-license', test_namespace, 'kxi-operator')]
-    assert subprocess_run_command == [
-        ['helm', 'repo', 'update', 'kx-insights'],
-        ['helm', 'upgrade', '--install', '--version', '1.2.3', '-f', utils.test_val_file, 'insights', test_operator_chart, '--namespace',
-         'kxi-operator'],
-        ['helm', 'upgrade', '--install', '--version', '1.2.3', '-f', utils.test_val_file, 'insights', test_chart, '--set', 'keycloak.importUsers=true', '--namespace',
-         test_namespace]
-    ]
+    check_subprocess_run_commands([
+        HelmCommandRepoUpdate(),
+        HelmCommandOperatorInstall(),
+        HelmCommandInsightsInstall()
+    ])
 
 
 def test_install_run_when_provided_oci_chart_repo_url(mocker):
@@ -954,12 +1074,10 @@ Installing chart {test_chart_repo_url_oci}/insights version 1.2.3 with values fi
 """
     assert result.exit_code == 0
     assert result.output == expected_output
-    assert subprocess_run_command == [
-        ['helm', 'upgrade', '--install', '--version', '1.2.3', '-f', utils.test_val_file, 'insights', test_chart_repo_url_oci+'/kxi-operator',
-         '--namespace', 'kxi-operator'],
-        ['helm', 'upgrade', '--install', '--version', '1.2.3', '-f', utils.test_val_file, 'insights', test_chart_repo_url_oci+'/insights',
-         '--set', 'keycloak.importUsers=true', '--namespace', test_namespace]
-    ]
+    check_subprocess_run_commands([
+        HelmCommandOperatorInstall(chart=test_chart_repo_url_oci+'/kxi-operator'),
+        HelmCommandInsightsInstall(chart=test_chart_repo_url_oci+'/insights')
+    ])
 
 
 def test_install_run_force_installs_operator(mocker):
@@ -987,13 +1105,11 @@ Installing chart kx-insights/insights version 1.2.3 with values file from {utils
     assert result.output == expected_output
     assert copy_secret_params == [('kxi-nexus-pull-secret', test_namespace, 'kxi-operator'),
                                   ('kxi-license', test_namespace, 'kxi-operator')]
-    assert subprocess_run_command == [
-        ['helm', 'repo', 'update', 'kx-insights'],
-        ['helm', 'upgrade', '--install', '--version', '1.2.3', '-f', utils.test_val_file, 'insights', test_operator_chart, '--namespace',
-         'kxi-operator'],
-        ['helm', 'upgrade', '--install', '--version', '1.2.3', '-f', utils.test_val_file, 'insights', test_chart, '--set','keycloak.importUsers=true', '--namespace',
-         test_namespace]
-    ]
+    check_subprocess_run_commands([
+        HelmCommandRepoUpdate(),
+        HelmCommandOperatorInstall(),
+        HelmCommandInsightsInstall()
+    ])
 
 
 def test_install_run_with_operator_version(mocker):
@@ -1021,13 +1137,11 @@ Installing chart kx-insights/insights version 1.2.3 with values file from {utils
     assert result.output == expected_output
     assert copy_secret_params == [('kxi-nexus-pull-secret', test_namespace, 'kxi-operator'),
                                   ('kxi-license', test_namespace, 'kxi-operator')]
-    assert subprocess_run_command == [
-        ['helm', 'repo', 'update', 'kx-insights'],
-        ['helm', 'upgrade', '--install', '--version', '1.2.1', '-f', utils.test_val_file, 'insights', test_operator_chart, '--namespace',
-         'kxi-operator'],
-        ['helm', 'upgrade', '--install', '--version', '1.2.3', '-f', utils.test_val_file, 'insights', test_chart, '--set', 'keycloak.importUsers=true', '--namespace',
-         test_namespace]
-    ]
+    check_subprocess_run_commands([
+        HelmCommandRepoUpdate(),
+        HelmCommandOperatorInstall(version='1.2.1'),
+        HelmCommandInsightsInstall()
+    ])
 
 def test_install_run_with_no_operator_version_available(mocker):
     mock_subprocess_run(mocker)
@@ -1052,7 +1166,7 @@ Error: Compatible version of operator not found
     assert result.exit_code == 1
     assert result.output == expected_output
     assert copy_secret_params == []
-    assert subprocess_run_command == [['helm', 'repo', 'update', 'kx-insights']]
+    check_subprocess_run_commands([HelmCommandRepoUpdate()])
 
 
 def test_install_run_with_compitable_operator_already_installed(mocker):
@@ -1078,11 +1192,10 @@ Installing chart kx-insights/insights version 1.2.3 with values file from {utils
     assert result.exit_code == 0
     assert result.output == expected_output
     assert copy_secret_params == []
-    assert subprocess_run_command == [
-        ['helm', 'repo', 'update', 'kx-insights'],
-        ['helm', 'upgrade', '--install', '--version', '1.2.3', '-f', utils.test_val_file, 'insights', test_chart, '--set','keycloak.importUsers=true', '--namespace',
-         test_namespace]
-    ]
+    check_subprocess_run_commands([
+        HelmCommandRepoUpdate(),
+        HelmCommandInsightsInstall()
+    ])
 
 
 def test_install_run_installs_operator_with_modified_secrets(mocker):
@@ -1122,12 +1235,12 @@ Installing chart kx-insights/insights version 1.2.3 with values file from {value
     assert result.output == expected_output
     assert copy_secret_params == [(new_image_secret, test_namespace, 'kxi-operator'),
                                   (new_lic_secret, test_namespace, 'kxi-operator')]
-    assert subprocess_run_command == [
-        ['helm', 'repo', 'update', 'kx-insights'],
-        ['helm', 'upgrade', '--install', '--version', '1.2.3', '-f', values_file, 'insights', test_operator_chart, '--namespace', 'kxi-operator'],
-        ['helm', 'upgrade', '--install', '--version', '1.2.3', '-f', values_file, 'insights', test_chart, '--set', 'keycloak.importUsers=true', '--namespace', test_namespace]
-    ]
-    assert subprocess_run_args == (True, None, None)
+    check_subprocess_run_commands([
+        HelmCommandRepoUpdate(),
+        HelmCommandOperatorInstall(values=values_file),
+        HelmCommandInsightsInstall(values=values_file)
+    ])
+    assert [subprocess_run_command[1].kwargs.get(key) for key in ['check', 'input', 'text']] == [True, None, None]
 
 
 def test_install_run_when_no_context_set(mocker):
@@ -1156,10 +1269,10 @@ Installing chart kx-insights/insights version 1.2.3 with values file from {utils
 """
     assert result.exit_code == 0
     assert result.output == expected_output
-    assert subprocess_run_command == [
-        ['helm', 'repo', 'update', 'kx-insights'],
-        ['helm', 'upgrade', '--install', '--version', '1.2.3', '-f', utils.test_val_file, 'insights', test_chart, '--set', 'keycloak.importUsers=true', '--namespace', utils.namespace() ]
-    ]
+    check_subprocess_run_commands([
+        HelmCommandRepoUpdate(),
+        HelmCommandInsightsInstall()
+    ])
 
 
 def test_install_run_exits_when_already_installed(mocker):
@@ -1216,7 +1329,7 @@ Uninstalling release insights in namespace {test_namespace}
 """
     assert result.exit_code == 0
     assert result.output == expected_output
-    assert subprocess_run_command == [['helm', 'uninstall', 'insights', '--namespace', test_namespace]]
+    check_subprocess_run_commands([HelmCommandDelete()])
     assert delete_crd_params == []
 
 
@@ -1231,10 +1344,12 @@ def test_list_versions_default_repo(mocker):
 """
     assert result.exit_code == 0
     assert result.output == expected_output
-    assert subprocess_run_command == [
-        ['helm', 'repo', 'update'],
-        ['helm', 'search', 'repo', test_chart]
-    ]
+    check_subprocess_run_commands(
+        [
+            HelmCommandRepoUpdate(repo=None),
+            HelmCommand(helm_cmd=['helm', 'search', 'repo', test_chart])
+            ]
+        )
 
 
 def test_list_versions_custom_repo(mocker):
@@ -1248,10 +1363,12 @@ def test_list_versions_custom_repo(mocker):
 """
     assert result.exit_code == 0
     assert result.output == expected_output
-    assert subprocess_run_command == [
-        ['helm', 'repo', 'update'],
-        ['helm', 'search', 'repo', test_chart_repo_name + '/insights']
-    ]
+    check_subprocess_run_commands(
+        [
+            HelmCommandRepoUpdate(repo=None),
+            HelmCommand(helm_cmd=['helm', 'search', 'repo', test_chart_repo_name + '/insights'])
+            ]
+        )
 
 
 def test_delete_specify_release(mocker):
@@ -1284,7 +1401,7 @@ Uninstalling release atestrelease in namespace {test_namespace}
     assert len(delete_assembly_args) == len(asms_array)
     for deleted_asm in delete_assembly_args:
         assert deleted_asm['name'] in asms_array
-    assert subprocess_run_command == [['helm', 'uninstall', 'atestrelease', '--namespace', test_namespace]]
+    check_subprocess_run_commands([HelmCommandDelete(release='atestrelease')])
     assert delete_crd_params == []
 
 def test_delete_specific_release_no_assemblies(mocker):
@@ -1312,7 +1429,7 @@ Uninstalling release atestrelease in namespace {test_namespace}
     assert result.exit_code == 0
     assert result.output == expected_output
     assert len(delete_assembly_args) == 0
-    assert subprocess_run_command == [['helm', 'uninstall', 'atestrelease', '--namespace', test_namespace]]
+    check_subprocess_run_commands([HelmCommandDelete(release='atestrelease')])
     assert delete_crd_params == []
 
 def test_delete_specific_release_one_assemblies(mocker):
@@ -1344,7 +1461,7 @@ Uninstalling release atestrelease in namespace {test_namespace}
     assert len(delete_assembly_args) == len(asms_array)
     for deleted_asm in delete_assembly_args:
         assert deleted_asm['name'] in asms_array
-    assert subprocess_run_command == [['helm', 'uninstall', 'atestrelease', '--namespace', test_namespace]]
+    check_subprocess_run_commands([HelmCommandDelete(release='atestrelease')])
     assert delete_crd_params == []
 
 
@@ -1374,7 +1491,7 @@ kdb Insights Enterprise is deployed. Do you want to uninstall? [y/N]: n
     assert result.exit_code == 0
     assert result.output == expected_output
     assert len(delete_assembly_args) == 0
-    assert subprocess_run_command == []
+    check_subprocess_run_commands([])
     assert delete_crd_params == []
 
 
@@ -1409,10 +1526,10 @@ Uninstalling release test-op-helm in namespace kxi-operator
     assert len(delete_assembly_args) == len(asms_array)
     for deleted_asm in delete_assembly_args:
         assert deleted_asm['name'] in asms_array
-    assert subprocess_run_command == [
-        ['helm', 'uninstall', 'insights', '--namespace', test_namespace],
-        ['helm', 'uninstall', 'test-op-helm', '--namespace', 'kxi-operator']
-    ]
+    check_subprocess_run_commands([
+        HelmCommandDelete(),
+        HelmCommandDelete(release='test-op-helm',namespace='kxi-operator'),
+    ])
     assert delete_crd_params == test_crds
 
 
@@ -1431,7 +1548,7 @@ kdb Insights Enterprise kxi-operator not found
 """
     assert result.exit_code == 0
     assert result.output == expected_output
-    assert subprocess_run_command == []
+    check_subprocess_run_commands([])
     assert delete_crd_params == []
 
 
@@ -1458,7 +1575,7 @@ kdb Insights Enterprise kxi-operator not found
 """
     assert result.exit_code == 0
     assert result.output == expected_output
-    assert subprocess_run_command == []
+    check_subprocess_run_commands([])
 
 
 def test_delete_removes_insights(mocker):
@@ -1490,7 +1607,7 @@ Uninstalling release insights in namespace {test_namespace}
     assert len(delete_assembly_args) == len(asms_array)
     for deleted_asm in delete_assembly_args:
         assert deleted_asm['name'] in asms_array
-    assert subprocess_run_command == [['helm', 'uninstall', 'insights', '--namespace', test_namespace]]
+    check_subprocess_run_commands([HelmCommandDelete()])
 
 
 def test_delete_force_removes_insights_operator_and_crd(mocker):
@@ -1520,10 +1637,10 @@ Uninstalling release test-op-helm in namespace kxi-operator
     assert len(delete_assembly_args) == len(asms_array)
     for deleted_asm in delete_assembly_args:
         assert deleted_asm['name'] in asms_array
-    assert subprocess_run_command == [
-        ['helm', 'uninstall', 'insights', '--namespace', test_namespace],
-        ['helm', 'uninstall', 'test-op-helm', '--namespace', 'kxi-operator']
-    ]
+    check_subprocess_run_commands([
+        HelmCommandDelete(),
+        HelmCommandDelete(release='test-op-helm',namespace='kxi-operator'),
+    ])
     assert delete_crd_params == test_crds
 
 
@@ -1560,7 +1677,7 @@ Uninstalling release insights in namespace a_test_namespace
     assert len(delete_assembly_args) == len(asms_array)
     for deleted_asm in delete_assembly_args:
         assert deleted_asm['name'] in asms_array
-    assert subprocess_run_command == [['helm', 'uninstall', 'insights', '--namespace', 'a_test_namespace']]
+    check_subprocess_run_commands([HelmCommandDelete(namespace='a_test_namespace')])
     assert delete_crd_params == []
 
 def test_delete_given_assembly_backup_filepath(mocker):
@@ -1596,7 +1713,7 @@ Uninstalling release insights in namespace {test_namespace}
     assert len(delete_assembly_args) == len(asms_array)
     for deleted_asm in delete_assembly_args:
         assert deleted_asm['name'] in asms_array
-    assert subprocess_run_command == [['helm', 'uninstall', 'insights', '--namespace', test_namespace]]
+    check_subprocess_run_commands([HelmCommandDelete()])
     assert delete_crd_params == []
 
 
@@ -1618,7 +1735,7 @@ kdb Insights Enterprise installation not found
 """
     assert result.exit_code == 0
     assert result.output == expected_output
-    assert subprocess_run_command == []
+    check_subprocess_run_commands([])
     assert delete_crd_params == []
 
 
@@ -1726,21 +1843,8 @@ Custom assembly resource {test_asm_name} created!
 
 Upgrade to version 1.2.3 complete
 """
-    assert result.exit_code == 0
+    install_upgrade_checks(result)
     assert result.output == expected_output
-    assert subprocess_run_command == [
-        ['helm', 'repo', 'update', 'kx-insights'],
-        ['helm', 'upgrade', '--install', '--version', '1.2.3', '-f', '-', test_operator_helm_name, test_operator_chart, '--namespace',
-         'kxi-operator'],
-        ['helm', 'upgrade', '--install', '--version', '1.2.3', '-f', '-', 'insights', test_chart, '--set', 'keycloak.importUsers=false', '--namespace', test_namespace]
-    ]
-    assert subprocess_run_args == (True, values, True)
-    assert delete_crd_params == ['assemblies.insights.kx.com', 'assemblyresources.insights.kx.com']
-    assert insights_installed_flag == True
-    assert operator_installed_flag == True
-    assert crd_exists_flag == True
-    assert running_assembly[test_asm_name] == True
-    assert not os.path.isfile(test_asm_backup)
 
 def test_upgrade_import_users(mocker):
     upgrades_mocks(mocker)
@@ -1803,21 +1907,14 @@ Custom assembly resource {test_asm_name} created!
 
 Upgrade to version 1.2.3 complete
 """
-    assert result.exit_code == 0
-    assert result.output == expected_output
-    assert subprocess_run_command == [
-        ['helm', 'repo', 'update', 'kx-insights'],
-        ['helm', 'upgrade', '--install', '--version', '1.2.3', '-f', '-', test_operator_helm_name, test_operator_chart, '--namespace',
-         'kxi-operator'],
-        ['helm', 'upgrade', '--install', '--version', '1.2.3', '-f', '-', 'insights', test_chart, '--set', 'keycloak.importUsers=true', '--namespace', test_namespace]
+    expected_helm_commands=[
+        HelmCommandRepoUpdate(),
+        HelmCommandOperatorInstall(values = '-', release = test_operator_helm_name),
+        HelmCommandInsightsInstall(values = '-', keycloak_importUsers= 'true')
     ]
-    assert subprocess_run_args == (True, values, True)
-    assert delete_crd_params == ['assemblies.insights.kx.com', 'assemblyresources.insights.kx.com']
-    assert insights_installed_flag == True
-    assert operator_installed_flag == True
-    assert crd_exists_flag == True
-    assert running_assembly[test_asm_name] == True
-    assert not os.path.isfile(test_asm_backup)
+    install_upgrade_checks(result, helm_commands=expected_helm_commands)
+    assert result.output == expected_output
+
 
 def test_upgrade_without_backup_filepath(mocker):
     upgrades_mocks(mocker)
@@ -1844,19 +1941,7 @@ y
             ['install', 'upgrade', '--version', '1.2.3'],
             input=user_input
         )
-    assert result.exit_code == 0
-    assert subprocess_run_command == [
-        ['helm', 'repo', 'update', 'kx-insights'],
-        ['helm', 'upgrade', '--install', '--version', '1.2.3', '-f', '-', test_operator_helm_name, test_operator_chart, '--namespace',
-         'kxi-operator'],
-        ['helm', 'upgrade', '--install', '--version', '1.2.3', '-f', '-', 'insights', test_chart, '--set', 'keycloak.importUsers=false', '--namespace', test_namespace]
-    ]
-    assert subprocess_run_args == (True, values, True)
-    assert delete_crd_params == ['assemblies.insights.kx.com', 'assemblyresources.insights.kx.com']
-    assert insights_installed_flag == True
-    assert operator_installed_flag == True
-    assert crd_exists_flag == True
-    assert running_assembly[test_asm_name] == True
+    install_upgrade_checks(result)
 
 
 def test_upgrade_skips_to_install_when_not_running(mocker):
@@ -1884,12 +1969,12 @@ Upgrade to version 1.2.3 complete
 """
     assert result.exit_code == 0
     assert result.output == expected_output
-    assert subprocess_run_command == [
-        ['helm', 'repo', 'update', 'kx-insights'],
-        ['helm',  'upgrade', '--install', '--version', '1.2.3', '-f', utils.test_val_file, 'insights', test_operator_chart, '--namespace',
-         'kxi-operator'],
-        ['helm',  'upgrade', '--install', '--version', '1.2.3', '-f', utils.test_val_file, 'insights', test_chart, '--set', 'keycloak.importUsers=true', '--namespace', test_namespace]
-    ]
+    check_subprocess_run_commands([
+        HelmCommandRepoUpdate(),
+        HelmCommandOperatorInstall(),
+        HelmCommandInsightsInstall()
+    ])
+
 
 
 def test_upgrade_skips_to_install_when_not_running_but_fails_with_no_values_file(mocker):
@@ -1964,16 +2049,15 @@ Custom assembly resource {test_asm_name} created!
 Submitting assembly {test_asm_name2}
 Custom assembly resource {test_asm_name2} created!
 """
-    assert result.exit_code == 0
-    assert subprocess_run_command == [['helm', 'repo', 'update', 'kx-insights']]
-    assert delete_crd_params == []
-    assert insights_installed_flag == True
-    assert operator_installed_flag == True
-    assert crd_exists_flag == True
-    assert running_assembly[test_asm_name] == True
-    assert running_assembly[test_asm_name2] == True
+    install_upgrade_checks(result,
+                           helm_commands=[HelmCommandRepoUpdate()],
+                           docker_config_check=False,
+                           expected_subprocess_args=[True, None, None],
+                           expected_delete_crd_params=[],
+                           expected_running_assembly={test_asm_name:True, test_asm_name2:True},
+    )
     assert result.output == expected_output
-    assert not os.path.isfile(test_asm_backup)
+
 
 def test_upgrade_does_not_reapply_assemblies_when_upgrade_fails(mocker):
     upgrades_mocks(mocker)
@@ -2089,16 +2173,16 @@ Custom assembly resource {test_asm_name} created!
 
 Upgrade to version 1.2.3 complete
 """
-    assert result.exit_code == 0
-    assert result.output == expected_output
-    assert subprocess_run_command == [
-        ['helm', 'repo', 'update', 'kx-insights'],
-        ['helm', 'upgrade', '--install', '--version', '1.2.3', '-f', utils.test_val_file, test_operator_helm_name, test_operator_chart, '--namespace', 'kxi-operator'],
-        ['helm', 'upgrade', '--install', '--version', '1.2.3', '-f', utils.test_val_file, 'insights', test_chart, '--set', 'keycloak.importUsers=false', '--namespace', test_namespace]
+    expected_helm_commands=[
+        HelmCommandRepoUpdate(),
+        HelmCommandOperatorInstall(values=utils.test_val_file, release=test_operator_helm_name),
+        HelmCommandInsightsInstall(values=utils.test_val_file, keycloak_importUsers= 'false')
     ]
-    assert insights_installed_flag == True
-    assert operator_installed_flag ==True
-    assert crd_exists_flag == True
+    install_upgrade_checks(result,
+                           helm_commands=expected_helm_commands,
+                           expected_subprocess_args=[True, None, None],
+                           )
+    assert result.output == expected_output
 
 
 def test_upgrade_without_op_name_prompts_to_skip_operator_install(mocker):
@@ -2158,19 +2242,16 @@ Custom assembly resource {test_asm_name} created!
 
 Upgrade to version 1.2.3 complete
 """
-    assert result.exit_code == 0
+    install_upgrade_checks(result,
+                           helm_commands=[
+                               HelmCommandRepoUpdate(),
+                               HelmCommandInsightsInstall(values = '-',
+                                                          keycloak_importUsers='false'
+                                                          )
+                           ],
+                           expected_delete_crd_params=[]                           
+    )
     assert result.output == expected_output
-    assert subprocess_run_command == [
-        ['helm', 'repo', 'update', 'kx-insights'],
-        ['helm', 'upgrade', '--install', '--version', '1.2.3', '-f', '-', 'insights', test_chart, '--set', 'keycloak.importUsers=false', '--namespace', test_namespace]
-    ]
-    assert subprocess_run_args == (True, values, True)
-    assert delete_crd_params == []
-    assert insights_installed_flag == True
-    assert operator_installed_flag == True
-    assert crd_exists_flag == True
-    assert running_assembly[test_asm_name] == True
-    assert not os.path.isfile(test_asm_backup)
 
 
 def test_upgrade_with_no_assemblies(mocker):
@@ -2184,25 +2265,15 @@ def test_upgrade_with_no_assemblies(mocker):
     utils.mock_helm_get_values(mocker, utils.test_val_data)
     utils.mock_kube_crd_api(mocker, create=mocked_create_crd, delete=mocked_delete_crd)
     mocker.patch(GET_ASSEMBLIES_LIST_FUNC, mock_list_assembly_none)
-    running_assembly[test_asm_name] = False
+    global running_assembly
+    running_assembly = {}
     runner = CliRunner()
     with runner.isolated_filesystem():
         result = runner.invoke(main.cli,
             ['install', 'upgrade', '--version', '1.2.3', '--assembly-backup-filepath', test_asm_backup],
             input="y"
         )
-    assert result.exit_code == 0
-    assert subprocess_run_command == [
-        ['helm', 'repo', 'update', 'kx-insights'],
-        ['helm', 'upgrade', '--install', '--version', '1.2.3', '-f', '-', test_operator_helm_name, test_operator_chart, '--namespace',
-         'kxi-operator'],
-        ['helm', 'upgrade', '--install', '--version', '1.2.3', '-f', '-', 'insights', test_chart, '--set', 'keycloak.importUsers=false', '--namespace', test_namespace]
-    ]
-    assert insights_installed_flag == True
-    assert operator_installed_flag == True
-    assert crd_exists_flag == True
-    assert running_assembly[test_asm_name] == False
-    assert not os.path.isfile(test_asm_backup)
+    install_upgrade_checks(result, expected_running_assembly={})
 
 
 def test_install_upgrade_errors_when_repo_does_not_exist(mocker):

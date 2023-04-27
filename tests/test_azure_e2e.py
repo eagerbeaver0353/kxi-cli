@@ -5,19 +5,20 @@ from pathlib import Path
 
 from click import BaseCommand
 from click.testing import CliRunner
+from dataclasses import dataclass
 from functools import partial
 from pytest_mock import MockerFixture
-from subprocess import CompletedProcess
-from typing import List
+from typing import List, Optional
 
 from kxicli import config
 from kxicli import main
 from kxicli.common import get_default_val
 import utils
-from test_install_e2e import mock_copy_secret, mocked_crd_exists, mocked_create_crd, mocked_delete_crd, mocked_installed_chart_json, \
-    mocked_installed_operator_versions, mock_get_operator_version, test_operator_helm_name, mocked_read_secret, mocked_helm_version_checked
-from test_helm import fun_subprocess_run
-from test_install_e2e import mock_read_cached_crd_data
+from test_install_e2e import mock_copy_secret, mock_delete_crd, mocked_installed_operator_versions,\
+    mock_get_operator_version, test_operator_helm_name, mocked_read_secret, mocked_helm_version_checked,\
+    mock_read_cached_crd_data, mock_subprocess_run, install_upgrade_checks, \
+    check_subprocess_run_commands, mock_set_insights_operator_and_crd_installed_state, \
+    HelmCommand, HelmCommandInsightsInstall, HelmCommandOperatorInstall, HelmCommandDelete
 
 a_test_asm_str: str = 'a test asm file'
 default_config_file = str(Path(__file__).parent / 'files' / 'test-cli-config')
@@ -91,24 +92,6 @@ def mocked_get_assemblies_list(namespace: str) -> FakeK8SCustomResource:
     return FakeK8SCustomResource()
 
 
-def subprocess_run_helm_success_install_append_res(
-        *popenargs, res: list = [], **kwargs
-):
-    env: dict = kwargs.get('env')
-    res_item: dict = {}
-    res_item['env'] = env
-    res_item['cmd'] = popenargs[0]
-    try:
-        res_item['DOCKER_CONFIG'] = env['DOCKER_CONFIG']
-        with open(str(Path(env['DOCKER_CONFIG']) / config_json_file_name)) as dc:
-            res_item['dockerconfigjson'] = dc.read()
-    except BaseException as e:
-        print(f'Cant read dockerconfigjson: {e}')
-        pass
-    res.append(res_item)
-    return CompletedProcess(args=popenargs[0], returncode=0, stdout='', stderr='')
-
-
 def common_get_existing_crds(crds: List[str]) -> List[str]:
     return crds
 
@@ -117,9 +100,14 @@ def install_mocks(mocker):
     mocker.patch(fun_install_create_namespace, utils.return_none)
     mocker.patch(fun_assembly_create_assemblies_from_file, return_true_list)
     utils.mock_validate_secret(mocker)
-    utils.mock_kube_secret_api(mocker, read=partial(mocked_read_secret, image_pull_secret_name=default_docker_config_secret_name))
+    utils.mock_kube_secret_api(mocker,
+                               read=partial(
+                                   mocked_read_secret,
+                                   image_pull_secret_name=default_docker_config_secret_name)
+                               )
     mock_get_operator_version(mocker)
     mock_copy_secret(mocker)
+    mock_subprocess_run(mocker)
 
 def uninstall_mocks(mocker):
     mocker.patch(fun_assembly_get_assemblies_list, mocked_get_assemblies_list)
@@ -133,44 +121,44 @@ def uninstall_mocks(mocker):
 def upgrade_mocks(mocker):
     install_mocks(mocker)
     uninstall_mocks(mocker)
+    mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
     utils.mock_helm_get_values(mocker, fake_values)
     utils.mock_helm_env(mocker)
-    utils.mock_kube_crd_api(mocker, create=mocked_create_crd, delete=mocked_delete_crd)
+    mock_delete_crd(mocker)
     mocker.patch(fun_get_helm_version_checked, mocked_helm_version_checked)
-    mocker.patch('kxicli.commands.install.get_installed_charts', mocked_installed_chart_json)
-    mocker.patch('kxicli.common.crd_exists', mocked_crd_exists)
     mocker.patch('kxicli.commands.install.read_cached_crd_files', mock_read_cached_crd_data)
 
-def upgrade_checks(result, values_file_name='values.yaml', chart_repo_url=fake_chart_repo_url):
-    assert result.exit_code == 0
-    assert len(subprocess_params) == 3
-    helm_fetch = subprocess_params[0]
-    operator_install = subprocess_params[1]
-    insights_install = subprocess_params[2]
-    assert 'DOCKER_CONFIG' in dict(insights_install['env'])
-    assert insights_install['dockerconfigjson'] == utils.fake_docker_config_yaml
-    assert operator_install['dockerconfigjson'] == utils.fake_docker_config_yaml
 
-    assert helm_fetch['cmd'] == ['helm', 'fetch', f'{chart_repo_url}/kxi-operator',
-        '--destination', os.getcwd() + '/tests/files/helm',
-        '--version', fake_version
-        ]
-    assert operator_install['cmd'] == [
-                'helm', 'upgrade', '--install', '--version', fake_version, '-f', values_file_name, test_operator_helm_name, f'{chart_repo_url}/kxi-operator',
-                '--namespace', 'kxi-operator'
-            ]
-    assert insights_install['cmd'] == [
-                'helm', 'upgrade', '--install', '--version', fake_version, '-f', values_file_name, default_insights_release, f'{chart_repo_url}/insights',
-                '--set', 'keycloak.importUsers=false', '--namespace', utils.namespace()
-            ]
+@dataclass
+class HelmCommandAzureInstall(HelmCommandInsightsInstall):
+    version: str = fake_version
+    values: str = 'values.yaml'
+    chart: str = f'{fake_chart_repo_url}/insights'
+    keycloak_importUsers: Optional[str] = 'false'
+
+
+@dataclass
+class HelmCommandAzureOperator(HelmCommandOperatorInstall):
+    chart: str = f'{fake_chart_repo_url}/kxi-operator'
+    release: str = test_operator_helm_name
+
+
+@dataclass
+class HelmCommandFetch(HelmCommand):
+    version: str = fake_version
+    chart: str = fake_chart_repo_url
+    
+    def cmd(self):
+        return ['helm', 'fetch',
+                f'{self.chart}/kxi-operator',
+                '--destination', os.getcwd() + '/tests/files/helm',
+                '--version', self.version,
+                ]
+
 
 # Tests
 
 def test_install(mocker: MockerFixture):
-    global subprocess_params
-    subprocess_params = []
-    subprocess_run_helm_success_helm_install_insights = partial(subprocess_run_helm_success_install_append_res, res=subprocess_params)
-    mocker.patch(fun_subprocess_run, subprocess_run_helm_success_helm_install_insights)
     mocker.patch(fun_get_helm_version_checked, mocked_helm_version_checked)
     mocker.patch('kxicli.commands.install.get_installed_charts', lambda *args: [])
     mocker.patch(fun_install_operator_versions, lambda *args: ([], []))
@@ -178,7 +166,6 @@ def test_install(mocker: MockerFixture):
 
     runner = CliRunner()
     with utils.temp_file(file_name='values.yaml') as values_file:
-        values_file_name = values_file
         with open(values_file, mode='w') as vf:
             vf.write(fake_values_yaml)
         actual_res = runner.invoke(
@@ -193,31 +180,26 @@ def test_install(mocker: MockerFixture):
             ],
             env=default_env
         )
-    assert actual_res.exit_code == 0
-    assert len(subprocess_params) == 2
-    operator_install = subprocess_params[0]
-    insights_install = subprocess_params[1]
-    assert 'DOCKER_CONFIG' in dict(insights_install['env'])
-    assert insights_install['dockerconfigjson'] == utils.fake_docker_config_yaml
-    assert operator_install['dockerconfigjson'] == utils.fake_docker_config_yaml
-    assert operator_install['cmd'] == [
-                'helm', 'upgrade', '--install', '--version', fake_version, '-f', values_file_name, default_insights_release, f'{fake_chart_repo_url}/kxi-operator',
-                '--namespace', 'kxi-operator'
-            ]
-    assert insights_install['cmd'] == [
-                'helm', 'upgrade', '--install', '--version', fake_version, '-f', values_file_name, default_insights_release, f'{fake_chart_repo_url}/insights',
-                '--set', 'keycloak.importUsers=true',
-                '--namespace', utils.namespace()
-            ]
+    expected_helm_commands = [
+        HelmCommandAzureOperator(values=values_file,
+                                 release=default_insights_release
+                                 ),
+        HelmCommandAzureInstall(values=values_file,
+                                keycloak_importUsers='true'
+                                )
+    ]
+    install_upgrade_checks(actual_res,
+                           helm_commands=expected_helm_commands,
+                           expected_subprocess_args=[True, None, None],
+                           expected_delete_crd_params=[],
+                           expected_running_assembly={}
+                           )
 
 
 def test_uninstall(mocker: MockerFixture):
-    global subprocess_params
-    subprocess_params = []
-    subprocess_run_helm_success_helm_install_insights = partial(subprocess_run_helm_success_install_append_res, res=subprocess_params)
-    mocker.patch(fun_subprocess_run, subprocess_run_helm_success_helm_install_insights)
     mocker.patch(fun_get_helm_version_checked, mocked_helm_version_checked)
     uninstall_mocks(mocker)
+    mock_subprocess_run(mocker)
 
     runner = CliRunner()
     with utils.temp_file(default_assembly_backup_file) as asm_file:
@@ -234,21 +216,18 @@ def test_uninstall(mocker: MockerFixture):
             env=default_env
         )
     assert result.exit_code == 0
-    assert len(subprocess_params) == 2
-    insights_uninstall = subprocess_params[0]
-    operator_uninstall = subprocess_params[1]
-
-    assert insights_uninstall['cmd'] == ['helm', 'uninstall', default_insights_release, '--namespace', utils.namespace()]
-    assert operator_uninstall['cmd'] == ['helm', 'uninstall', 'test-op-helm', '--namespace', 'kxi-operator']
+    check_subprocess_run_commands(
+        [
+            HelmCommandDelete(),
+            HelmCommandDelete(release='test-op-helm',
+                              namespace='kxi-operator'
+                              ),
+        ]
+    )
 
 
 def test_upgrade(mocker: MockerFixture):
-    global subprocess_params
-    subprocess_params = []
-    subprocess_run_helm_success_helm_install_insights = partial(subprocess_run_helm_success_install_append_res, res=subprocess_params)
-    mocker.patch(fun_subprocess_run, subprocess_run_helm_success_helm_install_insights)
     upgrade_mocks(mocker)
-    
     runner = CliRunner()
     with utils.temp_file(default_assembly_backup_file) as asm_file:
         with open(asm_file, mode='w') as f:
@@ -270,13 +249,21 @@ def test_upgrade(mocker: MockerFixture):
                 ],
                 env=default_env
             )
-    upgrade_checks(result, values_file_name)
+    expected_helm_commands = [    
+                              HelmCommandFetch(),
+                              HelmCommandAzureOperator(values=values_file_name),
+                              HelmCommandAzureInstall(values=values_file_name)
+    ]
+    install_upgrade_checks(result,
+                           helm_commands=expected_helm_commands,
+                           expected_subprocess_args=[True, None, None],
+                           expected_running_assembly={}
+                           )
+
 
 def test_upgrade_with_no_assemblies_running(mocker: MockerFixture):
-    global subprocess_params
-    subprocess_params = []
-    subprocess_run_helm_success_helm_install_insights = partial(subprocess_run_helm_success_install_append_res, res=subprocess_params)
-    mocker.patch(fun_subprocess_run, subprocess_run_helm_success_helm_install_insights)
+    global delete_crd_params
+    delete_crd_params = []
     upgrade_mocks(mocker)
 
     runner = CliRunner()
@@ -296,15 +283,20 @@ def test_upgrade_with_no_assemblies_running(mocker: MockerFixture):
             ],
             env=default_env
         )
-    upgrade_checks(result, values_file_name)
+    expected_helm_commands = [
+                              HelmCommandFetch(),
+                              HelmCommandAzureOperator(values=values_file_name),
+                              HelmCommandAzureInstall(values=values_file_name)
+    ]
+    install_upgrade_checks(result,
+                           helm_commands=expected_helm_commands,
+                           expected_subprocess_args=[True, None, None],
+                           expected_running_assembly={}
+                           )
 
 
 def test_upgrade_with_chart_repo_url(mocker: MockerFixture):
-    global subprocess_params
-    subprocess_params = []
     test_chart_repo_url = 'oci://test_chart_repo_url'
-    subprocess_run_helm_success_helm_install_insights = partial(subprocess_run_helm_success_install_append_res, res=subprocess_params)
-    mocker.patch(fun_subprocess_run, subprocess_run_helm_success_helm_install_insights)
     upgrade_mocks(mocker)
 
     runner = CliRunner()
@@ -329,13 +321,23 @@ def test_upgrade_with_chart_repo_url(mocker: MockerFixture):
                 ],
                 env=default_env
             )
-    upgrade_checks(result, values_file_name, chart_repo_url=test_chart_repo_url)
+    expected_helm_commands = [
+                              HelmCommandFetch(chart=test_chart_repo_url),
+                              HelmCommandAzureOperator(values=values_file_name,
+                                                       chart=f'{test_chart_repo_url}/kxi-operator'
+                                                       ),
+                              HelmCommandAzureInstall(values=values_file_name,
+                                                      chart=f'{test_chart_repo_url}/insights'
+                                                      )
+                              ]
+    install_upgrade_checks(result,
+                           helm_commands=expected_helm_commands,
+                           expected_subprocess_args=[True, None, None],
+                           expected_running_assembly={}
+                           )
+
 
 def test_upgrade_without_filepath(mocker: MockerFixture):
-    global subprocess_params
-    subprocess_params = []
-    subprocess_run_helm_success_helm_install_insights = partial(subprocess_run_helm_success_install_append_res, res=subprocess_params)
-    mocker.patch(fun_subprocess_run, subprocess_run_helm_success_helm_install_insights)
     upgrade_mocks(mocker)
 
     runner = CliRunner()
@@ -350,4 +352,13 @@ def test_upgrade_without_filepath(mocker: MockerFixture):
         ],
         env=default_env
     )
-    upgrade_checks(result, values_file_name='-')
+    expected_helm_commands = [
+                              HelmCommandFetch(),
+                              HelmCommandAzureOperator(values='-'),
+                              HelmCommandAzureInstall(values='-')
+    ]
+    install_upgrade_checks(result,
+                           helm_commands=expected_helm_commands,
+                           expected_subprocess_args=[True, fake_values_yaml, True],
+                           expected_running_assembly={}
+                           )
