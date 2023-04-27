@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import click
 import os
 import subprocess
@@ -13,7 +15,7 @@ from kxicli import log
 from kxicli.common import parse_called_process_error
 from kxicli.commands.common.docker import temp_docker_config
 from kxicli.commands.common.namespace import create_namespace
-
+from kxicli.resources import helm_chart
 
 class RequiredHelmVersion(Version):
     pass
@@ -172,8 +174,11 @@ def _get_helm_version() -> LocalHelmVersion:
     except subprocess.CalledProcessError as e:
         raise ClickException(str(e))
 
-def repo_update():
-    subprocess.run(['helm', 'repo', 'update'], check=True)
+def repo_update(repos: list[str] = None):
+    cmd = ['helm', 'repo', 'update']
+    if repos is not None:
+        cmd += repos
+    subprocess.run(cmd, check=True)
 
 def get_values(release, namespace=None):
     cmd = ['helm', 'get', 'values', release]
@@ -217,3 +222,61 @@ def history(release, output, show_operator, current_operator_version, current_op
     except subprocess.CalledProcessError as e:
         click.echo(e)
         return []
+
+
+def repo_exists(chart_repo_name):
+    if not any (chart_repo_name == item['name'] for item in repo_list()):
+        raise click.ClickException(f'Cannot find local chart repo {chart_repo_name}')
+
+
+def add_repo(chart_repo_name, url, username, password):
+    """Call 'helm repo add' using subprocess.run"""
+    log.debug(
+        f'Attempting to call: helm repo add --username {username} --password {len(password)*"*"} {chart_repo_name} {url}')
+    try:
+        return subprocess.run(['helm', 'repo', 'add', '--username', username, '--password', password, chart_repo_name, url],
+                       check=True)
+    except subprocess.CalledProcessError:
+        # Pass here so that the password isn't printed in the log
+        pass
+
+
+def repo_list():
+    """Call 'helm repo list' using subprocess.run"""
+    log.debug('Attempting to call: helm repo list')
+    try:
+        res = subprocess.run(
+            ['helm', 'repo', 'list', '--output', 'json'], check=True, capture_output=True, text=True)
+        return json.loads(res.stdout)
+    except subprocess.CalledProcessError as e:
+        click.echo(e)
+        return []
+
+
+def search_repo(
+    chart: str,
+    args: list[str] = []
+) -> subprocess.CompletedProcess:
+    cmd = ['helm', 'search', 'repo', chart] + args
+    return subprocess.run(cmd, check=True, capture_output=True, text=True)
+
+
+def list_versions(chart_repo_name):
+    """Call 'helm search repo' using subprocess.run"""
+    log.debug('Attempting to call: helm search repo')
+    try:
+        repo_update()
+        click.echo(f'Listing available kdb Insights Enterprise versions in repo {chart_repo_name}')
+        return search_repo(f'{chart_repo_name}/insights')
+    except subprocess.CalledProcessError as e:
+        raise ClickException(str(e))
+
+
+def get_operator_versions(
+    chart: helm_chart.Chart
+) -> list[str]:
+    log.debug(f"Searching {chart.repo_name} for versions of kxi-operator")
+    extra_args = ['--versions', '--devel', '--output', 'json']
+    res = search_repo(f'{chart.repo_name}/kxi-operator', extra_args)
+    versions = [x['version'] for x in json.loads(res.stdout)]
+    return versions

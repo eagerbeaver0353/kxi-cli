@@ -1,3 +1,4 @@
+import json
 import subprocess
 import click
 import pytest
@@ -9,7 +10,8 @@ from subprocess import CompletedProcess, CalledProcessError
 from kxicli.commands import install
 
 from kxicli.resources import helm
-from utils import fake_docker_config_yaml, return_none
+import const
+import utils
 
 HELM_BIN_KEY = 'HELM_BIN'
 HELM_BIN_VAL = 'helm'
@@ -168,18 +170,18 @@ def test_helm_install_success(mocker: MockerFixture):
     subprocess_run_helm_success_helm_install = partial(subprocess_run_helm_success_install_with_res, res=res)
 
     mocker.patch(fun_subprocess_run, subprocess_run_helm_success_helm_install)
-    mocker.patch(fun_install_create_namespace, return_none)
+    mocker.patch(fun_install_create_namespace, utils.return_none)
 
     actual_res = helm.upgrade_install(
         release=RELEASE,
         chart=CHART,
         version=VERSION,
         namespace=NAMESPACE,
-        docker_config=fake_docker_config_yaml
+        docker_config=utils.fake_docker_config_yaml
     )
 
     assert 'DOCKER_CONFIG' in dict(res['env'])
-    assert res['dockerconfigjson'] == fake_docker_config_yaml
+    assert res['dockerconfigjson'] == utils.fake_docker_config_yaml
     assert res['cmd'] == expected_cmd
     assert compare_completed_process(
         actual_res,
@@ -189,14 +191,14 @@ def test_helm_install_success(mocker: MockerFixture):
 
 def test_helm_install_fail(mocker: MockerFixture):
     mocker.patch(fun_subprocess_run, subprocess_run_helm_fail)
-    mocker.patch(fun_install_create_namespace, return_none)
+    mocker.patch(fun_install_create_namespace, utils.return_none)
     with pytest.raises(click.ClickException):
         helm.upgrade_install(
             release=RELEASE,
             chart=CHART,
             version=VERSION,
             namespace=NAMESPACE,
-            docker_config=fake_docker_config_yaml
+            docker_config=utils.fake_docker_config_yaml
         )
 
 
@@ -210,7 +212,7 @@ def test_helm_uninstall_success(mocker: MockerFixture):
     subprocess_run_helm_success_uninstall = partial(subprocess_run_helm_success_uninstall_with_res, res=res)
 
     mocker.patch(fun_subprocess_run, subprocess_run_helm_success_uninstall)
-    mocker.patch(fun_install_create_namespace, return_none)
+    mocker.patch(fun_install_create_namespace, utils.return_none)
     actual_res = helm.uninstall(
         release=RELEASE,
         namespace=NAMESPACE
@@ -221,7 +223,7 @@ def test_helm_uninstall_success(mocker: MockerFixture):
 
 def test_helm_uninstall_fail(mocker: MockerFixture):
     mocker.patch(fun_subprocess_run, subprocess_run_helm_fail)
-    mocker.patch(fun_install_create_namespace, return_none)
+    mocker.patch(fun_install_create_namespace, utils.return_none)
     with pytest.raises(click.ClickException):
         helm.uninstall(
             release=RELEASE,
@@ -248,12 +250,13 @@ def mocked_helm_history(base_command, stdout=subprocess.PIPE, check=True, captur
     )
 
 def mocked_helm_history_json(base_command, check=True, capture_output=True, text=True):
-    return install.subprocess.CompletedProcess(
+    return subprocess.CompletedProcess(
         args=base_command,
         returncode=0,
         stdout='[{"revision": 1, "status": "deployed"}, {"revision": 2, "status": "uninstalled"}]'
     )
-    
+
+
 def test_history_success_json(mocker):
     mocker.patch('subprocess.run', mocked_helm_history_json)
     release = "myrelease"
@@ -273,11 +276,42 @@ def test_history_fail(mocker):
     release = "myrelease"
     output = []
     helm.history(release, False, None, None, 'kxi-operator') == output
-    
+
 def test_history_fail_json(mocker):
     error_msg = "command not found: helm"
     mocker.patch('subprocess.run').side_effect = subprocess.CalledProcessError(1, "helm", error_msg)
     release = "myrelease"
     output = []
     helm.history(release, False, None, None, 'kxi-operator') == output
-            
+
+def test_repo_exists(mocker):
+    utils.mock_helm_repo_list(mocker, const.test_chart_repo_name, const.test_chart_repo_url)
+    assert helm.repo_exists(const.test_chart_repo_name) is None
+    with pytest.raises(Exception) as e:
+        helm.repo_exists('a-different-repo')
+    assert isinstance(e.value, click.ClickException)
+    assert 'Cannot find local chart repo a-different-repo' in e.value.message
+
+
+def test_repo_exists_returns_error_when_repo_does_not_exist(mocker):
+    mocker.patch('subprocess.run').side_effect = subprocess.CalledProcessError(1, ['helm', 'repo', 'list'])
+    with pytest.raises(Exception) as e:
+        helm.repo_exists(const.test_chart_repo_name)
+    assert isinstance(e.value, click.ClickException)
+    assert f'Cannot find local chart repo {const.test_chart_repo_name}' in e.value.message
+
+
+def test_helm_repo_list_when_repo_exists(mocker):
+    data = [{'name': const.test_chart_repo_name, 'url': const.test_chart_repo_url}]
+    mocker.patch('subprocess.run').return_value = subprocess.CompletedProcess(
+            args=['helm','repo','list'],
+            returncode=0,
+            stdout=json.dumps(data)
+    )
+    assert helm.repo_list() == data
+
+
+def test_helm_repo_list_returns_empty_list_when_repo_search_errors(mocker):
+    mocker.patch('subprocess.run').side_effect = subprocess.CalledProcessError(1, ['helm', 'repo', 'list'])
+    assert helm.repo_list() == []
+

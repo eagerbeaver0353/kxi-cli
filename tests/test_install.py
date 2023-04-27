@@ -5,17 +5,18 @@ import io
 import json
 import kubernetes as k8s
 import pytest
-import subprocess
-import yaml
 import click
+from pathlib import Path
 
 from kxicli import common
 from kxicli.commands import install
-from kxicli.resources import secret
+from kxicli.resources import secret, helm_chart
 from utils import IPATH_KUBE_COREV1API, temp_file, test_secret_data, test_secret_type, test_secret_key, \
     mock_kube_deployment_api, mocked_kube_deployment_list, mock_kube_secret_api, mocked_read_namespaced_secret, \
-    raise_conflict, raise_not_found, mock_validate_secret, mock_helm_env, mock_helm_get_values,  mocked_helm_repo_list, \
+    raise_conflict, raise_not_found, mock_validate_secret, mock_helm_env, mock_helm_get_values,  mock_helm_repo_list, \
     return_none, fake_docker_config_yaml, test_val_file
+# need to replace the above imports with utils prefixed versions
+import utils
 from test_install_e2e import mocked_read_namespaced_secret_return_values, test_vals, mocked_read_secret, mocked_installed_chart_json
 from const import test_user, test_pass, test_lic_file, test_chart_repo_name, test_chart_repo_url
 
@@ -344,22 +345,30 @@ def mocked_subprocess_get_operator_version_inc(chart_repo_name, insights_version
 
 def mocked_subprocess_get_operator_version_none(chart_repo_name, insights_version, rc_version):
         return ''
-    
+
 def test_get_operator_version_returns_latest_minor_version(mocker):
     mocker.patch('subprocess.run', mocked_helm_search_returns_valid_json)
-    assert install.get_operator_version('kxi-insights', '1.3.0', None) == '1.3.0'
+    utils.mock_helm_repo_list(mocker)
+    chart = helm_chart.Chart('kx-insights/insights')
+    assert install.get_operator_version(chart, '1.3.0', None) == '1.3.0'
 
 def test_get_operator_version_returns_latest_minor_version_multiple_versions(mocker):
     mocker.patch('subprocess.run', mocked_helm_search_returns_valid_json_optional_multiple_versions)
-    assert install.get_operator_version('kxi-insights', '1.3.0', None) == '1.3.1-rc.1'
+    utils.mock_helm_repo_list(mocker)
+    chart = helm_chart.Chart('kx-insights/insights')
+    assert install.get_operator_version(chart, '1.3.0', None) == '1.3.1-rc.1'
 
 def test_get_operator_version_returns_latest_minor_version_rc(mocker):
     mocker.patch('subprocess.run', mocked_helm_search_returns_valid_json_rc)
-    assert install.get_operator_version('kxi-insights', '1.3.0-rc.30', None) == '1.3.0-rc.40'
+    utils.mock_helm_repo_list(mocker)
+    chart = helm_chart.Chart('kx-insights/insights')
+    assert install.get_operator_version(chart, '1.3.0-rc.30', None) == '1.3.0-rc.40'
 
 def test_get_operator_version_returns_none_when_not_found(mocker):
     mocker.patch('subprocess.run', mocked_helm_search_returns_empty_json)
-    assert install.get_operator_version('kxi-insights', '5.6.7', None) == None
+    utils.mock_helm_repo_list(mocker)
+    chart = helm_chart.Chart('kx-insights/insights')
+    assert install.get_operator_version(chart, '5.6.7', None) == None
 
 
 def test_get_installed_charts_returns_chart_json(mocker):
@@ -375,35 +384,6 @@ def test_insights_installed_returns_true_when_already_exists(mocker):
 def test_insights_installed_returns_false_when_does_not_exist(mocker):
     mocker.patch(fun_subprocess_check_output, mocked_helm_list_returns_empty_json)
     assert install.insights_installed('insights', test_ns) == False
-
-
-def test_helm_repo_list_when_repo_exists(mocker):
-    expected_result = mocked_helm_repo_list(test_chart_repo_name, test_chart_repo_url)
-    helm_response = subprocess.CompletedProcess(args=['helm', 'repo', 'list', '--output', 'json'], returncode=0, stdout=json.dumps(expected_result))
-    mocker.patch('subprocess.run').return_value = helm_response
-    assert install.helm_repo_list() == expected_result
-
-
-def test_helm_repo_list_returns_empty_list_when_repo_search_errors(mocker):
-    mocker.patch('subprocess.run').side_effect = subprocess.CalledProcessError(1, ['helm', 'repo', 'list'])
-    assert install.helm_repo_list() == []
-
-
-def test_insights_check_helm_repo_exists(mocker):
-    mocker.patch('kxicli.commands.install.helm_repo_list', lambda: mocked_helm_repo_list(test_chart_repo_name, test_chart_repo_url))
-    assert install.check_helm_repo_exists(test_chart_repo_name) == None
-    with pytest.raises(Exception) as e:
-        install.check_helm_repo_exists('a-different-repo')
-    assert isinstance(e.value, click.ClickException)
-    assert 'Cannot find local chart repo a-different-repo' in e.value.message
-
-
-def test_insights_check_helm_repo_exists_returns_error_when_repo_does_not_exist(mocker):
-    mocker.patch('subprocess.run').side_effect = subprocess.CalledProcessError(1, ['helm', 'repo', 'list'])
-    with pytest.raises(Exception) as e:
-        install.check_helm_repo_exists(test_chart_repo_name)
-    assert isinstance(e.value, click.ClickException)
-    assert f'Cannot find local chart repo {test_chart_repo_name}' in e.value.message
 
 
 def test_get_installed_operator_versions_returns_helm_chart_version(mocker):
@@ -581,6 +561,7 @@ def test_read_cache_crd_from_file_throws_yaml_error(mocker):
     with pytest.raises(Exception) as e:
         install.read_cached_crd_files(
             '1.2.3',
+            Path(utils.test_helm_repo_cache),
             'kxi-operator',
             [install.CRD_FILES[0]]
             )
@@ -589,38 +570,39 @@ def test_read_cache_crd_from_file_throws_yaml_error(mocker):
     assert 'Failed to parse custom resource definition file' in e.value.message
 
 def test_filter_max_operator_version_rcTrue():
-    data = [{'version': '1.0.0-rc.1'}, {'version': '1.0.0-rc.2'}, {'version': '1.0.0-rc.3'}]
-    insights_version = '1.0.0'
-    rc_version = True
-    assert install.filter_max_operator_version(data, insights_version, rc_version) == '1.0.0-rc.3'
+    operator_versions = ['1.0.0-rc.1', '1.0.0-rc.2', '1.0.0-rc.3']
+    insights_version = '1.0.0-rc.3'
+    assert install.filter_max_operator_version(operator_versions, insights_version) == '1.0.0-rc.3'
 
 def test_filter_max_operator_version_rcFalse():
-    data = [{'version': '1.0.0-rc.1'}, {'version': '1.0.0-rc.2'}, {'version': '1.0.0'}]
+    operator_versions = ['1.0.0-rc.1', '1.0.0-rc.2', '1.0.0']
     insights_version = '1.0.0'
-    rc_version = False
-    assert install.filter_max_operator_version(data, insights_version, rc_version) == '1.0.0'
+    assert install.filter_max_operator_version(operator_versions, insights_version) == '1.0.0'
 
 def test_filter_max_operator_version_no_match():
-    data = [{'version': '1.0.0-rc.1'}, {'version': '1.0.0-rc.2'}, {'version': '1.0.1'}]
+    operator_versions = ['1.0.0-rc.1', '1.0.0-rc.2', '1.0.1']
     insights_version = '2.0.0'
-    rc_version = True
-    assert install.filter_max_operator_version(data, insights_version, rc_version) == ''
+    assert install.filter_max_operator_version(operator_versions, insights_version) is None
 
 def test_check_for_operator_install_returns_version_to_install(mocker):
     # Operator not already installed, compatible version avaliable on repo
     mock_helm_env(mocker)
     mocker.patch('subprocess.run', mocked_helm_search_returns_valid_json)
+    utils.mock_helm_repo_list(mocker)
+    chart = helm_chart.Chart('kx-insights/insights')
     mock_kube_deployment_api(mocker)
-    assert install.check_for_operator_install('kx-insights', 'insights', '1.3.0', None, force=True) == (True, False, '1.3.0', 'kx-insights', [])
+    assert install.check_for_operator_install('kx-insights', chart, '1.3.0', None, force=True) == (True, False, '1.3.0', 'kx-insights', [])
 
 
 def test_check_for_operator_install_errors_when_operator_repo_charts_not_compatible(mocker):
     # Operator not already installed, no compatible version avaliable on repo. Error returned
     mock_helm_env(mocker)
     mocker.patch('subprocess.run', mocked_helm_search_returns_valid_json)
+    utils.mock_helm_repo_list(mocker)
+    chart = helm_chart.Chart('kx-insights/insights')
     mock_kube_deployment_api(mocker)
     with pytest.raises(Exception) as e:
-        install.check_for_operator_install('kx-insights', 'insights', '1.8.0', None, True)
+        install.check_for_operator_install('kx-insights', chart, '1.8.0', None, True)
     assert isinstance(e.value, click.ClickException)
     assert 'Compatible version of operator not found' in e.value.message
 
@@ -628,9 +610,11 @@ def test_check_for_operator_install_errors_when_operator_repo_charts_not_compati
 def test_check_for_operator_install_does_not_install_when_no_repo_charts_available(mocker):
     # Operator already installed, no compatible version avaliable on repo
     mocker.patch('subprocess.run', mocked_helm_search_returns_empty_json)
+    utils.mock_helm_repo_list(mocker)
+    chart = helm_chart.Chart('kx-insights/insights')
     mock_kube_deployment_api(mocker, read=mocked_kube_deployment_list)
     with pytest.raises(Exception) as e:
-        install.check_for_operator_install('kx-insights', 'insights', '1.8.0', None, True)
+        install.check_for_operator_install('kx-insights', chart, '1.8.0', None, True)
     assert isinstance(e.value, click.ClickException)
     assert 'Compatible version of operator not found' in e.value.message
 
@@ -638,8 +622,10 @@ def test_check_for_operator_install_errors_when_installed_operator_not_compitibl
     # Incompatiable operator already installed, no version avaliable on repo. Error returned
     mocker.patch('subprocess.run', mocked_helm_search_returns_empty_json)
     mock_kube_deployment_api(mocker, read=mocked_kube_deployment_list)
+    utils.mock_helm_repo_list(mocker)
+    chart = helm_chart.Chart('kx-insights/insights')
     with pytest.raises(Exception) as e:
-        install.check_for_operator_install('kx-insights', 'insights', '1.8.0', None, True)
+        install.check_for_operator_install('kx-insights', chart, '1.8.0', None, True)
     assert isinstance(e.value, click.ClickException)
     assert 'Compatible version of operator not found' in e.value.message
 
@@ -648,9 +634,11 @@ def test_check_for_operator_install_when_installed_and_available_operators_not_c
     # Incompatiable operator already installed, no compatible version avaliable on repo. Error returned    
     mock_helm_env(mocker)
     mocker.patch('subprocess.run', mocked_helm_search_returns_valid_json)
+    utils.mock_helm_repo_list(mocker)
+    chart = helm_chart.Chart('kx-insights/insights')
     mock_kube_deployment_api(mocker, read=mocked_kube_deployment_list)
     with pytest.raises(Exception) as e:
-        install.check_for_operator_install('kx-insights', 'insights', '1.4.0', None, True)
+        install.check_for_operator_install('kx-insights', chart, '1.4.0', None, True)
     assert isinstance(e.value, click.ClickException)
     assert 'Compatible version of operator not found' in e.value.message
 
@@ -671,18 +659,22 @@ def test_check_for_operator_install_does_not_install_when_operator_is_not_manage
     # Operator already installed, no release-name annotation found.
     mock_helm_env(mocker)
     mocker.patch('subprocess.run', mocked_helm_search_returns_valid_json)
+    utils.mock_helm_repo_list(mocker)
+    chart = helm_chart.Chart('kx-insights/insights')
     mock_kube_deployment_api(mocker, read=mocked_kube_deployment_list)
     mocker.patch('kxicli.commands.install.get_installed_operator_versions', mocked_get_installed_operator_versions_without_release)
-    assert install.check_for_operator_install('kx-insights', 'insights', '1.2.3', None, True) == (False, False, None, None, [])
+    assert install.check_for_operator_install('kx-insights', chart, '1.2.3', None, True) == (False, False, None, None, [])
 
 
 def test_check_for_operator_install_errors_when_incompatible_operator_is_not_managed_by_helm(mocker):
     # Operator already installed with a version incompatible with insights, no release-name annotation found.
     mocker.patch('subprocess.run', mocked_helm_search_returns_empty_json)
+    utils.mock_helm_repo_list(mocker)
+    chart = helm_chart.Chart('kx-insights/insights')
     mock_kube_deployment_api(mocker, read=mocked_kube_deployment_list)
     mocker.patch('kxicli.commands.install.get_installed_operator_versions', mocked_get_installed_operator_versions_without_release)
     with pytest.raises(Exception) as e:
-        install.check_for_operator_install('kx-insights', 'insights', '1.3.0', None, True)
+        install.check_for_operator_install('kx-insights', chart, '1.3.0', None, True)
     assert isinstance(e.value, click.ClickException)
     assert 'Installed kxi-operator version 1.2.0 is incompatible with insights version 1.3.0' in e.value.message
 
@@ -759,7 +751,7 @@ def test_check_operator_rollback_version_raises_exception_upon_downgrade():
     assert 'Insights rollback target version 1.5.0-rc.18 is incompatible with target operator version 1.4.0-rc.17. Minor versions must match.' in e.value.message
 
 def test_get_values_and_secrets_from_helm_values_exist(mocker):
-    mocker.patch('kxicli.commands.install.helm_repo_list', lambda: mocked_helm_repo_list(test_chart_repo_name, test_chart_repo_url))
+    mock_helm_repo_list(mocker, test_chart_repo_name, test_chart_repo_url)
     mocker.patch('kxicli.commands.install.helm.repo_update')
     test_val_data_updated = copy.deepcopy(test_vals)
     test_lic_secret = 'license-from-helm-values'
@@ -770,14 +762,13 @@ def test_get_values_and_secrets_from_helm_values_exist(mocker):
     assert install.get_values_and_secrets(None,
                                           test_ns,
                                           'test_release',
-                                          test_chart_repo_name,
                                           test_chart_repo_url,
                                           None,
                                           None
-                                          ) == (None, test_ns, test_chart_repo_name, 'kxi-nexus-pull-secret', test_lic_secret)
+                                          ) == (None, test_ns, test_chart_repo_url, 'kxi-nexus-pull-secret', test_lic_secret)
 
 def test_get_values_and_secrets_from_helm_values_dont_exist(mocker, capfd):
-    mocker.patch('kxicli.commands.install.helm_repo_list', lambda: mocked_helm_repo_list(test_chart_repo_name, test_chart_repo_url))
+    mock_helm_repo_list(mocker, test_chart_repo_name, test_chart_repo_url)
     mocker.patch('kxicli.commands.install.helm.repo_update')
     test_val_data_updated = copy.deepcopy(test_vals)
     test_lic_secret = 'license-from-helm-values'
@@ -789,7 +780,6 @@ def test_get_values_and_secrets_from_helm_values_dont_exist(mocker, capfd):
         install.get_values_and_secrets(None,
                                           test_ns,
                                           'test_release',
-                                          test_chart_repo_name,
                                           test_chart_repo_url,
                                           None,
                                           None
@@ -805,6 +795,7 @@ error=Required secret kxi-keycloak does not exist
 error=Required secret kxi-postgresql does not exist
 """ 
 
+
 def test_get_values_and_secrets_from_helm_values_exist_called_from_azure(mocker):
     test_val_data_updated = copy.deepcopy(test_vals)
     test_val_data_updated['global']['image']['repository'] = 'test-repo.com'
@@ -815,8 +806,29 @@ def test_get_values_and_secrets_from_helm_values_exist_called_from_azure(mocker)
     assert install.get_values_and_secrets(None,
                                           test_ns,
                                           'test_release',
-                                          test_chart_repo_name,
-                                          None,
+                                          test_chart_repo_url,
                                           None,
                                           None
-                                          ) == (None, test_ns, 'oci://test-repo.com', 'kxi-nexus-pull-secret', 'kxi-license')
+                                          ) == (None, test_ns, test_chart_repo_url, 'kxi-nexus-pull-secret', 'kxi-license')
+
+
+def test_get_operator_location_when_remote(mocker):
+    mocker.patch("kxicli.resources.helm.repo_exists")
+    mocker.patch("kxicli.resources.helm.repo_update")
+    chart = helm_chart.Chart('kx-insights/insights')
+    assert install.get_operator_location(chart, '1.2.3') == 'kx-insights/kxi-operator'
+
+
+def test_get_operator_location_when_local(mocker):
+    chart = helm_chart.Chart(str(Path(__file__).parent / 'files/helm/insights-1.5.0.tgz'))
+    assert install.get_operator_location(chart, '1.2.3') == str(Path(__file__).parent / 'files/helm/kxi-operator-1.2.3.tgz')
+
+
+def test_local_operator_versions_happy_path():
+    chart = helm_chart.Chart(str(Path(__file__).parent / 'files/helm/insights-1.5.0.tgz'))
+    assert install.local_operator_versions(chart) == ['1.2.3']
+
+
+def test_local_operator_versions_returns_none_correctly():
+    chart = helm_chart.Chart(str(Path(__file__).parent / 'files/helm/insights-1.5.0.tgz'))
+    assert install.local_operator_versions(chart, prefix = 'unknown-chart-') == []

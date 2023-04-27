@@ -8,6 +8,7 @@ from tempfile import mkdtemp
 import kubernetes as k8s
 from kxicli.resources import secret
 import subprocess
+import const
 
 test_secret_type = 'Opaque'
 test_secret_key = 'secret_key'
@@ -195,8 +196,8 @@ def mock_list_kube_config_contexts(mocker):
     CUSTOM_OBJECT_API = 'kubernetes.config.list_kube_config_contexts'
     mocker.patch(CUSTOM_OBJECT_API, mock_config_exception)
 
-def mocked_helm_repo_list(name, url):
-    return [{'name': name, 'url': url}]
+def mock_helm_repo_list(mocker, name='kx-insights', url=const.test_chart_repo_url):
+    mocker.patch('kxicli.resources.helm.repo_list', return_value=[{'name': name, 'url': url}])
 
 def mocked_helm_history_rollback(release, output, show_operator,current_operator_version, current_operator_release):
         res1 =[{"release": release, "revision": 1, "chart": "insights-1.2.3", "app_version":"1.2.3", "status": "deployed"}, {"release": release, "revision": 2, "chart": "insights-1.4.0", "app_version": "1.4.0", "status": "uninstalled"}]

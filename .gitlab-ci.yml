@@ -88,6 +88,7 @@ integration-tests:
     - mkdir -p /root/.insights
     - cp tests/files/integration-cli-config /root/.insights/cli-config
     - echo "admin.password = $KEYCLOAK_ADMIN_PASSWORD" >> /root/.insights/cli-config
+    - export KUBECONFIG=$(pwd)/tests/files/test-kube-config
   script:
     - ./test-and-coverage.sh integration
   artifacts:

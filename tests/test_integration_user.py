@@ -1,13 +1,17 @@
 
+from pathlib import Path
 import pytest
 import twill
 from click.testing import CliRunner
 
 from kxicli import config
-from kxicli import main
+from kxicli import main, common
 
 TEST_USER = "ci-user"
 TEST_PASSWORD = "0neT1meAccess!"
+
+common.config.config_file = str(Path.home() / '.insights' / 'cli-config')
+common.config.load_config("default")
 
 # Fixtures
 
@@ -22,6 +26,7 @@ def create_user(remove_user):
     runner.invoke(main.cli, ["user", "create", TEST_USER, "--password", TEST_PASSWORD])
 
 # Tests
+@pytest.mark.integration 
 def test_user_create(remove_user):
     runner = CliRunner()
     result = runner.invoke(main.cli, ["user", "create", TEST_USER, "--password", TEST_PASSWORD])
@@ -35,6 +40,7 @@ def test_user_create(remove_user):
     assert result.exit_code == 1
     assert "Error: Creating user failed with 409 Conflict (User exists with same username)" in result.output
 
+@pytest.mark.integration
 def test_user_list(remove_user):
     runner = CliRunner()
 
@@ -49,6 +55,7 @@ def test_user_list(remove_user):
     assert result.exit_code == 0
     assert TEST_USER in result.output
 
+@pytest.mark.integration
 def test_role_assignment_and_removal_happy_path(create_user):
     runner = CliRunner()
 
@@ -98,6 +105,7 @@ def test_role_assignment_and_removal_happy_path(create_user):
     assert multi_roles[0] not in result.output
     assert multi_roles[1] not in result.output
 
+@pytest.mark.integration
 def test_role_assignment_and_removal_fails_with_invalid_role(create_user):
     runner = CliRunner()
 
@@ -120,12 +128,14 @@ def test_role_assignment_and_removal_fails_with_invalid_role(create_user):
     assert result.exit_code == 1
     assert invalid_role in result.output
 
+@pytest.mark.integration
 def test_get_available_roles():
     runner = CliRunner()
     result = runner.invoke(main.cli, ["user", "get-available-roles"])
     assert result.exit_code == 0
     assert "insights." in result.output
 
+@pytest.mark.integration
 def test_user_delete_with_force(create_user):
     runner = CliRunner()
 
@@ -140,6 +150,7 @@ def test_user_delete_with_force(create_user):
     assert result.exit_code == 0
     assert TEST_USER not in result.output
 
+@pytest.mark.integration
 def test_reset_password(create_user):
     runner = CliRunner()
 

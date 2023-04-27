@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import base64
 import datetime
 import json
@@ -5,7 +7,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Optional
 
 import click
 import semver
@@ -27,7 +29,7 @@ from kxicli.commands import assembly
 from kxicli.commands.common import arg
 from kxicli.commands.common.namespace import create_namespace
 from kxicli.common import get_default_val as default_val, key_gui_client_secret, key_operator_client_secret
-from kxicli.resources import secret, helm
+from kxicli.resources import secret, helm, helm_chart
 
 DOCKER_CONFIG_FILE_PATH = str(Path.home() / '.docker' / 'config.json')
 operator_namespace = 'kxi-operator'
@@ -114,13 +116,13 @@ def setup(namespace, chart_repo_name, chart_repo_url, chart_repo_username,
 
     click.secho(phrases.header_chart, bold=True)
     chart_repo_name = options.chart_repo_name.prompt(chart_repo_name)
-    if any (chart_repo_name == item['name'] for item in helm_repo_list()):
+    if any (chart_repo_name == item['name'] for item in helm.repo_list()):
        click.echo(f'Using existing helm repo {chart_repo_name}')
     else:
         chart_repo_url = options.chart_repo_url.prompt(chart_repo_url)
         username = options.chart_repo_username.prompt(chart_repo_username)
         password = options.chart_repo_password.prompt()
-        helm_add_repo(chart_repo_name, chart_repo_url, username, password)
+        helm.add_repo(chart_repo_name, chart_repo_url, username, password)
 
     click.secho(phrases.header_license, bold=True)
     license_secret, license_on_demand = prompt_for_license(license_secret, license_filepath, license_as_env_var)
@@ -241,24 +243,26 @@ def run(ctx, namespace, chart_repo_name, chart_repo_url, chart_repo_username,
         click.echo(phrases.header_run)
         filepath, chart_repo_name = ctx.forward(setup)
 
-    filepath, namespace, chart_repo, image_pull_secret, license_secret = get_values_and_secrets(filepath,
-        namespace, release, chart_repo_name, chart_repo_url,
+    filepath, namespace, chart_repo_url, image_pull_secret, license_secret = get_values_and_secrets(filepath,
+        namespace, release, chart_repo_url,
         image_pull_secret, license_secret)
+
+    insights_chart = parse_chart_cli_params(chart, chart_repo_name, chart_repo_url)
 
     docker_config = get_docker_config_secret(namespace, image_pull_secret, DOCKER_SECRET_KEY)
 
     if is_valid_upgrade_version(release, namespace, version):
         if click.confirm(f'Would you like to upgrade to version {version}?'):
-            return perform_upgrade(namespace, release, chart_repo, None, version, operator_version, image_pull_secret,
+            return perform_upgrade(namespace, release, insights_chart, None, version, operator_version, image_pull_secret,
                     license_secret, filepath, import_users, docker_config, force)
         else:
             return
 
     install_operator, is_op_upgrade, operator_version, operator_release, crd_data = check_for_operator_install(release,
-        chart_repo, version, operator_version, docker_config, force)
+        insights_chart, version, operator_version, docker_config, force)
 
     install_operator_and_release(release, namespace, version, operator_version, operator_release, filepath,
-                                 image_pull_secret, license_secret, chart_repo, import_users, docker_config,
+                                 image_pull_secret, license_secret, insights_chart, import_users, docker_config,
                                  install_operator, is_op_upgrade, crd_data, is_upgrade=False)
 
 @install.command()
@@ -280,25 +284,42 @@ def upgrade(namespace, release, chart_repo_name, chart_repo_url, assembly_backup
     """Upgrade kdb Insights Enterprise"""
     click.secho(phrases.header_upgrade, bold=True)
 
-    filepath, namespace, chart_repo, image_pull_secret, license_secret = get_values_and_secrets(filepath,
-        namespace, release, chart_repo_name, chart_repo_url,
+    filepath, namespace, chart_repo_url, image_pull_secret, license_secret = get_values_and_secrets(filepath,
+        namespace, release, chart_repo_url,
         image_pull_secret, license_secret)
+
+    insights_chart = parse_chart_cli_params(chart, chart_repo_name, chart_repo_url)
 
     is_valid_upgrade_version(release, namespace, version)
 
     docker_config = get_docker_config_secret(namespace, image_pull_secret, DOCKER_SECRET_KEY)
 
-    perform_upgrade(namespace, release, chart_repo, assembly_backup_filepath, version, operator_version, image_pull_secret,
+    perform_upgrade(namespace, release, insights_chart, assembly_backup_filepath, version, operator_version, image_pull_secret,
                     license_secret, filepath, import_users, docker_config, force)
 
 
-def perform_upgrade(namespace, release, chart_repo, assembly_backup_filepath, version, operator_version, image_pull_secret,
+def parse_chart_cli_params(
+    chart: str,
+    chart_repo_name: str | None,
+    chart_repo_url: str | None
+) -> helm_chart.Chart:
+    # chart-repo-name or chart-repo-url takes precedence over 'chart' arg to prevent breaking change
+    if chart_repo_name:
+        chart = f"{chart_repo_name}/insights"
+    elif chart_repo_url:
+        chart = f"{chart_repo_url}/insights"
+    insights_chart = helm_chart.Chart(chart)
+
+    return insights_chart
+
+
+def perform_upgrade(namespace, release, chart, assembly_backup_filepath, version, operator_version, image_pull_secret,
                     license_secret, filepath, import_users, docker_config, force):
 
     upgraded = False
 
     install_operator, is_op_upgrade, operator_version, operator_release, crd_data = check_for_operator_install(release,
-        chart_repo, version, operator_version, docker_config, force)
+        chart, version, operator_version, docker_config, force)
 
     if not insights_installed(release, namespace):
         click.echo(phrases.upgrade_skip_to_install)
@@ -307,7 +328,7 @@ def perform_upgrade(namespace, release, chart_repo, assembly_backup_filepath, ve
 
         install_operator_and_release(release, namespace, version, operator_version, operator_release,
                                  filepath, image_pull_secret, license_secret,
-                                 chart_repo, import_users, docker_config, install_operator,
+                                 chart, import_users, docker_config, install_operator,
                                  is_op_upgrade, crd_data, is_upgrade=False)
         click.secho(str.format(phrases.upgrade_complete, version=version), bold=True)
         return
@@ -317,7 +338,7 @@ def perform_upgrade(namespace, release, chart_repo, assembly_backup_filepath, ve
         click.secho(phrases.upgrade_insights, bold=True)
         upgraded =  install_operator_and_release(release, namespace, version, operator_version, operator_release, 
                                                 filepath, image_pull_secret, license_secret, 
-                                                chart_repo, import_users, docker_config, install_operator, 
+                                                chart, import_users, docker_config, install_operator, 
                                                 is_op_upgrade, crd_data, is_upgrade=True)
 
     reapply_assemblies(assembly_backup_filepath, namespace, deleted)
@@ -349,7 +370,7 @@ def list_versions(chart_repo_name):
     """
     List available versions of kdb Insights Enterprise
     """
-    helm_list_versions(options.chart_repo_name.prompt(chart_repo_name, silent=True))
+    helm.list_versions(options.chart_repo_name.prompt(chart_repo_name, silent=True))
 
 
 @install.command()
@@ -374,7 +395,6 @@ def get_values_and_secrets(
     filepath,
     namespace,
     release,
-    chart_repo_name,
     chart_repo_url,
     image_pull_secret,
     license_secret
@@ -391,21 +411,12 @@ def get_values_and_secrets(
             values_dict = {}
 
     chart_repo_url = check_azure_oci_repo(values_dict, chart_repo_url)
-    if chart_repo_url and 'oci://' in chart_repo_url:
-            helm_version_checked=helm.get_helm_version_checked()
-            helm_version_checked.ok()
-            chart_repo = chart_repo_url
-    else:
-        chart_repo_name = options.chart_repo_name.prompt(chart_repo_name, silent=True)
-        check_helm_repo_exists(chart_repo_name)
-        helm.repo_update()
-        chart_repo = chart_repo_name
-    
+
     image_pull_secret, license_secret = get_image_and_license_secret_from_values(values_dict, image_pull_secret, license_secret)
-    
+
     validate_values(namespace, values_dict)
 
-    return filepath, namespace, chart_repo, image_pull_secret, license_secret
+    return filepath, namespace, chart_repo_url, image_pull_secret, license_secret
 
 
 def check_azure_oci_repo(values_dict, chart_repo_url):
@@ -441,41 +452,63 @@ def get_minor_version(version):
         return version_parsed[0] + "." + version_parsed[1]
 
 
-def get_operator_version(chart_repo_name, insights_version, operator_version):
+def get_operator_version(
+    chart: helm_chart.Chart,
+    insights_version: str,
+    operator_version: str
+):
     """Determine operator version to use. Retrieve the most recent operator minor version matching the insights version"""
     if operator_version is None:
-        insights_version_minor = get_minor_version(insights_version)
-        if '-rc.' in insights_version:
-            rc_version = True
-            ops_from_helm = subprocess.run(
-                        ['helm', 'search', 'repo', f'{chart_repo_name}/kxi-operator', '--versions','--devel',
-                        '--output', 'json'], check=True, capture_output=True, text=True)
-        else:
-            rc_version = False
-            ops_from_helm = subprocess.run(
-                        ['helm', 'search', 'repo', f'{chart_repo_name}/kxi-operator', '--versions',
-                        '--output', 'json'], check=True, capture_output=True, text=True)
-        data = json.loads(ops_from_helm.stdout)
-        fil_res = filter_max_operator_version(data, insights_version_minor, rc_version)
-        if len(fil_res):
-            operator_version = fil_res
-        else:
-            log.warn(f'Cannot find operator version in chart repo {chart_repo_name} to install matching insights minor version {insights_version}')
-            operator_version = None
+        operator_version = filter_max_operator_version(
+                                available_operator_versions(chart),
+                                insights_version
+                        )
     return operator_version
 
-def filter_max_operator_version(data, insights_version, rc_version):
-    if rc_version:
-        regex = '-rc.[0-9]+$'
-    else:
-        regex = ''
 
-    matching_versions = [x['version'] for x in data if re.search(regex, x['version']) and x['version'].startswith(insights_version)]
-    if len(matching_versions) == 0:
-        return ''
+def available_operator_versions(chart: helm_chart.Chart) -> list[str]:
+    if chart.is_remote:
+        return helm.get_operator_versions(chart)
     else:
-        res = str(max(map(semver.VersionInfo.parse, matching_versions)))
-        return res
+        return local_operator_versions(chart)
+
+
+def local_operator_versions(
+    chart: helm_chart.Chart,
+    prefix: str = 'kxi-operator-',
+    suffix: str = '.tgz',
+) -> list[str]:
+    # In order to identify operator versions we currently look for 'kxi-operator-*.tgz'
+    # in the same folder as the Insights chart and parse the version out of the filename.
+
+    # This isn't foolproof, helm doesn't actually care about the filename at install time,
+    # it reads the version out of the Chart.yaml. However parsing the version is sufficient for
+    # the majority of circumstances since the tgz will be downloaded via 'helm fetch' which follows
+    # the naming convention of {chart}-{version}.tgz
+    parent = Path(chart.full_ref).parent
+    versions = []
+    glob = f"{prefix}*{suffix}"
+    log.debug(f"Searching {parent} for charts matching glob {glob}")
+    for tgz_file in parent.glob(glob):
+        versions.append(tgz_file.name.lstrip(prefix).rstrip(suffix))
+    return versions
+
+
+def filter_max_operator_version(
+    versions: list[str],
+    insights_version: str,
+) -> Optional[str]:
+    regex = '-rc.[0-9]+$' if '-rc.' in insights_version else ''
+    matching_versions = []
+    minor_version = get_minor_version(insights_version)
+    for version in versions:
+        if re.search(regex, version) and version.startswith(minor_version):
+            matching_versions.append(version)
+    if matching_versions == []:
+        log.warn(f'Cannot find operator version to install matching insights minor version {insights_version}')
+        return None
+    else:
+        return str(max(map(semver.VersionInfo.parse, matching_versions)))
 
 
 def sanitize_ingress_host(raw_string):
@@ -807,7 +840,7 @@ def gen_cert(private_key):
     return builder.sign(private_key, hashes.SHA256(), default_backend())
 
 
-def check_for_operator_install(release, chart_repo_name, insights_ver, op_ver, docker_config='', force=False):
+def check_for_operator_install(release, chart: helm_chart.Chart, insights_ver, op_ver, docker_config='', force=False):
     """
     Determine if the operator needs to be install or upgraded
     Fetch the CRD data if it's an upgrade
@@ -823,7 +856,7 @@ def check_for_operator_install(release, chart_repo_name, insights_ver, op_ver, d
         click.echo(f'kxi-operator already installed with version {installed_operator_version}')
 
     insights_version_minor = get_minor_version(insights_ver)
-    operator_version_to_install = get_operator_version(chart_repo_name, insights_ver, op_ver)
+    operator_version_to_install = get_operator_version(chart, insights_ver, op_ver)
     installed_operator_compatible = insights_version_minor == get_minor_version(installed_operator_version)
     operator_version_to_install_compatible = insights_version_minor == get_minor_version(operator_version_to_install)
 
@@ -835,7 +868,7 @@ def check_for_operator_install(release, chart_repo_name, insights_ver, op_ver, d
         else:
             raise ClickException(f'Installed kxi-operator version {installed_operator_version} is incompatible with insights version {insights_ver}')
 
-    if op_ver and not operator_version_to_install_compatible: 
+    if op_ver and not operator_version_to_install_compatible:
         raise ClickException(f'kxi-operator version {op_ver} is incompatible with insights version {insights_ver}')
 
     if not installed_operator_compatible and not operator_version_to_install_compatible: 
@@ -850,12 +883,24 @@ def check_for_operator_install(release, chart_repo_name, insights_ver, op_ver, d
     crd_data = []
     if install_operator and is_upgrade:
         check_upgrade_version(installed_operator_version, operator_version_to_install)
-        cache = helm.get_repository_cache()
-        helm.fetch(chart_repo_name, 'kxi-operator', cache, operator_version_to_install, docker_config)
-        crd_data = read_cached_crd_files(operator_version_to_install)
+        crd_data = get_crd_data(chart, operator_version_to_install, docker_config)
 
     return install_operator, is_upgrade, operator_version_to_install, release, crd_data
 
+def get_crd_data(
+    insights_chart: helm_chart.Chart,
+    operator_version: str,
+    docker_config: str = ''
+):
+    if insights_chart.is_remote:
+        cache = helm.get_repository_cache()
+        helm.fetch(insights_chart.repo_name, 'kxi-operator', cache, operator_version, docker_config)
+        crd_data = read_cached_crd_files(operator_version, Path(cache))
+    else:
+        # Assumes that the operator is in the same folder as the Insights chart
+        # with a naming convention parent/kxi-operator-{version}.tgz
+        crd_data = read_cached_crd_files(operator_version, Path(insights_chart.full_ref).parent)
+    return crd_data
 
 def install_operator_and_release(
     release,
@@ -866,7 +911,7 @@ def install_operator_and_release(
     values_file,
     image_pull_secret,
     license_secret,
-    chart_repo_name,
+    chart,
     import_users,
     docker_config,
     install_operator = True,
@@ -896,7 +941,8 @@ def install_operator_and_release(
         if is_upgrade and values_file is None:
             existing_values = yaml.safe_dump(helm.get_values(operator_release, operator_namespace))
 
-        helm.upgrade_install(operator_release, chart=f'{chart_repo_name}/kxi-operator', values_file=values_file,
+        operator_full_ref = get_operator_location(chart, operator_version)
+        helm.upgrade_install(operator_release, chart=operator_full_ref, values_file=values_file,
                      version=operator_version, namespace=operator_namespace, args = [], docker_config=docker_config, existing_values=existing_values)
 
         if is_operator_upgrade:
@@ -905,11 +951,24 @@ def install_operator_and_release(
     if is_upgrade and values_file is None:
         existing_values = yaml.safe_dump(helm.get_values(release, namespace))
 
-    helm.upgrade_install(release, chart=f'{chart_repo_name}/insights', values_file=values_file,
+    helm.upgrade_install(release, chart=chart.full_ref, values_file=values_file,
                  args=args, version=version, namespace=namespace, docker_config=docker_config, existing_values=existing_values)
 
     return True
 
+def get_operator_location(
+    insights_chart: helm_chart.Chart,
+    operator_version: str,
+    chart_name: str = 'kxi-operator',
+) -> str:
+    if insights_chart.is_remote:
+        operator = f'{insights_chart.repo_name}/{chart_name}'
+    else:
+        # For local install, we only support find the operator in the same folder as the Insights
+        # chart with the naming convention kxi-operator-{version}.tgz currently
+        operator = str(Path(insights_chart.full_ref).parent / f'{chart_name}-{operator_version}.tgz')
+
+    return operator
 
 def delete_release_operator_and_crds(release, namespace, force, uninstall_operator, assembly_backup_filepath):
     """Delete insights, operator and CRDs"""
@@ -938,47 +997,6 @@ def delete_release_operator_and_crds(release, namespace, force, uninstall_operat
         helm.uninstall(release=operator_releases[0], namespace=operator_namespace)
     else:
         click.echo(f'\nkdb Insights Enterprise kxi-operator not found')
-
-
-def helm_add_repo(chart_repo_name, url, username, password):
-    """Call 'helm repo add' using subprocess.run"""
-    log.debug(
-        f'Attempting to call: helm repo add --username {username} --password {len(password)*"*"} {chart_repo_name} {url}')
-    try:
-        return subprocess.run(['helm', 'repo', 'add', '--username', username, '--password', password, chart_repo_name, url],
-                       check=True)
-    except subprocess.CalledProcessError:
-        # Pass here so that the password isn't printed in the log
-        pass
-
-
-def helm_repo_list():
-    """Call 'helm repo list' using subprocess.run"""
-    log.debug('Attempting to call: helm repo list')
-    try:
-        res = subprocess.run(
-            ['helm', 'repo', 'list', '--output', 'json'], check=True, capture_output=True, text=True)
-        return json.loads(res.stdout)
-    except subprocess.CalledProcessError as e:
-        click.echo(e)
-        return []
-
-
-def check_helm_repo_exists(chart_repo_name):
-    if not any (chart_repo_name == item['name'] for item in helm_repo_list()):
-        raise click.ClickException(f'Cannot find local chart repo {chart_repo_name}')
-
-def helm_list_versions(chart_repo_name):
-    """Call 'helm search repo' using subprocess.run"""
-    log.debug('Attempting to call: helm search repo')
-    try:
-        helm.repo_update()
-        chart = f'{chart_repo_name}/insights'
-        click.echo(f'Listing available kdb Insights Enterprise versions in repo {chart_repo_name}')
-
-        return subprocess.run(['helm', 'search', 'repo', chart], check=True)
-    except subprocess.CalledProcessError as e:
-        raise ClickException(str(e))
 
 
 def copy_secret(name, from_ns, to_ns):
@@ -1080,13 +1098,12 @@ def lookup_secret(namespace, arg, values_file, default_key):
 
 def read_cached_crd_files(
     version: str,
+    folder_parent: Path,
     chart_name: str = 'kxi-operator',
     crds: list = CRD_FILES
 ):
     crd_data = []
-
-    cache = helm.get_repository_cache()
-    tar_path = Path(cache) / f'{chart_name}-{version}.tgz'
+    tar_path = folder_parent / f'{chart_name}-{version}.tgz'
 
     click.echo(f'Reading CRD data from {tar_path}')
     # expect the files to exist in the chart tgz inside the crds folder
@@ -1216,7 +1233,7 @@ def check_operator_rollback_version(from_version, to_version):
     v2 = semver.VersionInfo.parse(to_version)
     if v1.major != v2.major or  v1.minor != v2.minor:
         raise click.ClickException(f'Insights rollback target version {from_version} is incompatible with target operator version {to_version}. Minor versions must match.')
-        
+
 def check_upgrade_version(from_version, to_version):
     v1 = semver.VersionInfo.parse(from_version)
     v2 = semver.VersionInfo.parse(to_version)
@@ -1256,5 +1273,5 @@ def replace_crds(image_pull_secret, namespace, operator_details, chart_repo_name
     docker_config = get_docker_config_secret(namespace, image_pull_secret, DOCKER_SECRET_KEY)
     cache = helm.get_repository_cache()
     helm.fetch(chart_repo_name, 'kxi-operator', cache,  operator_details[1], docker_config)
-    crd_data = read_cached_crd_files(operator_details[1])
+    crd_data = read_cached_crd_files(operator_details[1], Path(cache))
     replace_chart_crds(crd_data)
