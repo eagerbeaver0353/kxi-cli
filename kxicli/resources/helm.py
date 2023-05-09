@@ -29,6 +29,9 @@ minimum_helm_version: str = '3.8.0'
 required_helm_version: RequiredHelmVersion = RequiredHelmVersion(version=minimum_helm_version)
 
 
+class RepoNotFoundException(Exception):
+    pass
+
 def env():
     log.debug('Attempting to call: helm env')
     try:
@@ -225,8 +228,8 @@ def history(release, output, show_operator, current_operator_version, current_op
 
 
 def repo_exists(chart_repo_name):
-    if not any (chart_repo_name == item['name'] for item in repo_list()):
-        raise click.ClickException(f'Cannot find local chart repo {chart_repo_name}')
+    if not any(chart_repo_name == item['name'] for item in repo_list()):
+        raise RepoNotFoundException(chart_repo_name)
 
 
 def add_repo(chart_repo_name, url, username, password):

@@ -114,15 +114,10 @@ def setup(namespace, chart_repo_name, chart_repo_url, chart_repo_username,
     ingress_certmanager_disabled, use_tls_secret, ingress_cert_secret_object = \
         prompt_for_ingress_cert(ingress_cert_secret_object, ingress_cert_secret, ingress_cert, ingress_key, ingress_certmanager_disabled)
 
-    click.secho(phrases.header_chart, bold=True)
-    chart_repo_name = options.chart_repo_name.prompt(chart_repo_name)
-    if any (chart_repo_name == item['name'] for item in helm.repo_list()):
-       click.echo(f'Using existing helm repo {chart_repo_name}')
-    else:
-        chart_repo_url = options.chart_repo_url.prompt(chart_repo_url)
-        username = options.chart_repo_username.prompt(chart_repo_username)
-        password = options.chart_repo_password.prompt()
-        helm.add_repo(chart_repo_name, chart_repo_url, username, password)
+    # If any of these parameters is not None then they are being passed as a command line arg
+    # In this case we should add the repo so we don't break a workflow where 'kxi install setup'
+    # is being called programmatically
+    check_chart_repo_params(chart_repo_name, chart_repo_url, chart_repo_username)
 
     click.secho(phrases.header_license, bold=True)
     license_secret, license_on_demand = prompt_for_license(license_secret, license_filepath, license_as_env_var)
@@ -247,7 +242,7 @@ def run(ctx, namespace, chart_repo_name, chart_repo_url, chart_repo_username,
         namespace, release, chart_repo_url,
         image_pull_secret, license_secret)
 
-    insights_chart = parse_chart_cli_params(chart, chart_repo_name, chart_repo_url)
+    insights_chart = parse_chart_cli_params(chart, chart_repo_name, chart_repo_url, chart_repo_username)
 
     docker_config = get_docker_config_secret(namespace, image_pull_secret, DOCKER_SECRET_KEY)
 
@@ -270,6 +265,7 @@ def run(ctx, namespace, chart_repo_name, chart_repo_url, chart_repo_username,
 @arg.release()
 @arg.chart_repo_name(hidden=True)
 @arg.chart_repo_url()
+@arg.chart_repo_username()
 @arg.assembly_backup_filepath()
 @arg.version()
 @arg.operator_version()
@@ -279,7 +275,7 @@ def run(ctx, namespace, chart_repo_name, chart_repo_url, chart_repo_username,
 @arg.force()
 @arg.import_users()
 @arg.chart()
-def upgrade(namespace, release, chart_repo_name, chart_repo_url, assembly_backup_filepath, version, operator_version, image_pull_secret,
+def upgrade(namespace, release, chart_repo_name, chart_repo_url, chart_repo_username, assembly_backup_filepath, version, operator_version, image_pull_secret,
             license_secret, filepath, force, import_users, chart):
     """Upgrade kdb Insights Enterprise"""
     click.secho(phrases.header_upgrade, bold=True)
@@ -288,7 +284,7 @@ def upgrade(namespace, release, chart_repo_name, chart_repo_url, assembly_backup
         namespace, release, chart_repo_url,
         image_pull_secret, license_secret)
 
-    insights_chart = parse_chart_cli_params(chart, chart_repo_name, chart_repo_url)
+    insights_chart = parse_chart_cli_params(chart, chart_repo_name, chart_repo_url, chart_repo_username)
 
     is_valid_upgrade_version(release, namespace, version)
 
@@ -301,17 +297,49 @@ def upgrade(namespace, release, chart_repo_name, chart_repo_url, assembly_backup
 def parse_chart_cli_params(
     chart: str,
     chart_repo_name: str | None,
-    chart_repo_url: str | None
+    chart_repo_url: str | None,
+    chart_repo_username: str | None
 ) -> helm_chart.Chart:
     # chart-repo-name or chart-repo-url takes precedence over 'chart' arg to prevent breaking change
     if chart_repo_name:
         chart = f"{chart_repo_name}/insights"
-    elif chart_repo_url:
+    elif chart_repo_url and chart_repo_url.startswith('oci://'):
         chart = f"{chart_repo_url}/insights"
-    insights_chart = helm_chart.Chart(chart)
 
+    try:
+        insights_chart = helm_chart.Chart(chart)
+    except helm.RepoNotFoundException:
+        # Prompt for helm repo if it doesn't exist when forming the chart
+        chart_repo_name, _, _ = setup_helm_repo(chart_repo_name, chart_repo_url, chart_repo_username)
+        insights_chart = helm_chart.Chart(f"{chart_repo_name}/insights")
     return insights_chart
 
+
+def check_chart_repo_params(
+    chart_repo_name: str | None,
+    chart_repo_url: str | None,
+    chart_repo_username: str | None
+) -> None:
+    """If any of the arguments are not None, add the chart repo"""
+    if any(x is not None for x in [chart_repo_name, chart_repo_url, chart_repo_username]):
+        try:
+            helm.repo_exists(chart_repo_name)
+        except helm.RepoNotFoundException:
+            setup_helm_repo(chart_repo_name, chart_repo_url, chart_repo_username)
+
+
+def setup_helm_repo(
+    chart_repo_name: str | None,
+    chart_repo_url: str | None,
+    chart_repo_username: str | None
+) -> tuple[str, str, str]:
+    chart_repo_url = options.chart_repo_url.prompt(chart_repo_url)
+    chart_repo_name = options.chart_repo_name.prompt(chart_repo_name, silent=True)
+    username = options.chart_repo_username.prompt(chart_repo_username)
+    password = options.chart_repo_password.prompt()
+    helm.add_repo(chart_repo_name, chart_repo_url, username, password)
+
+    return chart_repo_name, chart_repo_url, username
 
 def perform_upgrade(namespace, release, chart, assembly_backup_filepath, version, operator_version, image_pull_secret,
                     license_secret, filepath, import_users, docker_config, force):
@@ -355,7 +383,7 @@ def perform_upgrade(namespace, release, chart, assembly_backup_filepath, version
 @arg.assembly_backup_filepath()
 def delete(release, namespace, force, uninstall_operator, assembly_backup_filepath):
     """Uninstall kdb Insights Enterprise"""
-    namespace = options.namespace.prompt(namespace)    
+    namespace = options.namespace.prompt(namespace)
     delete_release_operator_and_crds(release=release,
                                      namespace=namespace,
                                      force=force,

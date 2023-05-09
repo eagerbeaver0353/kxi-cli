@@ -289,16 +289,16 @@ def test_repo_exists(mocker):
     assert helm.repo_exists(const.test_chart_repo_name) is None
     with pytest.raises(Exception) as e:
         helm.repo_exists('a-different-repo')
-    assert isinstance(e.value, click.ClickException)
-    assert 'Cannot find local chart repo a-different-repo' in e.value.message
+    assert isinstance(e.value, helm.RepoNotFoundException)
+    assert 'a-different-repo' in e.value.args[0]
 
 
 def test_repo_exists_returns_error_when_repo_does_not_exist(mocker):
     mocker.patch('subprocess.run').side_effect = subprocess.CalledProcessError(1, ['helm', 'repo', 'list'])
     with pytest.raises(Exception) as e:
         helm.repo_exists(const.test_chart_repo_name)
-    assert isinstance(e.value, click.ClickException)
-    assert f'Cannot find local chart repo {const.test_chart_repo_name}' in e.value.message
+    assert isinstance(e.value, helm.RepoNotFoundException)
+    assert const.test_chart_repo_name in e.value.args[0]
 
 
 def test_helm_repo_list_when_repo_exists(mocker):
