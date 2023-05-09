@@ -18,7 +18,7 @@ from utils import IPATH_KUBE_COREV1API, temp_file, test_secret_data, test_secret
 # need to replace the above imports with utils prefixed versions
 import utils
 from test_install_e2e import mocked_read_namespaced_secret_return_values, test_vals, mocked_read_secret, mocked_installed_chart_json
-from const import test_user, test_pass, test_lic_file, test_chart_repo_name, test_chart_repo_url
+from const import test_user, test_pass, test_lic_file, test_chart_repo_name, test_chart_repo_url, insights_tgz
 
 # Common test parameters
 test_ns = 'test-ns'
@@ -820,15 +820,15 @@ def test_get_operator_location_when_remote(mocker):
 
 
 def test_get_operator_location_when_local(mocker):
-    chart = helm_chart.Chart(str(Path(__file__).parent / 'files/helm/insights-1.5.0.tgz'))
+    chart = helm_chart.Chart(str(insights_tgz))
     assert install.get_operator_location(chart, '1.2.3') == str(Path(__file__).parent / 'files/helm/kxi-operator-1.2.3.tgz')
 
 
 def test_local_operator_versions_happy_path():
-    chart = helm_chart.Chart(str(Path(__file__).parent / 'files/helm/insights-1.5.0.tgz'))
+    chart = helm_chart.Chart(str(insights_tgz))
     assert install.local_operator_versions(chart) == ['1.2.3']
 
 
 def test_local_operator_versions_returns_none_correctly():
-    chart = helm_chart.Chart(str(Path(__file__).parent / 'files/helm/insights-1.5.0.tgz'))
+    chart = helm_chart.Chart(str(insights_tgz))
     assert install.local_operator_versions(chart, prefix = 'unknown-chart-') == []

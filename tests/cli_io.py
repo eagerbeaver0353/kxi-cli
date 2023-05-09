@@ -71,17 +71,6 @@ def cli_input(
     if ingress_key_source == 'prompt':
         inp = append_message(inp, ingress_key)
 
-    # Chart
-    if chart_repo_name_source=='prompt':
-        inp = append_message(inp, chart_repo_name)
-    if chart_repo_url_source=='prompt':
-        inp = append_message(inp, chart_repo_url)
-    if chart_user_source=='prompt':
-        inp = append_message(inp, chart_user)
-    if chart_pass:
-        inp = append_message(inp, f"{chart_pass}\n{chart_pass}")
-
-
     # License
     inp = input_secret(inp, lic_sec_exists, lic_sec_is_valid, lic_overwrite, lic)
 
@@ -168,7 +157,6 @@ def cli_output(
             return output_upgrade_required_secrets_invalid()
 
     ingress = output_ingress(hostname, hostname_source, ingress_sec_exists, provide_ingress_cert, ingress_cert, ingress_cert_source, ingress_key, ingress_key_source, cli_config)
-    chart = output_chart(chart_repo_existing, chart_repo_name, chart_repo_name_source, chart_repo_url, chart_repo_url_source, chart_user, chart_user_source, chart_pass, cli_config)
     license = output_license(lic, lic_sec_exists, lic_sec_is_valid, lic_sec_overwrite)
     image = output_image(repo, user, image_sec_exists, image_sec_is_valid, use_existing_creds, image_sec_overwrite)
     client = output_client(client_sec_exists, client_sec_is_valid, client_sec_overwrite)
@@ -177,7 +165,7 @@ def cli_output(
     values = output_values_file(output_file, values_exist, overwrite_values)
 
     out = output_setup_start(incluster)
-    out = f'{out}\n{ingress}\n{chart}\n{license}\n{image}'
+    out = f'{out}\n{ingress}\n{license}\n{image}'
     out = f'{out}\n{client}\n{keycloak}{values}'
 
     if overwrite_values == 'n':
@@ -231,18 +219,6 @@ def output_setup_start(incluster):
     else:
         cluster_message = phrases.ns_and_cluster.format(namespace=test_namespace, cluster=test_cluster)
     return append_message(out, cluster_message)
-
-
-def output_chart(chart_repo_existing, chart_repo_name, chart_repo_name_source, chart_repo_url, chart_repo_url_source, chart_user, chart_user_source, chart_pass, cli_config):
-    out = phrases.header_chart
-    out = output_option(out, 'chart.repo.name', chart_repo_name_source, cli_config, phrases.chart_repo, common.get_default_val('chart.repo.name'), chart_repo_name)
-    if chart_repo_existing:
-        out = append_message(out, f'Using existing helm repo {chart_repo_existing}')
-    else:
-        out = output_option(out, 'chart.repo.url', chart_repo_url_source, cli_config, phrases.chart_repo_url, common.get_default_val('chart.repo.url'), chart_repo_url)
-        out = output_option(out, 'chart.repo.username', chart_user_source, cli_config, phrases.chart_user, common.get_default_val('chart.repo.user'), chart_user)
-        if chart_pass: out = append_message(out, f"{phrases.chart_password}: \n{phrases.password_reenter}: ")
-    return out
 
 
 def output_license(license, exists, is_valid, overwrite):

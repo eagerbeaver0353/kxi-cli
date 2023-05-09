@@ -283,9 +283,9 @@ def mocked_subprocess_run(
         insights_installed_flag = False
     elif res_item.cmd == ['helm', 'uninstall', 'insights', '--namespace', 'kxi-operator']:
         operator_installed_flag = False
-    elif res_item.cmd[0:2]+res_item.cmd[-2:] == ['helm', 'upgrade', '--install', '--namespace', 'kxi-operator']:
+    elif res_item.cmd[0:3]+res_item.cmd[-2:] == ['helm', 'upgrade', '--install', '--namespace', 'kxi-operator']:
         operator_installed_flag = True
-    elif res_item.cmd[0:2]+res_item.cmd[-2:] == ['helm', 'upgrade', '--install', '--namespace', test_namespace]:
+    elif res_item.cmd[0:3]+res_item.cmd[-2:] == ['helm', 'upgrade', '--install', '--namespace', test_namespace]:
         insights_installed_flag = True
         crd_exists_flag = True
     return CompletedProcess(args=popenargs[0], returncode=0, stdout='', stderr='')
@@ -522,6 +522,10 @@ class SubprocessRunInput():
     kwargs: list = field(default_factory=dict)
     env: list = field(default_factory=dict)
 
+@pytest.fixture()
+def empty_running_assembly():
+    global running_assembly
+    running_assembly = {}
 
 # Tests
 
@@ -663,47 +667,6 @@ def test_install_setup_ingress_host_is_an_alias_for_hostname(mocker):
         run_cli(cmd, test_cfg, test_cli_config, test_output_file, 0)
         assert compare_files(test_output_file, test_output_file_updated_hostname)
 
-def test_install_setup_when_chart_repo_provided_from_command_line(mocker):
-    setup_mocks(mocker)
-    test_repo_name='test-repo-command-line'
-    test_repo_url='https://test-repo-command-line.kx.com/repository/kx-insights-charts'
-    test_repo_username='test-repo-username-command-line'
-    test_repo_password='test-repo-password-prompt'
- 
-    with temp_test_output_file() as test_output_file, temp_config_file() as test_cli_config:
-        cmd = ['install', 'setup', '--output-file', test_output_file, '--chart-repo-name', test_repo_name, '--chart-repo-url', test_repo_url, '--chart-repo-username', test_repo_username]
-        test_cfg = {
-            'chart_repo_name': test_repo_name,
-            'chart_repo_name_source': 'command-line',
-            'chart_repo_url': test_repo_url,
-            'chart_repo_url_source': 'command-line',
-            'chart_user': test_repo_username,
-            'chart_user_source': 'command-line',
-            'chart_pass': test_repo_password
-        }
-        run_cli(cmd, test_cfg, test_cli_config, test_output_file, 0)
-        assert helm_add_repo_params == (test_repo_name, test_repo_url, test_repo_username, test_repo_password)
-
-
-def test_install_setup_does_not_prompt_when_chart_repo_already_exists(mocker):
-    setup_mocks(mocker)
-    utils.mock_kube_secret_api(mocker, read=utils.raise_not_found)
-    utils.mock_helm_repo_list(mocker, name=test_chart_repo_name)
-    helm_add_repo_params = ()
-    mocker.patch('kxicli.commands.install.helm.add_repo', mocked_helm_add_repo)
- 
-    with temp_test_output_file() as test_output_file, temp_config_file() as test_cli_config:
-        cmd = ['install', 'setup', '--output-file', test_output_file, '--chart-repo-name', test_chart_repo_name]
-        test_cfg = {
-            'chart_repo_existing': test_chart_repo_name,
-            'chart_repo_name': test_chart_repo_name,
-            'chart_repo_name_source': 'command-line',
-            'chart_repo_url': None,
-            'chart_user': None,
-            'chart_pass': None
-        }
-        run_cli(cmd, test_cfg, test_cli_config, test_output_file, 0)
-        assert helm_add_repo_params == ()
 
 def test_install_setup_when_ingress_cert_secret_provided_on_command_line(mocker):
     setup_mocks(mocker)
@@ -922,7 +885,7 @@ Installing chart kx-insights/insights version 1.2.3 with values file from {utils
 
 def test_install_run_when_no_file_provided(mocker):
     setup_mocks(mocker)
-    utils.mock_helm_repo_list(mocker, name=test_chart_repo_name)
+    utils.mock_helm_repo_list(mocker)
     utils.mock_kube_secret_api(mocker, read=mocked_read_secret)
     mock_subprocess_run(mocker)
     mocker.patch('subprocess.check_output', mocked_helm_list_returns_empty_json)
@@ -941,11 +904,6 @@ def test_install_run_when_no_file_provided(mocker):
                 'client_sec_exists': True,
                 'kc_secret_exists': True,
                 'pg_secret_exists': True,
-                'chart_repo_existing': test_chart_repo_name,
-                'chart_repo_name': test_chart_repo_name,
-                'chart_repo_url': None,
-                'chart_user_source': None,
-                'chart_pass': None,
             }
             user_input = f'{cli_input("setup", **test_cfg)}\nn'
             result = runner.invoke(main.cli, ['install', 'run', '--version', '1.2.3'], input=user_input)
@@ -954,19 +912,19 @@ def test_install_run_when_no_file_provided(mocker):
 {cli_output('setup', test_cli_config, 'values.yaml', **test_cfg)}{phrases.values_validating}
 
 Do you want to install kxi-operator version 1.2.3? [Y/n]: n
-Installing chart internal-nexus-dev/insights version 1.2.3 with values file from values.yaml
+Installing chart kx-insights/insights version 1.2.3 with values file from values.yaml
 """
 
         assert result.exit_code == 0
         assert result.output == expected_output
         check_subprocess_run_commands([
-            HelmCommandRepoUpdate(repo=test_chart_repo_name),
-            HelmCommandInsightsInstall(values = 'values.yaml', chart = test_chart_repo_name + '/insights')
+            HelmCommandRepoUpdate(repo='kx-insights'),
+            HelmCommandInsightsInstall(values = 'values.yaml', chart = 'kx-insights/insights')
         ])
 
 def test_install_run_when_no_file_provided_import_users_false(mocker):
     setup_mocks(mocker)
-    utils.mock_helm_repo_list(mocker, name=test_chart_repo_name)
+    utils.mock_helm_repo_list(mocker)
     utils.mock_kube_secret_api(mocker, read=mocked_read_secret)
     mock_subprocess_run(mocker)
     mocker.patch('subprocess.check_output', mocked_helm_list_returns_empty_json)
@@ -985,11 +943,6 @@ def test_install_run_when_no_file_provided_import_users_false(mocker):
                 'client_sec_exists': True,
                 'kc_secret_exists': True,
                 'pg_secret_exists': True,
-                'chart_repo_existing': test_chart_repo_name,
-                'chart_repo_name': test_chart_repo_name,
-                'chart_repo_url': None,
-                'chart_user_source': None,
-                'chart_pass': None,
             }
             user_input = f'{cli_input("setup", **test_cfg)}\nn'
             result = runner.invoke(main.cli, ['install', 'run', '--version', '1.2.3', '--import-users', 'False'], input=user_input)
@@ -998,15 +951,15 @@ def test_install_run_when_no_file_provided_import_users_false(mocker):
 {cli_output('setup', test_cli_config, 'values.yaml', **test_cfg)}{phrases.values_validating}
 
 Do you want to install kxi-operator version 1.2.3? [Y/n]: n
-Installing chart internal-nexus-dev/insights version 1.2.3 with values file from values.yaml
+Installing chart kx-insights/insights version 1.2.3 with values file from values.yaml
 """
 
         assert result.exit_code == 0
         assert result.output == expected_output
         check_subprocess_run_commands([
-            HelmCommandRepoUpdate(repo=test_chart_repo_name),
+            HelmCommandRepoUpdate(repo='kx-insights'),
             HelmCommandInsightsInstall(values = 'values.yaml',
-                                   chart = test_chart_repo_name + '/insights',
+                                   chart = 'kx-insights/insights',
                                    keycloak_importUsers='false'
                                    )
         ])
@@ -1271,7 +1224,7 @@ Installing chart kx-insights/insights version 1.2.3 with values file from {utils
     assert result.output == expected_output
     check_subprocess_run_commands([
         HelmCommandRepoUpdate(),
-        HelmCommandInsightsInstall()
+        HelmCommandInsightsInstall(namespace=utils.namespace())
     ])
 
 
@@ -1297,14 +1250,42 @@ Would you like to upgrade to version 1.2.3? [y/N]: n
     assert result.output == expected_output
 
 
-def test_install_run_errors_when_repo_does_not_exist(mocker):
-    mock_empty_helm_repo_list(mocker)
+def test_install_run_prompts_when_repo_does_not_exist(mocker):
+    # return an empty repo list, then a populated one after the repo has been added
+    helm_list = [
+        [],
+        [{'name': test_chart_repo, 'url': test_chart_repo_url}]
+    ]
+    mocker.patch('kxicli.resources.helm.repo_list', side_effect=helm_list)
+    mocker.patch('kxicli.resources.helm.add_repo', mocked_helm_add_repo)
+    mocker.patch('kxicli.resources.helm.repo_update')
+    mock_subprocess_run(mocker)
+    mock_create_namespace(mocker)
+    mock_copy_secret(mocker)
+    mock_set_insights_operator_and_crd_installed_state(mocker, False, False, False)
+    mock_get_operator_version(mocker)
     utils.mock_validate_secret(mocker)
+    utils.mock_kube_secret_api(mocker, read=mocked_read_secret)
     runner = CliRunner()
+    user_input = f"""
+{test_user}
+{test_pass}
+{test_pass}
+"""
+
+    expected_output = f"""{phrases.values_validating}
+
+Please enter the chart repository URL to pull charts from [https://nexus.dl.kx.com/repository/kx-insights-charts]: 
+Please enter the username for the chart repository: {test_user}
+Please enter the password for the chart repository (input hidden): 
+Re-enter to confirm (input hidden): 
+Do you want to install kxi-operator version 1.2.3? [Y/n]: 
+Installing chart kx-insights/kxi-operator version 1.2.3 with values file from {utils.test_val_file}
+Installing chart kx-insights/insights version 1.2.3 with values file from {utils.test_val_file}
+"""
     with runner.isolated_filesystem():
-        result = runner.invoke(main.cli, ['install', 'run', '--version', '1.2.3', '--filepath', utils.test_val_file])
-        expected_output = f"{phrases.values_validating}\n\nError: Cannot find local chart repo kx-insights\n"
-    assert result.exit_code == 1
+        result = runner.invoke(main.cli, ['install', 'run', '--version', '1.2.3', '--filepath', utils.test_val_file], input = user_input)
+    assert result.exit_code == 0
     assert result.output == expected_output
 
 
@@ -2277,17 +2258,46 @@ def test_upgrade_with_no_assemblies(mocker):
 
 
 def test_install_upgrade_errors_when_repo_does_not_exist(mocker):
-    mock_empty_helm_repo_list(mocker)
+    # return an empty repo list, then a populated one after the repo has been added
+    helm_list = [
+        [],
+        [{'name': test_chart_repo, 'url': test_chart_repo_url}]
+    ]
+    mocker.patch('kxicli.resources.helm.repo_list', side_effect=helm_list)
+    mocker.patch('kxicli.resources.helm.add_repo', mocked_helm_add_repo)
+    mocker.patch('kxicli.resources.helm.repo_update')
+    mock_subprocess_run(mocker)
+    mock_create_namespace(mocker)
+    mock_copy_secret(mocker)
+    mock_set_insights_operator_and_crd_installed_state(mocker, False, False, False)
+    mock_get_operator_version(mocker)
     utils.mock_validate_secret(mocker)
+    utils.mock_kube_secret_api(mocker, read=mocked_read_secret)
     runner = CliRunner()
-    with runner.isolated_filesystem():
-        result = runner.invoke(main.cli, ['install', 'upgrade', '--version', '1.2.3', '--filepath', utils.test_val_file])
-        expected_output = f"""{phrases.header_upgrade}
+    user_input = f"""
+{test_user}
+{test_pass}
+{test_pass}
+"""
+
+    expected_output = f"""Upgrading kdb Insights Enterprise
 {phrases.values_validating}
 
-Error: Cannot find local chart repo kx-insights
+Please enter the chart repository URL to pull charts from [https://nexus.dl.kx.com/repository/kx-insights-charts]: 
+Please enter the username for the chart repository: {test_user}
+Please enter the password for the chart repository (input hidden): 
+Re-enter to confirm (input hidden): 
+Do you want to install kxi-operator version 1.2.3? [Y/n]: 
+kdb Insights Enterprise is not deployed. Skipping to install
+Installing chart kx-insights/kxi-operator version 1.2.3 with values file from {utils.test_val_file}
+Installing chart kx-insights/insights version 1.2.3 with values file from {utils.test_val_file}
+
+Upgrade to version 1.2.3 complete
 """
-    assert result.exit_code == 1
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        result = runner.invoke(main.cli, ['install', 'upgrade', '--version', '1.2.3', '--filepath', utils.test_val_file], input=user_input)
+    assert result.exit_code == 0
     assert result.output == expected_output
 
 
