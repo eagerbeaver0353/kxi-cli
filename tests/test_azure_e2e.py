@@ -13,6 +13,7 @@ from typing import List, Optional
 from kxicli import config
 from kxicli import main
 from kxicli.common import get_default_val
+import mocks
 import utils
 from test_install_e2e import mock_copy_secret, mock_delete_crd, mocked_installed_operator_versions,\
     mock_get_operator_version, test_operator_helm_name, mocked_read_secret, mocked_helm_version_checked,\
@@ -117,6 +118,7 @@ def uninstall_mocks(mocker):
     mocker.patch(fun_assembly_backup_assemblies, mocked_backup_assemblies)
     mocker.patch(fun_assembly_delete_running_assemblies, return_true_list)
     mocker.patch(fun_install_operator_versions, mocked_installed_operator_versions)
+    mocks.list_cluster_custom_object_k8s_api(mocker)
 
 def upgrade_mocks(mocker):
     install_mocks(mocker)

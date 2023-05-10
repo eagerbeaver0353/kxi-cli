@@ -254,7 +254,7 @@ def run(ctx, namespace, chart_repo_name, chart_repo_url, chart_repo_username,
             return
 
     install_operator, is_op_upgrade, operator_version, operator_release, crd_data = check_for_operator_install(release,
-        insights_chart, version, operator_version, docker_config, force)
+        namespace, insights_chart, version, operator_version, docker_config, force)
 
     install_operator_and_release(release, namespace, version, operator_version, operator_release, filepath,
                                  image_pull_secret, license_secret, insights_chart, import_users, docker_config,
@@ -347,7 +347,7 @@ def perform_upgrade(namespace, release, chart, assembly_backup_filepath, version
     upgraded = False
 
     install_operator, is_op_upgrade, operator_version, operator_release, crd_data = check_for_operator_install(release,
-        chart, version, operator_version, docker_config, force)
+        namespace, chart, version, operator_version, docker_config, force)
 
     if not insights_installed(release, namespace):
         click.echo(phrases.upgrade_skip_to_install)
@@ -868,7 +868,17 @@ def gen_cert(private_key):
     return builder.sign(private_key, hashes.SHA256(), default_backend())
 
 
-def check_for_operator_install(release, chart: helm_chart.Chart, insights_ver, op_ver, docker_config='', force=False):
+def check_for_cluster_assemblies(exclude_namespace):
+    assemblies = assembly.list_cluster_assemblies(field_selector=f'metadata.namespace!={exclude_namespace}')
+    if len(assemblies['items']) == 0:
+        return False
+    log.warn('Assemblies are running in other namespaces')
+    asm_list = assembly.format_assemblies_list_k8s(assemblies)
+    assembly.print_2d_list(asm_list[0], asm_list[1])
+    return True
+
+
+def check_for_operator_install(release, insights_namespace, chart: helm_chart.Chart, insights_ver, op_ver, docker_config='', force=False):
     """
     Determine if the operator needs to be install or upgraded
     Fetch the CRD data if it's an upgrade
@@ -883,24 +893,25 @@ def check_for_operator_install(release, chart: helm_chart.Chart, insights_ver, o
         release = operator_installed_releases[0]
         click.echo(f'kxi-operator already installed with version {installed_operator_version}')
 
-    insights_version_minor = get_minor_version(insights_ver)
     operator_version_to_install = get_operator_version(chart, insights_ver, op_ver)
-    installed_operator_compatible = insights_version_minor == get_minor_version(installed_operator_version)
-    operator_version_to_install_compatible = insights_version_minor == get_minor_version(operator_version_to_install)
+
+    check_insights_and_operator_compatible(insights_ver,
+                                           op_ver,
+                                           installed_operator_version,
+                                           operator_version_to_install
+                                           )
 
     if is_upgrade and not release:
         log.warn('kxi-operator already installed, but not managed by helm')
-        if installed_operator_compatible:
-            click.echo(f'Not installing kxi-operator')
+        click.echo(f'Not installing kxi-operator')
+        return False, False, None, None, []
+
+    if is_upgrade and check_for_cluster_assemblies(exclude_namespace=insights_namespace):
+        log.warn('Cannot upgrade kxi-operator')
+        if force or click.confirm('Do you want continue to upgrade kdb Insights Enterprise without upgrading kxi-operator?', default=True):
             return False, False, None, None, []
         else:
-            raise ClickException(f'Installed kxi-operator version {installed_operator_version} is incompatible with insights version {insights_ver}')
-
-    if op_ver and not operator_version_to_install_compatible:
-        raise ClickException(f'kxi-operator version {op_ver} is incompatible with insights version {insights_ver}')
-
-    if not installed_operator_compatible and not operator_version_to_install_compatible: 
-        raise ClickException('Compatible version of operator not found')
+            raise ClickException('Cannot upgrade kxi-operator')
 
     if operator_version_to_install:
         install_operator = force or op_ver is not None or click.confirm(f'Do you want to install kxi-operator version {operator_version_to_install}?', default=True)
@@ -914,6 +925,22 @@ def check_for_operator_install(release, chart: helm_chart.Chart, insights_ver, o
         crd_data = get_crd_data(chart, operator_version_to_install, docker_config)
 
     return install_operator, is_upgrade, operator_version_to_install, release, crd_data
+
+
+def check_insights_and_operator_compatible(insights_ver,
+                                           op_ver,
+                                           installed_operator_version,
+                                           operator_version_to_install
+                                           ):
+    insights_version_minor = get_minor_version(insights_ver)
+    installed_operator_compatible = insights_version_minor == get_minor_version(installed_operator_version)
+    if insights_version_minor == get_minor_version(operator_version_to_install):
+        return
+    if op_ver:
+        raise ClickException(f'kxi-operator version {op_ver} is incompatible with insights version {insights_ver}')
+    if not installed_operator_compatible:
+        raise ClickException('Compatible version of operator not found')
+
 
 def get_crd_data(
     insights_chart: helm_chart.Chart,
@@ -1011,6 +1038,9 @@ def delete_release_operator_and_crds(release, namespace, force, uninstall_operat
 
     if not (force or uninstall_operator):
         return
+
+    if check_for_cluster_assemblies(exclude_namespace=namespace):
+        raise click.ClickException("Cannot delete kxi-operator")
 
     crds = common.get_existing_crds(CRD_NAMES)
     for i in crds:
@@ -1160,7 +1190,7 @@ def replace_chart_crds(crd_data):
 @arg.chart_repo_name()
 def rollback(insights_revision, release, operator_revision, namespace, image_pull_secret, force, assembly_backup_filepath, chart_repo_name):
     common.load_kube_config()
-    argo_managed_operator = False
+    skip_operator_rollback = False
     current_operator_version, current_operator_release  = get_installed_operator_versions(operator_namespace)
     insights_history,operator_history = helm.history(release, 'json', None, current_operator_version, current_operator_release[0])
 
@@ -1171,13 +1201,16 @@ def rollback(insights_revision, release, operator_revision, namespace, image_pul
         if current_operator_version == [] or operator_revision is not None:
             raise click.ClickException(f'Cannot find an operator release history')
         else:
-            argo_managed_operator = True
+            skip_operator_rollback = True
+    if check_for_cluster_assemblies(exclude_namespace=namespace):
+        log.warn("Cannot rollback kxi-operator")
+        skip_operator_rollback = True
 
     # Get the rollback base command for insights
     base_command,insights_rollback_version,insights_revision = insights_rollback(release, insights_history, insights_revision)
 
     # Get the rollback base command for operator
-    operator_details,base_command_operator = rollback_operator(operator_revision, argo_managed_operator, operator_history, current_operator_release, insights_rollback_version, insights_revision, current_operator_version, force)
+    operator_details,base_command_operator = rollback_operator(operator_revision, skip_operator_rollback, operator_history, current_operator_release, insights_rollback_version, insights_revision, current_operator_version, force)
 
     # Teardown assemblies
     deleted,assembly_backup_filepath  = teardown_assemblies(namespace, assembly_backup_filepath, force, phrases.rollback_asm_persist)
@@ -1207,8 +1240,8 @@ def insights_rollback(release, insights_history, insights_revision):
 
     return base_command,insights_rollback_version,insights_revision
 
-def rollback_operator(operator_revision, argo_managed_operator, operator_history, current_operator_release, insights_rollback_version, insights_revision, current_operator_version, force):
-    if operator_revision is not None and not argo_managed_operator:
+def rollback_operator(operator_revision, skip_operator_rollback, operator_history, current_operator_release, insights_rollback_version, insights_revision, current_operator_version, force):
+    if operator_revision is not None and not skip_operator_rollback:
         try:
             operator_details = (operator_revision, next(entry['app_version'] for entry in operator_history if entry['revision'] == int(operator_revision)))
         except StopIteration:

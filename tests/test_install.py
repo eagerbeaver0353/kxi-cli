@@ -11,13 +11,15 @@ from pathlib import Path
 from kxicli import common
 from kxicli.commands import install
 from kxicli.resources import secret, helm_chart
+import mocks
 from utils import IPATH_KUBE_COREV1API, temp_file, test_secret_data, test_secret_type, test_secret_key, \
     mock_kube_deployment_api, mocked_kube_deployment_list, mock_kube_secret_api, mocked_read_namespaced_secret, \
     raise_conflict, raise_not_found, mock_validate_secret, mock_helm_env, mock_helm_get_values,  mock_helm_repo_list, \
     return_none, fake_docker_config_yaml, test_val_file
 # need to replace the above imports with utils prefixed versions
 import utils
-from test_install_e2e import mocked_read_namespaced_secret_return_values, test_vals, mocked_read_secret, mocked_installed_chart_json
+from test_install_e2e import mocked_read_namespaced_secret_return_values, test_vals, mocked_read_secret, mocked_installed_chart_json, \
+    mock_list_assembly_multiple, LIST_CLUSTER_ASSEMBLIES_FUNC
 from const import test_user, test_pass, test_lic_file, test_chart_repo_name, test_chart_repo_url, insights_tgz
 
 # Common test parameters
@@ -591,7 +593,7 @@ def test_check_for_operator_install_returns_version_to_install(mocker):
     utils.mock_helm_repo_list(mocker)
     chart = helm_chart.Chart('kx-insights/insights')
     mock_kube_deployment_api(mocker)
-    assert install.check_for_operator_install('kx-insights', chart, '1.3.0', None, force=True) == (True, False, '1.3.0', 'kx-insights', [])
+    assert install.check_for_operator_install('kx-insights', test_ns, chart, '1.3.0', None, force=True) == (True, False, '1.3.0', 'kx-insights', [])
 
 
 def test_check_for_operator_install_errors_when_operator_repo_charts_not_compatible(mocker):
@@ -602,7 +604,7 @@ def test_check_for_operator_install_errors_when_operator_repo_charts_not_compati
     chart = helm_chart.Chart('kx-insights/insights')
     mock_kube_deployment_api(mocker)
     with pytest.raises(Exception) as e:
-        install.check_for_operator_install('kx-insights', chart, '1.8.0', None, True)
+        install.check_for_operator_install('kx-insights', test_ns, chart, '1.8.0', None, True)
     assert isinstance(e.value, click.ClickException)
     assert 'Compatible version of operator not found' in e.value.message
 
@@ -613,42 +615,46 @@ def test_check_for_operator_install_does_not_install_when_no_repo_charts_availab
     utils.mock_helm_repo_list(mocker)
     chart = helm_chart.Chart('kx-insights/insights')
     mock_kube_deployment_api(mocker, read=mocked_kube_deployment_list)
+    mocks.list_cluster_custom_object_k8s_api(mocker)
     with pytest.raises(Exception) as e:
-        install.check_for_operator_install('kx-insights', chart, '1.8.0', None, True)
+        install.check_for_operator_install('kx-insights', test_ns, chart, '1.8.0', None, True)
     assert isinstance(e.value, click.ClickException)
     assert 'Compatible version of operator not found' in e.value.message
 
-def test_check_for_operator_install_errors_when_installed_operator_not_compitible(mocker):
+def test_check_for_operator_install_errors_when_installed_operator_not_compatible(mocker):
     # Incompatiable operator already installed, no version avaliable on repo. Error returned
     mocker.patch('subprocess.run', mocked_helm_search_returns_empty_json)
     mock_kube_deployment_api(mocker, read=mocked_kube_deployment_list)
     utils.mock_helm_repo_list(mocker)
     chart = helm_chart.Chart('kx-insights/insights')
+    mocks.list_cluster_custom_object_k8s_api(mocker)
     with pytest.raises(Exception) as e:
-        install.check_for_operator_install('kx-insights', chart, '1.8.0', None, True)
+        install.check_for_operator_install('kx-insights', test_ns, chart, '1.8.0', None, True)
     assert isinstance(e.value, click.ClickException)
     assert 'Compatible version of operator not found' in e.value.message
 
 
-def test_check_for_operator_install_when_installed_and_available_operators_not_compitible(mocker):
-    # Incompatiable operator already installed, no compatible version avaliable on repo. Error returned    
+def test_check_for_operator_install_when_installed_and_available_operators_not_compatible(mocker):
+    # Incompatible operator already installed, no compatible version available on repo. Error returned
     mock_helm_env(mocker)
     mocker.patch('subprocess.run', mocked_helm_search_returns_valid_json)
     utils.mock_helm_repo_list(mocker)
     chart = helm_chart.Chart('kx-insights/insights')
     mock_kube_deployment_api(mocker, read=mocked_kube_deployment_list)
+    mocks.list_cluster_custom_object_k8s_api(mocker)
     with pytest.raises(Exception) as e:
-        install.check_for_operator_install('kx-insights', chart, '1.4.0', None, True)
+        install.check_for_operator_install('kx-insights', test_ns, chart, '1.4.0', None, True)
     assert isinstance(e.value, click.ClickException)
     assert 'Compatible version of operator not found' in e.value.message
 
 
-def test_check_for_operator_install_when_provided_insights_and_operators_not_compitible(mocker):
+def test_check_for_operator_install_when_provided_insights_and_operators_not_compatible(mocker):
     # Provided versions of operator and insights do not match minor versions
     mocker.patch('subprocess.run', mocked_helm_search_returns_empty_json)
     mock_kube_deployment_api(mocker, read=mocked_kube_deployment_list)
+    mocks.list_cluster_custom_object_k8s_api(mocker)
     with pytest.raises(Exception) as e:
-        install.check_for_operator_install('kx-insights', 'insights', '1.3.0', '1.4.0', True)
+        install.check_for_operator_install('kx-insights', test_ns, 'insights', '1.3.0', '1.4.0', True)
     assert isinstance(e.value, click.ClickException)
     assert 'kxi-operator version 1.4.0 is incompatible with insights version 1.3.0' in e.value.message
 
@@ -663,7 +669,7 @@ def test_check_for_operator_install_does_not_install_when_operator_is_not_manage
     chart = helm_chart.Chart('kx-insights/insights')
     mock_kube_deployment_api(mocker, read=mocked_kube_deployment_list)
     mocker.patch('kxicli.commands.install.get_installed_operator_versions', mocked_get_installed_operator_versions_without_release)
-    assert install.check_for_operator_install('kx-insights', chart, '1.2.3', None, True) == (False, False, None, None, [])
+    assert install.check_for_operator_install('kx-insights', test_ns, chart, '1.2.3', None, True) == (False, False, None, None, [])
 
 
 def test_check_for_operator_install_errors_when_incompatible_operator_is_not_managed_by_helm(mocker):
@@ -674,18 +680,56 @@ def test_check_for_operator_install_errors_when_incompatible_operator_is_not_man
     mock_kube_deployment_api(mocker, read=mocked_kube_deployment_list)
     mocker.patch('kxicli.commands.install.get_installed_operator_versions', mocked_get_installed_operator_versions_without_release)
     with pytest.raises(Exception) as e:
-        install.check_for_operator_install('kx-insights', chart, '1.3.0', None, True)
+        install.check_for_operator_install('kx-insights', test_ns, chart, '1.3.0', None, True)
     assert isinstance(e.value, click.ClickException)
-    assert 'Installed kxi-operator version 1.2.0 is incompatible with insights version 1.3.0' in e.value.message
+    assert 'Compatible version of operator not found' in e.value.message
+
+
+def test_check_for_operator_install_blocks_when_assemblies_running_in_other_namespaces(mocker, capfd):
+    # Operator already installed, assemblies running in other namespaces
+    mock_helm_env(mocker)
+    mocker.patch('subprocess.run', mocked_helm_search_returns_valid_json)
+    utils.mock_helm_repo_list(mocker)
+    chart = helm_chart.Chart('kx-insights/insights')
+    mock_kube_deployment_api(mocker, read=mocked_kube_deployment_list)
+    mocks.list_cluster_custom_object_k8s_api(mocker,
+                                             response=mock_list_assembly_multiple()
+                                             )
+    assert install.check_for_operator_install('kx-insights', test_ns, chart, '1.3.0', None, force=True) == (False, False, None, None, [])
+    out, _ = capfd.readouterr()
+    assert out == f"""kxi-operator already installed with version 1.2.3
+warn=Assemblies are running in other namespaces
+ASSEMBLY NAME    NAMESPACE
+basic-assembly   {utils.namespace()}
+basic-assembly2  {utils.namespace()}
+warn=Cannot upgrade kxi-operator
+"""
+
+def test_check_for_cluster_assemblies_returns_none(mocker):
+    mocks.list_cluster_custom_object_k8s_api(mocker)
+    assert not install.check_for_cluster_assemblies(exclude_namespace=test_ns)
+
+
+def test_check_for_cluster_assemblies_prints_asm_list(mocker, capfd):
+    mocks.list_cluster_custom_object_k8s_api(mocker,
+                                            response=mock_list_assembly_multiple()
+                                            )
+    assert install.check_for_cluster_assemblies(exclude_namespace=test_ns)
+    out, _ = capfd.readouterr()
+    assert out == f"""warn=Assemblies are running in other namespaces
+ASSEMBLY NAME    NAMESPACE
+basic-assembly   {utils.namespace()}
+basic-assembly2  {utils.namespace()}
+"""
 
 def test_load_values_stores_with_file():
     assert install.load_values_stores(test_val_file) == test_vals
 
 def test_load_values_stores_exception_when_values_file_does_not_exist():
     with pytest.raises(Exception) as e:
-        install.load_values_stores('a-non-existant-file')
+        install.load_values_stores('a-non-existent-file')
     assert isinstance(e.value, click.ClickException)
-    assert 'File not found: a-non-existant-file. Exiting' in e.value.message
+    assert 'File not found: a-non-existent-file. Exiting' in e.value.message
 
 
 def test_load_values_stores_exception_when_invalid_values_file_provided():
