@@ -1,4 +1,6 @@
 from pathlib import Path
+import yaml
+from kxicli import common
 from kxicli.resources import helm
 
 
@@ -23,3 +25,8 @@ class Chart():
 
     def __str__(self):
         return self.full_ref
+
+    def get_local_versions(self, top_level_folder='kxi-operator'):
+        data = common.extract_files_from_tar( Path(self.full_ref), [f'{top_level_folder}/Chart.yaml'])
+        chart_yaml = yaml.safe_load(data[0])
+        return [chart_yaml[k] for k in ['appVersion', 'version']]

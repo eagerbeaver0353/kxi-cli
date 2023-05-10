@@ -9,6 +9,7 @@ base = ["install"]
 cmd_setup = base + ["setup"]
 cmd_run = base + ["run"]
 cmd_upgrade = base + ["upgrade"]
+cmd_rollback = base + ["rollback"]
 
 def test_setup_adds_repo_if_passed(mocker):
     runner = CliRunner()
@@ -85,3 +86,96 @@ def test_expection_when_operator_not_in_same_dir(mocker):
 
     assert res.exit_code == 1
     assert "Compatible version of operator not found" in res.output
+
+
+def test_tgz_only_calls_helm_rollback(mocker):
+    runner = CliRunner()
+    e2e.mock_helm_list_history_same_operator(mocker)
+    e2e.upgrades_mocks(mocker)
+    # ensure that secret validation checks pass
+    e2e.mock_helm_list_history(mocker)
+    e2e.upgrades_mocks(mocker)
+    e2e.mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
+    e2e.mock_create_namespace(mocker)
+    e2e.mock_get_operator_version(mocker)
+    utils.mock_validate_secret(mocker)
+    utils.mock_kube_crd_api(mocker, create=e2e.mocked_create_crd, delete=e2e.mocked_delete_crd)
+    utils.mock_helm_env(mocker)
+    utils.mock_helm_fetch(mocker)
+    extra_args = [
+        "--operator-revision", "1",
+        "--operator-chart",    c.operator_tgz_123,
+        "--namespace", c.test_namespace,
+        "--assembly-backup-filepath",   e2e.test_asm_backup
+    ]
+    user_input = f"""y
+    y
+"""
+    # run both 'run' and 'upgrade' and capture the helm commands they call
+    with runner.isolated_filesystem():
+        res = runner.invoke(main.cli, cmd_rollback+extra_args,  input=user_input)
+
+    expected_output = f"""Rolling Insights back to version 1.2.3 and revision 1. \nRolling operator back to version 1.2.3 and revision 1.
+Proceed? [y/N]: y
+
+Backing up assemblies
+Persisted assembly definitions for ['basic-assembly'] to {e2e.test_asm_backup}
+
+Tearing down assemblies
+Assembly data will be persisted and state will be recovered post-rollback
+Tearing down assembly basic-assembly
+Are you sure you want to teardown basic-assembly [y/N]:     y
+Waiting for assembly to be torn down
+Rollback kxi-operator complete for version 1.2.3
+Using image.pullSecret from embedded default values: kxi-nexus-pull-secret
+Reading CRD data from {utils.test_helm_repo_cache}/kxi-operator-1.2.3.tgz
+Replacing CRD assemblies.insights.kx.com
+Replacing CRD assemblyresources.insights.kx.com
+
+Rolling back Insights
+Rollback kdb Insights Enterprise complete for version 1.2.3
+
+Reapplying assemblies
+Submitting assembly from {e2e.test_asm_backup}
+Submitting assembly basic-assembly
+Custom assembly resource basic-assembly created!
+"""
+    assert res.exit_code == 0
+    assert expected_output == res.output
+
+
+
+def test_tgz_only_calls_helm_rollback_fail(mocker):
+    runner = CliRunner()
+    e2e.mock_helm_list_history_same_operator(mocker)
+    e2e.upgrades_mocks(mocker)
+    # ensure that secret validation checks pass
+    e2e.mock_helm_list_histor_broken(mocker)
+    e2e.upgrades_mocks(mocker)
+    e2e.mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
+    e2e.mock_create_namespace(mocker)
+    e2e.mock_get_operator_version(mocker)
+    utils.mock_validate_secret(mocker)
+    utils.mock_kube_crd_api(mocker, create=e2e.mocked_create_crd, delete=e2e.mocked_delete_crd)
+    utils.mock_helm_env(mocker)
+    utils.mock_helm_fetch(mocker)
+    extra_args = [
+        "--operator-revision", "1",
+        "--operator-chart",    c.operator_tgz_123,
+        "--namespace", c.test_namespace,
+        "--assembly-backup-filepath",   e2e.test_asm_backup
+    ]
+    user_input = f"""y
+    y
+"""
+    # run both 'run' and 'upgrade' and capture the helm commands they call
+    with runner.isolated_filesystem():
+        res = runner.invoke(main.cli, cmd_rollback+extra_args,  input=user_input)
+    expected_output = f"""Rolling Insights back to version 2.2.3 and revision 1. 
+Rolling operator back to version 2.2.3 and revision 1.
+Proceed? [y/N]: y
+Error: Mismatch on the operator chart version 1.2.3 and the operator revision 1 version 2.2.3\n"""
+    
+    assert res.exit_code == 1
+    assert expected_output == res.output
+

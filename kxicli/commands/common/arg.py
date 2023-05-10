@@ -109,6 +109,8 @@ operator_revision = options.operator_revision.decorator()
 
 operator_history = options.operator_history.decorator()
 
+operator_chart = options.operator_chart.decorator()
+
 chart = partial(
     click.argument, 'chart', default=f"{default_val(key_chart_repo_name)}/insights"
 )

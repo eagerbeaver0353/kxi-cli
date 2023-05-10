@@ -14,6 +14,7 @@ test_secret_type = 'Opaque'
 test_secret_key = 'secret_key'
 test_secret_data = {test_secret_key: 'c2VjcmV0X3ZhbHVl'}
 test_val_file = str(Path(__file__).parent / 'files' / 'test-values.yaml')
+test_asm_backup =  str(Path(__file__).parent / 'files' / 'test-assembly-backup.yaml')
 
 with open(test_val_file, 'r') as f:
     test_val_data = yaml.safe_load(f.read())
@@ -202,6 +203,11 @@ def mock_helm_repo_list(mocker, name='kx-insights', url=const.test_chart_repo_ur
 def mocked_helm_history_rollback(release, output, show_operator,current_operator_version, current_operator_release):
         res1 =[{"release": release, "revision": 1, "chart": "insights-1.2.3", "app_version":"1.2.3", "status": "deployed"}, {"release": release, "revision": 2, "chart": "insights-1.4.0", "app_version": "1.4.0", "status": "uninstalled"}]
         res2 =[{"release": release, "revision": 1, "chart": "kxi-operator-1.2.3", "app_version": "1.2.3", "status": "uninstalled"},{"release": release, "revision": 2, "chart": "kxi-operator-1.4.0", "app_version": "1.4.0", "status": "uninstalled"}]
+        return res1,res2
+
+def mocked_helm_history_rollback_broken(release, output, show_operator,current_operator_version, current_operator_release):
+        res1 =[{"release": release, "revision": 1, "chart": "insights-2.2.3", "app_version":"2.2.3", "status": "deployed"}, {"release": release, "revision": 2, "chart": "insights-1.4.0", "app_version": "1.4.0", "status": "uninstalled"}]
+        res2 =[{"release": release, "revision": 1, "chart": "kxi-operator-2.2.3", "app_version": "2.2.3", "status": "uninstalled"},{"release": release, "revision": 2, "chart": "kxi-operator-1.4.0", "app_version": "1.4.0", "status": "uninstalled"}]
         return res1,res2
 
 def mocked_helm_history_rollback_same_operator(release, output, show_operator, current_operator_version, current_operator_release):

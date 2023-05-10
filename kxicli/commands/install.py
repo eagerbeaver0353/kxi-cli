@@ -298,20 +298,21 @@ def parse_chart_cli_params(
     chart: str,
     chart_repo_name: str | None,
     chart_repo_url: str | None,
-    chart_repo_username: str | None
+    chart_repo_username: str | None,
+    extension: str | None = "insights"
 ) -> helm_chart.Chart:
     # chart-repo-name or chart-repo-url takes precedence over 'chart' arg to prevent breaking change
     if chart_repo_name:
-        chart = f"{chart_repo_name}/insights"
+        chart = f"{chart_repo_name}/{extension}"
     elif chart_repo_url and chart_repo_url.startswith('oci://'):
-        chart = f"{chart_repo_url}/insights"
+        chart = f"{chart_repo_url}/{extension}"    
 
     try:
         insights_chart = helm_chart.Chart(chart)
     except helm.RepoNotFoundException:
         # Prompt for helm repo if it doesn't exist when forming the chart
         chart_repo_name, _, _ = setup_helm_repo(chart_repo_name, chart_repo_url, chart_repo_username)
-        insights_chart = helm_chart.Chart(f"{chart_repo_name}/insights")
+        insights_chart = helm_chart.Chart(f"{chart_repo_name}/{extension}")
     return insights_chart
 
 
@@ -1188,8 +1189,13 @@ def replace_chart_crds(crd_data):
 @arg.force()
 @arg.assembly_backup_filepath()
 @arg.chart_repo_name()
-def rollback(insights_revision, release, operator_revision, namespace, image_pull_secret, force, assembly_backup_filepath, chart_repo_name):
+@arg.chart_repo_url()
+@arg.operator_chart()
+@arg.chart_repo_username()
+def rollback(insights_revision, release, operator_revision, namespace, image_pull_secret, force, assembly_backup_filepath, chart_repo_name, operator_chart, chart_repo_url, chart_repo_username):
     common.load_kube_config()
+    chart_operator = parse_chart_cli_params(operator_chart, chart_repo_name, chart_repo_url, chart_repo_username, 'kxi-operator')
+    
     skip_operator_rollback = False
     current_operator_version, current_operator_release  = get_installed_operator_versions(operator_namespace)
     insights_history,operator_history = helm.history(release, 'json', None, current_operator_version, current_operator_release[0])
@@ -1211,6 +1217,11 @@ def rollback(insights_revision, release, operator_revision, namespace, image_pul
 
     # Get the rollback base command for operator
     operator_details,base_command_operator = rollback_operator(operator_revision, skip_operator_rollback, operator_history, current_operator_release, insights_rollback_version, insights_revision, current_operator_version, force)
+    
+    if not chart_operator.is_remote:
+        op_app_version, op_chart_version = chart_operator.get_local_versions()
+        if op_app_version  != operator_details[1]:
+            raise click.ClickException(f'Mismatch on the operator chart version {op_chart_version} and the operator revision {operator_revision} version {operator_details[1]}')
 
     # Teardown assemblies
     deleted,assembly_backup_filepath  = teardown_assemblies(namespace, assembly_backup_filepath, force, phrases.rollback_asm_persist)
@@ -1219,7 +1230,7 @@ def rollback(insights_revision, release, operator_revision, namespace, image_pul
         # Rollback  operator
         try_rollback(base_command_operator, 'Rollback kxi-operator complete for version ' + operator_details[1])
         # Replace crds
-        replace_crds(image_pull_secret, namespace, operator_details, chart_repo_name)
+        replace_crds(image_pull_secret, namespace, operator_details[1], chart_operator)
 
     click.secho(phrases.rollback_start, bold=True)
     try_rollback(base_command, 'Rollback kdb Insights Enterprise complete for version ' + insights_rollback_version)
@@ -1328,11 +1339,9 @@ def reapply_assemblies(assembly_backup_filepath, namespace, deleted):
                                         ):
         os.remove(assembly_backup_filepath)
 
-def replace_crds(image_pull_secret, namespace, operator_details, chart_repo_name):
+def replace_crds(image_pull_secret, namespace, operator_chart_version, chart: helm_chart.Chart):
     crd_data = []
     image_pull_secret = options.image_pull_secret.prompt(image_pull_secret)
     docker_config = get_docker_config_secret(namespace, image_pull_secret, DOCKER_SECRET_KEY)
-    cache = helm.get_repository_cache()
-    helm.fetch(chart_repo_name, 'kxi-operator', cache,  operator_details[1], docker_config)
-    crd_data = read_cached_crd_files(operator_details[1], Path(cache))
+    crd_data = get_crd_data(chart, operator_chart_version, docker_config)
     replace_chart_crds(crd_data)
