@@ -527,9 +527,11 @@ class SubprocessRunInput():
     env: list = field(default_factory=dict)
 
 @pytest.fixture()
-def empty_running_assembly():
+def cleanup_env_globals():
     global running_assembly
+    global delete_crd_params
     running_assembly = {}
+    delete_crd_params = []
 
 # Tests
 
@@ -2544,6 +2546,9 @@ def mock_helm_list_history_same_operator(mocker, release='kx-insights', output=N
 def mock_helm_list_history(mocker, release='kx-insights', output=None):
     mocker.patch('kxicli.resources.helm.history', utils.mocked_helm_history_rollback)
 
+def mock_helm_list_histor_broken(mocker, release='kx-insights', output=None):
+    mocker.patch('kxicli.resources.helm.history', utils.mocked_helm_history_rollback_broken)    
+
 def test_install_rollback(mocker):
     mocker.patch('subprocess.check_output',return_value="")
     mock_helm_list_history_same_operator(mocker)
@@ -2601,7 +2606,7 @@ def test_install_rollback_fail_version(mocker):
     utils.mock_helm_env(mocker)
     utils.mock_helm_fetch(mocker)
     mocker.patch('kxicli.commands.install.get_installed_operator_versions', mocked_get_installed_operator_versions_without_release_14)
-      
+
     runner = CliRunner()
     with runner.isolated_filesystem():
         # these are responses to the various prompts
@@ -2662,15 +2667,20 @@ Submitting assembly basic-assembly\nCustom assembly resource basic-assembly crea
 
 def test_install_rollback_insights_revision_fail(mocker):
     mocker.patch('subprocess.check_output',return_value="")
+    utils.mock_helm_env(mocker)
     expected_output = 'Error: Could not find revision 4 in history\n'
     mocker.patch('kxicli.commands.install.get_installed_operator_versions', mocked_get_installed_operator_versions_without_release_14)
-    mock_helm_list_history(mocker)
+    mocker.patch(GET_ASSEMBLIES_LIST_FUNC, mock_list_assembly_none)
     mocker.patch(LIST_CLUSTER_ASSEMBLIES_FUNC)
+    mock_helm_list_history(mocker)
+    utils.mock_helm_env(mocker)
+    utils.mock_helm_repo_list(mocker)
+    mocker.patch('kxicli.commands.install.helm.repo_update')
     runner = CliRunner()
     with runner.isolated_filesystem():
         # these are responses to the various prompts
         result = runner.invoke(main.cli,
-            ['install', 'rollback', '4']
+            ['install', 'rollback', '4', '--namespace', test_namespace]
         )
     assert result.exit_code == 1
     assert expected_output == result.output
@@ -2680,7 +2690,11 @@ def test_install_rollback_operator_revision_fail(mocker):
     mocker.patch('kxicli.commands.install.get_installed_operator_versions', mocked_get_installed_operator_versions_without_release_14)
     expected_output = 'Error: Could not find revision 4 in kxi-operator history\n'
     mock_helm_list_history(mocker)
+    utils.mock_helm_env(mocker)
+    utils.mock_helm_repo_list(mocker)
+    mocker.patch(GET_ASSEMBLIES_LIST_FUNC, mock_list_assembly_none)
     mocker.patch(LIST_CLUSTER_ASSEMBLIES_FUNC)
+    mocker.patch('kxicli.commands.install.helm.repo_update')    
     runner = CliRunner()
     with runner.isolated_filesystem():
         # these are responses to the various prompts
@@ -2690,18 +2704,21 @@ def test_install_rollback_operator_revision_fail(mocker):
     assert result.exit_code == 1
     assert expected_output == result.output
 
-
-def test_install_rollback_operator_revision_fail_2(mocker):
+def test_install_rollback_operator_revision_fail_with_insightsrevision(mocker):
     mocker.patch('kxicli.commands.install.get_installed_operator_versions', mocked_get_installed_operator_versions_without_release_14)
     mocker.patch('subprocess.check_output',return_value="")
     expected_output = 'Error: Could not find revision 4 in kxi-operator history\n'
     mock_helm_list_history(mocker)
-    mocker.patch(LIST_CLUSTER_ASSEMBLIES_FUNC)
+    utils.mock_helm_env(mocker)
+    utils.mock_helm_repo_list(mocker)
+    mocker.patch(GET_ASSEMBLIES_LIST_FUNC, mock_list_assembly_none)
+    mocker.patch(LIST_CLUSTER_ASSEMBLIES_FUNC)    
+    mocker.patch('kxicli.commands.install.helm.repo_update')
     runner = CliRunner()
     with runner.isolated_filesystem():
         # these are responses to the various prompts
         result = runner.invoke(main.cli,
-            ['install', 'rollback', '1', '--operator-revision', '4']
+            ['install', 'rollback', '1','--operator-revision', '4']
         )
     assert result.exit_code == 1
     assert expected_output == result.output

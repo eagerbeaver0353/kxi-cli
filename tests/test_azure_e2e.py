@@ -19,7 +19,7 @@ from test_install_e2e import mock_copy_secret, mock_delete_crd, mocked_installed
     mock_get_operator_version, test_operator_helm_name, mocked_read_secret, mocked_helm_version_checked,\
     mock_read_cached_crd_data, mock_subprocess_run, install_upgrade_checks, \
     check_subprocess_run_commands, mock_set_insights_operator_and_crd_installed_state, \
-    HelmCommand, HelmCommandInsightsInstall, HelmCommandOperatorInstall, HelmCommandDelete, empty_running_assembly
+    HelmCommand, HelmCommandInsightsInstall, HelmCommandOperatorInstall, HelmCommandDelete, cleanup_env_globals
 
 a_test_asm_str: str = 'a test asm file'
 default_config_file = str(Path(__file__).parent / 'files' / 'test-cli-config')
@@ -160,7 +160,7 @@ class HelmCommandFetch(HelmCommand):
 
 # Tests
 
-def test_install(mocker: MockerFixture, empty_running_assembly):
+def test_install(mocker: MockerFixture, cleanup_env_globals):
     mocker.patch(fun_get_helm_version_checked, mocked_helm_version_checked)
     mocker.patch('kxicli.commands.install.get_installed_charts', lambda *args: [])
     mocker.patch(fun_install_operator_versions, lambda *args: ([], []))
@@ -198,7 +198,7 @@ def test_install(mocker: MockerFixture, empty_running_assembly):
                            )
 
 
-def test_uninstall(mocker: MockerFixture, empty_running_assembly):
+def test_uninstall(mocker: MockerFixture, cleanup_env_globals):
     mocker.patch(fun_get_helm_version_checked, mocked_helm_version_checked)
     uninstall_mocks(mocker)
     mock_subprocess_run(mocker)
@@ -228,7 +228,7 @@ def test_uninstall(mocker: MockerFixture, empty_running_assembly):
     )
 
 
-def test_upgrade(mocker: MockerFixture, empty_running_assembly):
+def test_upgrade(mocker: MockerFixture, cleanup_env_globals):
     upgrade_mocks(mocker)
     runner = CliRunner()
     with utils.temp_file(default_assembly_backup_file) as asm_file:
@@ -263,7 +263,7 @@ def test_upgrade(mocker: MockerFixture, empty_running_assembly):
                            )
 
 
-def test_upgrade_with_no_assemblies_running(mocker: MockerFixture, empty_running_assembly):
+def test_upgrade_with_no_assemblies_running(mocker: MockerFixture, cleanup_env_globals):
     global delete_crd_params
     delete_crd_params = []
     upgrade_mocks(mocker)
@@ -297,7 +297,7 @@ def test_upgrade_with_no_assemblies_running(mocker: MockerFixture, empty_running
                            )
 
 
-def test_upgrade_with_chart_repo_url(mocker: MockerFixture, empty_running_assembly):
+def test_upgrade_with_chart_repo_url(mocker: MockerFixture, cleanup_env_globals):
     test_chart_repo_url = 'oci://test_chart_repo_url'
     upgrade_mocks(mocker)
 
@@ -339,7 +339,7 @@ def test_upgrade_with_chart_repo_url(mocker: MockerFixture, empty_running_assemb
                            )
 
 
-def test_upgrade_without_filepath(mocker: MockerFixture, empty_running_assembly):
+def test_upgrade_without_filepath(mocker: MockerFixture, cleanup_env_globals):
     upgrade_mocks(mocker)
 
     runner = CliRunner()

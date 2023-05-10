@@ -456,7 +456,6 @@ import_users = Option (
     type = bool
 )
 
-
 admin_username = Option(
     '--admin-username',
     config_name = key_admin_username,
@@ -497,4 +496,10 @@ operator_history = Option (
     default = None,
     help = 'Display the install history of the kxi-operator',
     is_flag=True
+)
+
+operator_chart = Option(
+    '--operator-chart',
+    default=f"{default_val(key_chart_repo_name)}/kxi-operator",
+    help = 'Filename of kxi-operator chart',
 )

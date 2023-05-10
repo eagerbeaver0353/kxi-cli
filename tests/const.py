@@ -20,3 +20,4 @@ test_lic_file = str(Path(__file__).parent / 'files' / 'test-license')
 
 insights_tgz = str(Path(__file__).parent / 'files/helm/insights-1.5.0.tgz')
 operator_tgz = str(Path(__file__).parent / 'files/helm/kxi-operator-1.5.0.tgz')
+operator_tgz_123 = str(Path(__file__).parent / 'files/helm/kxi-operator-1.2.3.tgz')
