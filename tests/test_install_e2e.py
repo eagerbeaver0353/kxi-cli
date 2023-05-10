@@ -35,6 +35,7 @@ common.config.config_file = os.path.dirname(__file__) + '/files/test-cli-config'
 common.config.load_config("default")
 
 GET_ASSEMBLIES_LIST_FUNC='kxicli.commands.assembly.get_assemblies_list'
+LIST_CLUSTER_ASSEMBLIES_FUNC='kxicli.commands.assembly.list_cluster_assemblies'
 DELETE_ASSEMBLIES_FUNC='kxicli.commands.assembly._delete_assembly'
 TEST_VALUES_FILE="a test values file"
 
@@ -339,11 +340,13 @@ def mock_list_assembly(namespace):
     return {'items': [test_asm]}
 
 
-def mock_list_assembly_multiple(namespace):
+def mock_list_assembly_multiple(*args, **kwargs):
     with open(utils.test_asm_file) as f:
         test_asm = yaml.safe_load(f)
+        test_asm['metadata']['namespace'] = utils.namespace()
     with open(utils.test_asm_file2) as f:
         test_asm2 = yaml.safe_load(f)
+        test_asm2['metadata']['namespace'] = utils.namespace()
 
     return {'items': [test_asm, test_asm2]}
 
@@ -400,6 +403,7 @@ def upgrades_mocks(mocker):
     global running_assembly
     running_assembly = {test_asm_name:True}
     mocker.patch(GET_ASSEMBLIES_LIST_FUNC, mock_list_assembly)
+    mocker.patch(LIST_CLUSTER_ASSEMBLIES_FUNC)
     mocker.patch('kxicli.commands.assembly._create_assembly', mock_create_assembly)
 
 
@@ -861,6 +865,7 @@ def test_install_run_when_provided_file(mocker):
     utils.mock_validate_secret(mocker)
     utils.mock_helm_repo_list(mocker)
     utils.mock_kube_secret_api(mocker, read=mocked_read_secret)
+    mocker.patch(LIST_CLUSTER_ASSEMBLIES_FUNC)
 
     runner = CliRunner()
     with runner.isolated_filesystem():
@@ -1131,6 +1136,7 @@ def test_install_run_with_compitable_operator_already_installed(mocker):
     utils.mock_helm_env(mocker)
     utils.mock_helm_repo_list(mocker)
     utils.mock_kube_secret_api(mocker, read=mocked_read_secret)
+    mocker.patch(LIST_CLUSTER_ASSEMBLIES_FUNC)
 
     runner = CliRunner()
     with runner.isolated_filesystem():
@@ -1205,6 +1211,7 @@ def test_install_run_when_no_context_set(mocker):
     utils.mock_validate_secret(mocker)
     utils.mock_helm_repo_list(mocker)
     utils.mock_kube_secret_api(mocker, read=mocked_read_secret)
+    mocker.patch(LIST_CLUSTER_ASSEMBLIES_FUNC)
 
     runner = CliRunner()
     with runner.isolated_filesystem():
@@ -1487,6 +1494,7 @@ def test_delete_removes_insights_and_operator(mocker):
     mocker.patch(DELETE_ASSEMBLIES_FUNC, mock__delete_assembly)
     delete_assembly_args = []
     asms_array = [test_asm_name, test_asm_name2]
+    mocker.patch(LIST_CLUSTER_ASSEMBLIES_FUNC)
 
     runner = CliRunner()
     with runner.isolated_filesystem():
@@ -1518,6 +1526,7 @@ def test_delete_when_insights_and_operator_not_installed(mocker):
     mock_subprocess_run(mocker)
     mock_delete_crd(mocker)
     mock_set_insights_operator_and_crd_installed_state(mocker, False, False, False)
+    mocker.patch(LIST_CLUSTER_ASSEMBLIES_FUNC)
 
     runner = CliRunner()
     with runner.isolated_filesystem():
@@ -1537,6 +1546,7 @@ def test_delete_error_deleting_crds(mocker):
     mock_subprocess_run(mocker)
     mock_set_insights_operator_and_crd_installed_state(mocker, False, False, True)
     utils.mock_kube_crd_api(mocker, delete=utils.raise_not_found)
+    mocker.patch(LIST_CLUSTER_ASSEMBLIES_FUNC)
 
     runner = CliRunner()
     with runner.isolated_filesystem():
@@ -1600,6 +1610,7 @@ def test_delete_force_removes_insights_operator_and_crd(mocker):
     mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
     mocker.patch(GET_ASSEMBLIES_LIST_FUNC, mock_list_assembly_multiple)
     mocker.patch(DELETE_ASSEMBLIES_FUNC, mock__delete_assembly)
+    mocker.patch(LIST_CLUSTER_ASSEMBLIES_FUNC)
     
     delete_assembly_args = []
     asms_array = [test_asm_name, test_asm_name2]
@@ -1719,6 +1730,45 @@ kdb Insights Enterprise installation not found
     check_subprocess_run_commands([])
     assert delete_crd_params == []
 
+
+def test_delete_operator_fails_when_assemblies_running(mocker):
+    global delete_assembly_args
+
+    mock_subprocess_run(mocker)
+    mock_delete_crd(mocker)
+    mock_asm_backup_path(mocker)
+    mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
+    mocker.patch(GET_ASSEMBLIES_LIST_FUNC, mock_list_assembly_multiple)
+    mocker.patch(DELETE_ASSEMBLIES_FUNC, mock__delete_assembly)
+    delete_assembly_args = []
+    asms_array = [test_asm_name, test_asm_name2]
+    mocker.patch(LIST_CLUSTER_ASSEMBLIES_FUNC, mock_list_assembly_multiple)
+
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        # these are responses to the various prompts
+        user_input = f"""y
+"""
+        result = runner.invoke(main.cli, ['install', 'delete','--uninstall-operator'], input=user_input)
+        expected_output = f"""
+kdb Insights Enterprise is deployed. Do you want to uninstall? [y/N]: y
+Persisted assembly definitions for ['{test_asm_name}', '{test_asm_name2}'] to {test_asm_backup}
+Uninstalling release insights in namespace {test_namespace}
+warn=Assemblies are running in other namespaces
+ASSEMBLY NAME    NAMESPACE
+basic-assembly   {utils.namespace()}
+basic-assembly2  {utils.namespace()}
+Error: Cannot delete kxi-operator
+"""
+    assert result.exit_code == 1
+    assert result.output == expected_output
+    assert len(delete_assembly_args) == len(asms_array)
+    for deleted_asm in delete_assembly_args:
+        assert deleted_asm['name'] in asms_array
+    check_subprocess_run_commands([
+        HelmCommandDelete()
+    ])
+    assert delete_crd_params == []
 
 def test_install_when_not_deploying_keycloak(mocker):
     setup_mocks(mocker)
@@ -2235,6 +2285,110 @@ Upgrade to version 1.2.3 complete
     assert result.output == expected_output
 
 
+
+def test_upgrade_prompts_to_skip_operator_install_when_assemblies_running(mocker):
+    upgrades_mocks(mocker)
+    mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
+    mock_get_operator_version(mocker)
+    utils.mock_validate_secret(mocker)
+    utils.mock_helm_env(mocker)
+    utils.mock_helm_fetch(mocker)
+    utils.mock_helm_get_values(mocker, utils.test_val_data)
+    utils.mock_kube_crd_api(mocker, create=mocked_create_crd, delete=mocked_delete_crd)
+    if os.path.exists(test_asm_backup):
+        os.remove(test_asm_backup)
+    mocker.patch(LIST_CLUSTER_ASSEMBLIES_FUNC, mock_list_assembly_multiple)
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        # these are responses to the various prompts
+        user_input = f"""y
+y
+y
+y
+"""
+        result = runner.invoke(main.cli,
+            ['install', 'upgrade', '--version', '1.2.3', '--assembly-backup-filepath', test_asm_backup],
+            input=user_input
+        )
+        expected_output = f"""{phrases.header_upgrade}
+{phrases.values_validating}
+
+kdb Insights Enterprise is already installed with version 1.2.1
+kxi-operator already installed with version 1.2.0
+warn=Assemblies are running in other namespaces
+ASSEMBLY NAME    NAMESPACE
+basic-assembly   {utils.namespace()}
+basic-assembly2  {utils.namespace()}
+warn=Cannot upgrade kxi-operator
+Do you want continue to upgrade kdb Insights Enterprise without upgrading kxi-operator? [Y/n]: y
+
+Backing up assemblies
+Persisted assembly definitions for ['{test_asm_name}'] to {test_asm_backup}
+
+Tearing down assemblies
+Assembly data will be persisted and state will be recovered post-upgrade
+Tearing down assembly {test_asm_name}
+Are you sure you want to teardown {test_asm_name} [y/N]: y
+Waiting for assembly to be torn down
+
+Upgrading insights
+Installing chart kx-insights/insights version 1.2.3 with previously used values
+
+Reapplying assemblies
+Submitting assembly from {test_asm_backup}
+Submitting assembly {test_asm_name}
+Custom assembly resource {test_asm_name} created!
+
+Upgrade to version 1.2.3 complete
+"""
+    install_upgrade_checks(result,
+                           helm_commands=[
+                               HelmCommandRepoUpdate(),
+                               HelmCommandInsightsInstall(values = '-',
+                                                          keycloak_importUsers='false'
+                                                          )
+                           ],
+                           expected_delete_crd_params=[]                           
+    )
+    assert result.output == expected_output
+
+def test_upgrade_exits_when_user_does_not_proceed_when_assemblies_running(mocker):
+    upgrades_mocks(mocker)
+    mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
+    mock_get_operator_version(mocker)
+    utils.mock_validate_secret(mocker)
+    utils.mock_helm_env(mocker)
+    utils.mock_helm_fetch(mocker)
+    utils.mock_helm_get_values(mocker, utils.test_val_data)
+    utils.mock_kube_crd_api(mocker, create=mocked_create_crd, delete=mocked_delete_crd)
+    if os.path.exists(test_asm_backup):
+        os.remove(test_asm_backup)
+    mocker.patch(LIST_CLUSTER_ASSEMBLIES_FUNC, mock_list_assembly_multiple)
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        # these are responses to the various prompts
+        user_input = "n"
+        result = runner.invoke(main.cli,
+            ['install', 'upgrade', '--version', '1.2.3', '--assembly-backup-filepath', test_asm_backup],
+            input=user_input
+        )
+        expected_output = f"""{phrases.header_upgrade}
+{phrases.values_validating}
+
+kdb Insights Enterprise is already installed with version 1.2.1
+kxi-operator already installed with version 1.2.0
+warn=Assemblies are running in other namespaces
+ASSEMBLY NAME    NAMESPACE
+basic-assembly   {utils.namespace()}
+basic-assembly2  {utils.namespace()}
+warn=Cannot upgrade kxi-operator
+Do you want continue to upgrade kdb Insights Enterprise without upgrading kxi-operator? [Y/n]: n
+Error: Cannot upgrade kxi-operator
+"""
+    assert result.exit_code == 1
+    assert result.output == expected_output
+
+
 def test_upgrade_with_no_assemblies(mocker):
     upgrades_mocks(mocker)
     mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
@@ -2511,6 +2665,7 @@ def test_install_rollback_insights_revision_fail(mocker):
     expected_output = 'Error: Could not find revision 4 in history\n'
     mocker.patch('kxicli.commands.install.get_installed_operator_versions', mocked_get_installed_operator_versions_without_release_14)
     mock_helm_list_history(mocker)
+    mocker.patch(LIST_CLUSTER_ASSEMBLIES_FUNC)
     runner = CliRunner()
     with runner.isolated_filesystem():
         # these are responses to the various prompts
@@ -2525,6 +2680,7 @@ def test_install_rollback_operator_revision_fail(mocker):
     mocker.patch('kxicli.commands.install.get_installed_operator_versions', mocked_get_installed_operator_versions_without_release_14)
     expected_output = 'Error: Could not find revision 4 in kxi-operator history\n'
     mock_helm_list_history(mocker)
+    mocker.patch(LIST_CLUSTER_ASSEMBLIES_FUNC)
     runner = CliRunner()
     with runner.isolated_filesystem():
         # these are responses to the various prompts
@@ -2540,6 +2696,7 @@ def test_install_rollback_operator_revision_fail_2(mocker):
     mocker.patch('subprocess.check_output',return_value="")
     expected_output = 'Error: Could not find revision 4 in kxi-operator history\n'
     mock_helm_list_history(mocker)
+    mocker.patch(LIST_CLUSTER_ASSEMBLIES_FUNC)
     runner = CliRunner()
     with runner.isolated_filesystem():
         # these are responses to the various prompts
@@ -2547,4 +2704,54 @@ def test_install_rollback_operator_revision_fail_2(mocker):
             ['install', 'rollback', '1', '--operator-revision', '4']
         )
     assert result.exit_code == 1
+    assert expected_output == result.output
+
+def test_install_rollback_skips_operator_when_assemblies_running(mocker):
+    mocker.patch('subprocess.check_output',return_value="")
+    mock_helm_list_history(mocker)
+    upgrades_mocks(mocker)
+    mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
+    mock_create_namespace(mocker)
+    mock_get_operator_version(mocker)
+    utils.mock_validate_secret(mocker)
+    utils.mock_kube_crd_api(mocker, create=mocked_create_crd, delete=mocked_delete_crd)
+    utils.mock_helm_env(mocker)
+    mocker.patch('kxicli.commands.install.read_cached_crd_files', mock_read_cached_crd_data)
+    utils.mock_helm_fetch(mocker)
+    mocker.patch(LIST_CLUSTER_ASSEMBLIES_FUNC, mock_list_assembly_multiple)
+    user_input = f"""y
+    y
+"""
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        # these are responses to the various prompts
+        result = runner.invoke(main.cli,
+            ['install', 'rollback', '1', '--operator-revision', '1', '--namespace', test_namespace, '--assembly-backup-filepath', test_asm_backup],
+            input=user_input
+        )
+    expected_output = f"""warn=Assemblies are running in other namespaces
+ASSEMBLY NAME    NAMESPACE
+basic-assembly   {utils.namespace()}
+basic-assembly2  {utils.namespace()}
+warn=Cannot rollback kxi-operator
+Rolling Insights back to version 1.2.3 and revision 1. Operator version remaining on 1.2.0.
+Proceed? [y/N]: y
+
+Backing up assemblies
+Persisted assembly definitions for ['basic-assembly'] to {test_asm_backup}
+
+Tearing down assemblies
+Assembly data will be persisted and state will be recovered post-rollback
+Tearing down assembly basic-assembly
+Are you sure you want to teardown basic-assembly [y/N]:     y
+Waiting for assembly to be torn down
+
+Rolling back Insights
+Rollback kdb Insights Enterprise complete for version 1.2.3
+
+Reapplying assemblies
+Submitting assembly from {test_asm_backup}
+Submitting assembly basic-assembly\nCustom assembly resource basic-assembly created!
+"""
+    assert result.exit_code == 0
     assert expected_output == result.output

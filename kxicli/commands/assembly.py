@@ -109,13 +109,13 @@ def _list_assemblies(hostname=None, client_id=None, client_secret=None, realm=No
     if use_kubeconfig:
         namespace = options_namespace.prompt(namespace)
         res = get_assemblies_list(namespace)
-        asm_list = _format_assemblies_list_k8s(res)
+        asm_list = format_assemblies_list_k8s(res)
     else:
         hostname, token = get_kxic_options(hostname, client_id, client_secret, realm)
         res = assembly_kxicontroller.list(hostname, token)
         asm_list = _format_assemblies_list_kxic(res)
 
-    _print_2d_list(asm_list[0], asm_list[1])
+    print_2d_list(asm_list[0], asm_list[1])
     return True
 
 
@@ -133,7 +133,20 @@ def get_assemblies_list(namespace, label_selector=ASM_LABEL_SELECTOR):
     return res
 
 
-def _format_assemblies_list_k8s(assembly_list):
+def list_cluster_assemblies(**kwargs):
+    """List assemblies via the kubernetes API"""
+    common.load_kube_config()
+    api = k8s.client.CustomObjectsApi()
+    res = api.list_cluster_custom_object(
+        group=API_GROUP,
+        version=API_VERSION,
+        plural=API_PLURAL,
+        **kwargs
+    )
+    return res
+
+
+def format_assemblies_list_k8s(assembly_list):
     """Extract assemblies returned from the kubernetes API"""
     asm_list = []
     if 'items' in assembly_list:
@@ -154,7 +167,7 @@ def _format_assemblies_list_kxic(assembly_list):
     return (asm_list, ['ASSEMBLY NAME', 'RUNNING', 'READY'])
 
 
-def _print_2d_list(data, headers):
+def print_2d_list(data, headers):
     """
     Prints a col-formatted 2d list
     """

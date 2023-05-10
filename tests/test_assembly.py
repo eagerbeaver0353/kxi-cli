@@ -16,6 +16,7 @@ from click.testing import CliRunner
 from kxicli import common
 from kxicli import main
 from kxicli.commands import assembly
+import mocks
 import utils
 from test_assembly_kxicontroller import build_assembly_object_kxic
 from functools import partial
@@ -251,6 +252,15 @@ def test_get_assemblies_list_uses_label_selector(mocker):
     res = assembly.get_assemblies_list(namespace='test_ns')
 
     assert mock.call_args_list[0][1]['label_selector'] == assembly.ASM_LABEL_SELECTOR
+    assert res == ASSEMBLY_LIST
+
+
+
+def test_list_cluster_assemblies_k8s_api(mocker):
+    mock = mocks.list_cluster_custom_object_k8s_api(mocker, response=ASSEMBLY_LIST)
+    fs = 'metadata.namespace!=other_ns'
+    res = assembly.list_cluster_assemblies(field_selector=fs)
+    assert mock.call_args_list[0][1]['field_selector'] == fs
     assert res == ASSEMBLY_LIST
 
 
