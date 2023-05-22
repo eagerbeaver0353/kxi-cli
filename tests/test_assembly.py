@@ -828,7 +828,7 @@ Custom assembly resource basic-assembly created!
 def test_cli_assembly_deploy_from_file_k8s_api(mocker):
     mock_create_assemblies(mocker.patch(CUSTOM_OBJECT_API).return_value)
 
-    result = TEST_CLI.invoke(main.cli, ['assembly', 'deploy', '--filepath', test_asm_file, '--use-kubeconfig'])
+    result = TEST_CLI.invoke(main.cli, ['assembly', 'deploy', '-f', test_asm_file, '--use-kubeconfig'])
 
     assert result.exit_code == 0
     assert result.output == f"""Using assembly.filepath from command line option: {test_asm_file}
@@ -864,7 +864,7 @@ def test_cli_assembly_deploy_with_context_not_set(mocker):
     with requests_mock.Mocker() as m:
         mocker.patch('kxicli.common.get_access_token', utils.return_none)
         m.post('https://test.kx.com/kxicontroller/assembly/cli/deploy')
-        result = TEST_CLI.invoke(main.cli, ['assembly', 'deploy', '--filepath', test_asm_file])
+        result = TEST_CLI.invoke(main.cli, ['assembly', 'deploy', '-f', test_asm_file])
         assert m.last_request.json() == assembly._add_last_applied_configuration_annotation(test_asm)
 
     assert result.exit_code == 0
@@ -913,7 +913,7 @@ def test_cli_assembly_deploy_and_wait_k8s_api(mocker):
     mock_create_assemblies(mock_instance)
     mock_instance.get_namespaced_custom_object.return_value = build_assembly_object(ASM_NAME, True)
 
-    result = TEST_CLI.invoke(main.cli, ['assembly', 'deploy', '--filepath', test_asm_file, '--wait', '--use-kubeconfig'])
+    result = TEST_CLI.invoke(main.cli, ['assembly', 'deploy', '-f', test_asm_file, '--wait', '--use-kubeconfig'])
 
     assert result.exit_code == 0
     assert result.output == f"""Using assembly.filepath from command line option: {test_asm_file}
@@ -931,7 +931,7 @@ def test_cli_assembly_deploy_without_filepath(mocker):
     mocker.patch('kxicli.common.is_interactive_session', utils.return_false)
     result = TEST_CLI.invoke(main.cli, ['assembly', 'deploy'])
     assert result.exit_code == 1
-    assert result.output == f'Error: Could not find expected option. Please set command line argument --filepath or configuration value assembly.filepath in config file {common.config.config_file}\n'
+    assert result.output == f'Error: Could not find expected option. Please set command line argument (\'-f\', \'--filepath\') or configuration value assembly.filepath in config file {common.config.config_file}\n'
 
 
 def test_cli_assembly_deploy_without_filepath_interactive_session(mocker):
@@ -971,7 +971,7 @@ def test_cli_assembly_backup_assemblies_overwrites_when_file_already_exists(mock
             f.write('a test file')
 
         # Respond 'y' to the prompt to overwrite
-        result = TEST_CLI.invoke(main.cli, ['assembly', 'backup', '--filepath', test_asm_list_file], input='y')
+        result = TEST_CLI.invoke(main.cli, ['assembly', 'backup', '-f', test_asm_list_file], input='y')
 
         assert result.exit_code == 0
         assert result.output == f"""
@@ -1012,7 +1012,7 @@ def test_cli_assembly_backup_assemblies_forces_overwrite_when_file_already_exist
         with open(test_asm_list_file, 'w') as f:
             f.write('yet another test file')
 
-        result = TEST_CLI.invoke(main.cli, ['assembly', 'backup', '--filepath', test_asm_list_file, '--force'])
+        result = TEST_CLI.invoke(main.cli, ['assembly', 'backup', '-f', test_asm_list_file, '--force'])
 
         assert result.exit_code == 0
         assert result.output == f"""warn=Refusing to backup assemblies: ['{ASM_NAME3}']. These assemblies are missing 'kubectl.kubernetes.io/last-applied-configuration' annotation. Please restart these assemblies manually.

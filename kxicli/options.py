@@ -58,7 +58,7 @@ def interactive_prompt(prompt_message, password, default):
 def prompt_error_message(self):
     error_message = 'Could not find expected option.'
     if self.click_option_args:
-        error_message = error_message + f' Please set command line argument {self.click_option_args[0]}'
+        error_message = error_message + f' Please set command line argument {self.click_option_args}'
         if self.config_name:
             error_message = error_message + f' or configuration value {self.config_name} in config file {config.config_file}'
     elif self.config_name:
@@ -169,6 +169,7 @@ def get_namespace():
         return open("/var/run/secrets/kubernetes.io/serviceaccount/namespace").read()
 
 namespace = Option(
+    '-n',
     '--namespace',
     config_name = key_namespace,
     default = lambda: get_namespace(),
@@ -177,6 +178,7 @@ namespace = Option(
 )
 
 filepath = Option(
+    '-f',
     '--filepath',
     config_name =key_install_filepath,
     help = help_text(key_install_filepath),
@@ -413,6 +415,7 @@ assembly_wait = Option (
 )
 
 assembly_filepath = Option (
+    '-f',
     '--filepath',
     config_name = 'assembly.filepath',
     help='Path to the assembly file',

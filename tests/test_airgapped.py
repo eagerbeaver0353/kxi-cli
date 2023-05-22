@@ -71,7 +71,7 @@ def test_expection_when_operator_not_in_same_dir(mocker):
     mocker.patch('subprocess.check_output', e2e.mocked_helm_list_returns_empty_json)
     extra_args = [
         "--version",    "1.5.0",
-        "--filepath",   utils.test_val_file,
+        "-f",   utils.test_val_file,
         c.insights_tgz
     ]
 
@@ -162,7 +162,7 @@ def test_tgz_only_calls_helm_rollback_fail(mocker):
     extra_args = [
         "--operator-revision", "1",
         "--operator-chart",    c.operator_tgz_123,
-        "--namespace", c.test_namespace,
+        "-n", c.test_namespace,
         "--assembly-backup-filepath",   e2e.test_asm_backup
     ]
     user_input = f"""y

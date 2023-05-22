@@ -94,21 +94,24 @@ def test_interactive_prompt(capsys, monkeypatch):
 
 def test_prompt_error_message():
     test_option = options.Option('--test-option', config_name = 'test.option')
-    assert options.prompt_error_message(
-        options.Option('--test-option', config_name = 'test.option')
-        ) == f'Could not find expected option. Please set command line argument --test-option or configuration value test.option in config file {common.config.config_file}'
+    msg = options.prompt_error_message(options.Option('--test-option', config_name = 'test.option')) 
+    assert msg == f'Could not find expected option. Please set command line argument (\'--test-option\',) or configuration value test.option in config file {common.config.config_file}'
 
-    assert options.prompt_error_message(
+    msg = options.prompt_error_message(
         options.Option('--test-option')
-        ) == 'Could not find expected option. Please set command line argument --test-option'
+        )
+    assert msg == 'Could not find expected option. Please set command line argument (\'--test-option\',)'
 
-    assert options.prompt_error_message(
+    msg = options.prompt_error_message(
         options.Option(config_name = 'test.option')
-        ) == f'Could not find expected option. Please set configuration value test.option in config file {common.config.config_file}'
+        )
+    
+    assert msg == f'Could not find expected option. Please set configuration value test.option in config file {common.config.config_file}'
 
-    assert options.prompt_error_message(
+    msg =  options.prompt_error_message(
         options.Option()
-        ) == 'Could not find expected option.'
+        ) 
+    assert msg == 'Could not find expected option.'
 
 
 def test_options_generate_password():
@@ -120,7 +123,7 @@ def test_options_generate_password():
 
 def test_options_namespace_decorator():
     assert options.namespace.decorator().func == click.option
-    assert options.namespace.decorator().args == ('--namespace',)
+    assert options.namespace.decorator().args == ('-n', '--namespace',)
     assert options.namespace.decorator().keywords['help'] == 'Kubernetes namespace'
     assert options.namespace.decorator().keywords['default']() == utils.namespace()
 
@@ -168,7 +171,7 @@ def test_options_operator_version_decorator():
 
 def test_options_filepath_decorator():
     assert options.filepath.decorator().func == click.option
-    assert options.filepath.decorator().args == ('--filepath',)
+    assert options.filepath.decorator().args == ('-f', '--filepath',)
     filepath_dict = options.filepath.decorator().keywords
     filepath_dict.pop('type')
     assert filepath_dict == {'help': 'Values file to install with'}
@@ -221,7 +224,7 @@ def test_options_chart_repo_username_prompt_errors_in_non_interactive(mocker):
     with pytest.raises(Exception) as e:
         options.chart_repo_username.prompt()
     assert isinstance(e.value, click.ClickException)
-    assert f"Could not find expected option. Please set command line argument --chart-repo-username or configuration value chart.repo.username in config file {common.config.config_file}" in e.value.message
+    assert f"Could not find expected option. Please set command line argument (\'--chart-repo-username\',) or configuration value chart.repo.username in config file {common.config.config_file}" in e.value.message
 
 
 def test_options_chart_repo_username_prompt_custom_message(capsys, mocker, monkeypatch):
@@ -300,7 +303,7 @@ def test_options_hostname_prompt_returns_error_in_non_interactive(mocker):
     with pytest.raises(Exception) as e:
         options.hostname.prompt()
     assert isinstance(e.value, click.ClickException)
-    assert f"Could not find expected option. Please set command line argument --hostname or configuration value hostname in config file {common.config.config_file}" in e.value.message
+    assert f"Could not find expected option. Please set command line argument (\'--hostname\', \'--ingress-host\') or configuration value hostname in config file {common.config.config_file}" in e.value.message
     common.config.load_config("default")
 
 
@@ -311,5 +314,5 @@ def test_options_filepath_prompt():
     with pytest.raises(Exception) as e:
         options.filepath.prompt()
     assert isinstance(e.value, click.ClickException)
-    assert f'Could not find expected option. Please set command line argument --filepath or configuration value install.filepath in config file {common.config.config_file}' in e.value.message
+    assert f'Could not find expected option. Please set command line argument (\'-f\', \'--filepath\') or configuration value install.filepath in config file {common.config.config_file}' in e.value.message
 

@@ -31,7 +31,7 @@ API_PLURAL = 'assemblies'
 CONFIG_ANNOTATION = 'kubectl.kubernetes.io/last-applied-configuration'
 ASM_LABEL_SELECTOR = 'insights.kx.com/queryEnvironment!=true'
 
-local_arg_assembly_backup_filepath = assembly_backup_filepath.decorator(click_option_args=['--filepath'])
+local_arg_assembly_backup_filepath = assembly_backup_filepath.decorator(click_option_args=['-f', '--filepath'])
 
 
 @click.group(cls=ClickAliasedGroup)
