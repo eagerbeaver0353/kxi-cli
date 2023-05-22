@@ -42,6 +42,9 @@ python3 -m pip install --upgrade pip
 # Installs the CLI with optional dev dependencies
 pip install  --extra-index-url $NEXUS_I_PYPI --editable .[dev]
 
+# Mac/zsh
+# pip install  --extra-index-url $NEXUS_I_PYPI --editable \.\[dev\]
+
 deactivate
 export PATH=$(pwd)/venv/bin:${PATH}
 ```
