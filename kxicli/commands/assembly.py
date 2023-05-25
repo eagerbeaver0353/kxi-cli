@@ -21,6 +21,7 @@ from kxicli.commands import assembly_kxicontroller
 from kxicli.commands.common import arg
 from kxicli.common import get_default_val as default_val
 from kxicli.common import get_help_text as help_text
+from kxicli import options
 from kxicli.options import namespace as options_namespace, assembly_backup_filepath, assembly_filepath, \
      hostname as options_hostname, client_id as options_client_id, \
      client_secret as options_client_secret, realm as options_realm
@@ -515,7 +516,7 @@ def get_preferred_api_version(group_name):
     return version
 
 def get_kxic_options(hostname, client_id, client_secret, realm):
-    hostname = options_hostname.prompt(hostname, silent=True)
+    hostname = common.sanitize_hostname(options.hostname.prompt(hostname, silent=True))
     client_id = options_client_id.prompt(client_id)
     client_secret = options_client_secret.prompt(client_secret)
     realm = options_realm.prompt(realm)

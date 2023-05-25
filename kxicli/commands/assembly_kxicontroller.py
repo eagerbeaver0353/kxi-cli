@@ -10,7 +10,7 @@ def list(hostname, token):
         'Authorization': f'Bearer {token}'
     }
 
-    res = requests.get(f'{hostname}/kxicontroller/assembly/', headers=headers)
+    res = requests.get(f'https://{hostname}/kxicontroller/assembly/', headers=headers)
     res.raise_for_status()
     assemblies = json.loads(res.text)
 
@@ -23,7 +23,7 @@ def status(hostname, token, name):
         'Authorization': f'Bearer {token}'
     }
     
-    url = f'{hostname}/kxicontroller/assembly/cli/{name}'
+    url = f'https://{hostname}/kxicontroller/assembly/cli/{name}'
     res = requests.get(url, headers=headers)
 
     if res.status_code == 404:
@@ -44,7 +44,7 @@ def deploy(hostname, token, payload):
         'Authorization': f'Bearer {token}'
     }
 
-    res = requests.post(f'{hostname}/kxicontroller/assembly/cli/deploy', headers=headers, json=payload)
+    res = requests.post(f'https://{hostname}/kxicontroller/assembly/cli/deploy', headers=headers, json=payload)
     res.raise_for_status()
 
     return True
@@ -56,7 +56,7 @@ def teardown(hostname, token, name):
         'Authorization': f'Bearer {token}'
     }
     
-    url = f'{hostname}/kxicontroller/assembly/cli/{name}/teardown'
+    url = f'https://{hostname}/kxicontroller/assembly/cli/{name}/teardown'
     res = requests.post(url, headers=headers)
     
     if res.status_code == 404:
