@@ -9,11 +9,12 @@ import requests
 import subprocess
 import tarfile
 import time
+from requests.exceptions import HTTPError
 
 from kxicli import config
 from kxicli import log
 from kxicli import phrases
-
+from kxicli import common
 
 key_install_outputFile = 'install.outputFile'
 key_chart_repo_name = 'chart.repo.name'
@@ -136,25 +137,18 @@ def get_default_val(option):
 
     return None
 
+def sanitize_hostname(raw_string):
+    """Sanitize a hostname to allow it to be used"""
+    return raw_string.replace('http://', '').replace('https://', '').rstrip('/')
 
-def validate_hostname(hostname):
-    if hostname is None:
-        raise click.ClickException(phrases.hostname_none)
-    elif not hostname.startswith(('http://', 'https://')):
-        raise click.ClickException(phrases.hostname_prefix.format(hostname=hostname))
-    else:
-        hostname = hostname.rstrip('/')
-    
-    return hostname
-            
 def is_interactive_session():
     return sys.stdout.isatty() and '--force' not in sys.argv
 
 def get_access_token(hostname, client_id, client_secret, realm):
     """Get Keycloak client access token"""
     log.debug('Requesting access token')
-    hostname = validate_hostname(hostname)
-    url = f'{hostname}/auth/realms/{realm}/protocol/openid-connect/token'
+    hostname = sanitize_hostname(hostname)
+    url = f'https://{hostname}/auth/realms/{realm}/protocol/openid-connect/token'
     headers = {
         'Content-Type': 'application/x-www-form-urlencoded'
     }
@@ -164,19 +158,19 @@ def get_access_token(hostname, client_id, client_secret, realm):
         'client_secret': client_secret
     }
 
-    r = requests.post(url, headers=headers, data=payload)
-    if r:
+    try:
+        r = requests.post(url, headers=headers, data=payload)
+        r.raise_for_status()
         return r.json()['access_token']
-
-    raise click.ClickException('Failed to request access token')
+    except HTTPError as e:
+        handle_http_exception(e, "Failed to request access token: ")
 
 
 def get_admin_token(hostname, username, password):
     """Get Keycloak Admin API token from hostname"""
     log.debug('Requesting admin access token')
-    
-    hostname = validate_hostname(hostname)
-    url = f'{hostname}/auth/realms/master/protocol/openid-connect/token'
+    hostname = sanitize_hostname(hostname)
+    url = f'https://{hostname}/auth/realms/master/protocol/openid-connect/token'
     headers = {
         'Content-Type': 'application/x-www-form-urlencoded'
     }
@@ -187,11 +181,13 @@ def get_admin_token(hostname, username, password):
         'password': password,
         'client_id': 'admin-cli'
     }
-    r = requests.post(url, headers=headers, data=payload)
-    if r:
-        return r.json()['access_token']
 
-    raise click.ClickException('Failed to request admin access token')
+    try:
+        r = requests.post(url, headers=headers, data=payload)
+        r.raise_for_status()
+        return r.json()['access_token']
+    except HTTPError as e:
+        handle_http_exception(e, 'Failed to request admin access token: ')
 
 
 def load_kube_config():
@@ -310,3 +306,20 @@ def parse_called_process_error(exception: subprocess.CalledProcessError):
     command = " ".join(exception.cmd)
 
     return f'Command "{command}" failed with output:\n {stdout} {stderr}'
+
+def parse_http_exception(e: HTTPError):
+    res = e.response
+    if "errorMessage" in res.json():
+        msg = res.json()["errorMessage"]
+    elif "error" in res.json():
+        msg = res.json()["error"]
+    else:
+        msg = res
+    return res, msg
+
+def handle_http_exception(e: HTTPError, prefix: str):
+    if hasattr(e, "response"):
+        res, msg = parse_http_exception(e)
+        raise click.ClickException(f"{prefix} {res.status_code} {res.reason} ({msg})")
+    else:
+        raise click.ClickException(e)

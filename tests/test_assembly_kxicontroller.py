@@ -10,7 +10,7 @@ from utils import return_none
 common.config.config_file = os.path.dirname(__file__) + '/files/test-cli-config'
 common.config.load_config("default")
 
-TEST_HOSTNAME = 'https://test.kx.com'
+TEST_HOSTNAME = 'test.kx.com'
 TEST_CLIENT_ID = 'test'
 TEST_CLIENT_SECRET = 'secret'
 

@@ -5,17 +5,23 @@ import yaml
 from pathlib import Path
 import click
 import time
+from requests.exceptions import HTTPError
+import requests
+import json
+from functools import partial
 
 from kxicli import common
 from kxicli import config
 from kxicli import phrases
 from utils import mock_kube_crd_api,mock_load_kube_config, mock_load_kube_config_incluster,  get_crd_body, raise_not_found, raise_conflict, return_none, IPATH_CLICK_PROMPT
-
+import mocks
 config.load_config('default')
 
 test_kube_config = os.path.dirname(__file__) + '/files/test-kube-config'
 
 PASSWORD = 's3cr3t'
+TEST_ACCESS_TOKEN = 'abc1234'
+
 
 PASSWORD_LIST = [
     'test',
@@ -34,7 +40,6 @@ def mocked_all_crds_exist(name):
 
 def mocked_one_crd_exists(name):
     return name == 'testcrd'
-
 
 def test_get_existing_crds_return_all_crds(mocker):
     mocker.patch('kxicli.common.crd_exists', mocked_all_crds_exist)
@@ -229,33 +234,54 @@ def test_load_incluster_pass_load_fails(mocker, capsys):
     assert res is None  
 
 def test_get_access_token_raises_exception(mocker):
-    mocker.patch('requests.post', return_none)
+    mocker.patch('requests.post', partial(
+        mocks.http_response, 
+        status_code=404,
+        content=json.dumps({'message': "Unknown", 'detail': {'message': "HTTP Error"}}).encode('utf-8')
+    ))
     with pytest.raises(Exception) as e:
-        common.get_access_token(hostname='https://test.kx.com', client_id='1234', client_secret='super-secret', realm='test')
+        common.get_access_token(hostname='test.kx.com', client_id='1234', client_secret='super-secret', realm='test')
     assert isinstance(e.value, click.ClickException)
-    assert e.value.message == 'Failed to request access token'
+    assert e.value.message == 'Failed to request access token:  404 None (<Response [404]>)'
 
 def test_get_admin_token_raises_exception(mocker):
-    mocker.patch('requests.post', return_none)
+    mocker.patch('requests.post', partial(
+        mocks.http_response, 
+        status_code=404,
+        content=json.dumps({'message': "Unknown", 'detail': {'message': "HTTP Error"}}).encode('utf-8')
+    ))
     with pytest.raises(Exception) as e:
-        common.get_admin_token(hostname='https://test.kx.com', username='username', password='password')
+        common.get_admin_token(hostname='test.kx.com', username='username', password='password')
     assert isinstance(e.value, click.ClickException)
-    assert e.value.message == 'Failed to request admin access token'
-     
-    
-def test_validate_hostname_pass(mocker):    
-    hostname='https://test_host'  
-    res = common.validate_hostname(hostname)    
-    assert res == hostname
-         
-def test_validate_hostname_exception(mocker):    
-    with pytest.raises(Exception) as e:
-        common.validate_hostname('test_host')
-    assert isinstance(e.value, click.ClickException)
-    assert e.value.message == phrases.hostname_prefix.format(hostname='test_host')
+    assert e.value.message == 'Failed to request admin access token:  404 None (<Response [404]>)'
 
-def test_validate_hostname_none_exception(mocker):
-    with pytest.raises(Exception) as e:
-        common.validate_hostname(None)
-    assert isinstance(e.value, click.ClickException)
-    assert e.value.message == phrases.hostname_none
+def test_get_admin_token_returns_access_token(mocker):
+    mocker.patch('requests.post', partial(
+        mocks.http_response, 
+        status_code=200,
+        content=json.dumps({'access_token':TEST_ACCESS_TOKEN}).encode('utf-8')
+    ))
+    r = common.get_admin_token(hostname='test.kx.com', username='username', password='password')
+    assert isinstance(r, str)
+    assert r == TEST_ACCESS_TOKEN
+
+def mocked_json_response(**kwargs):
+    sample = {
+        'error': 'sampl_error'
+    }
+    return sample
+def test_parse_http_exception(mocker):
+    #mocker.patch('e.response', mocked_json_response)
+    e = HTTPError()
+    e.response = requests.Response()
+    e.response.status_code = 200
+    e.response._content=json.dumps({ 'errorMessage':'ErrorMessageError'}).encode('utf-8')
+    res, msg = common.parse_http_exception(e)
+    assert msg == "ErrorMessageError"
+
+    e = HTTPError()
+    e.response = requests.Response()
+    e.response.status_code = 200
+    e.response._content=json.dumps({ 'error':'ErrorError'}).encode('utf-8')
+    res, msg = common.parse_http_exception(e)
+    assert msg == "ErrorError"
