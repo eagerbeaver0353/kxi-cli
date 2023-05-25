@@ -1,5 +1,5 @@
 import click
-import random
+import secrets
 import string
 import kubernetes as k8s
 import kxicli.common
@@ -68,7 +68,7 @@ def prompt_error_message(self):
 
 
 def generate_password():
-    return ''.join(random.SystemRandom().choice(string.ascii_letters + string.digits) for _ in range(10))
+    return ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(10))
 
 
 class Option():
