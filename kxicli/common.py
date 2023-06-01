@@ -194,12 +194,9 @@ def load_kube_config():
     global CONFIG_ALREADY_LOADED        
     if not CONFIG_ALREADY_LOADED:        
         try:
-            k8s.config.load_incluster_config()                    
+            k8s.config.load_config()
         except k8s.config.ConfigException:
-            try:
-                k8s.config.load_kube_config()
-            except k8s.config.ConfigException:
-                raise click.ClickException("Kubernetes cluster config not found")                                  
+            raise click.ClickException("Kubernetes cluster config not found")
     CONFIG_ALREADY_LOADED = True
 
 def read_crd(name):
