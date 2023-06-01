@@ -185,13 +185,20 @@ def mock_config_exception():
 def mock_incluster_config_exception():
     raise k8s.config.config_exception.ConfigException('Service host/port is not set.')
 
-def mock_load_kube_config(mocker):
+def mock_incluster_config_load_success():
+    return
+
+def mock_load_kube_config_raises_exception(mocker):
     CUSTOM_OBJECT_API = 'kubernetes.config.load_kube_config'
     mocker.patch(CUSTOM_OBJECT_API, mock_config_exception)
 
-def mock_load_kube_config_incluster(mocker):
+def mock_load_kube_config_incluster_raises_exception(mocker):
     CUSTOM_OBJECT_API = 'kubernetes.config.load_incluster_config'
     mocker.patch(CUSTOM_OBJECT_API, mock_incluster_config_exception)
+
+def mock_load_kube_config_incluster_success(mocker):
+    CUSTOM_OBJECT_API = 'kubernetes.config.load_incluster_config'
+    mocker.patch(CUSTOM_OBJECT_API, mock_incluster_config_load_success)
 
 def mock_list_kube_config_contexts(mocker):
     CUSTOM_OBJECT_API = 'kubernetes.config.list_kube_config_contexts'

@@ -13,7 +13,7 @@ from functools import partial
 from kxicli import common
 from kxicli import config
 from kxicli import phrases
-from utils import mock_kube_crd_api,mock_load_kube_config, mock_load_kube_config_incluster,  get_crd_body, raise_not_found, raise_conflict, return_none, IPATH_CLICK_PROMPT
+from utils import mock_kube_crd_api, mock_load_kube_config_raises_exception, mock_load_kube_config_incluster_raises_exception, mock_load_kube_config_incluster_success, get_crd_body, raise_not_found, raise_conflict, return_none, IPATH_CLICK_PROMPT
 import mocks
 config.load_config('default')
 
@@ -202,36 +202,36 @@ def test_enter_password_prompts_again_if_they_dont_match(mocker, capsys):
     assert PASSWORD == res
     assert phrases.password_no_match in captured.out
 
-
-def test_load_kube_config(mocker, capsys):
+def test_load_kube_config_kubeconfig_success(mocker, capsys):
     mocker.patch('kxicli.common.CONFIG_ALREADY_LOADED', False)  
-    mock_load_kube_config_incluster(mocker)
+    mock_load_kube_config_incluster_raises_exception(mocker)
     mocker.patch('kubernetes.config.load_kube_config')
     res = common.load_kube_config()     
     assert res is None
-    
+
+def test_load_kube_config_incluster_success(mocker, capsys):
+    mocker.patch('kxicli.common.CONFIG_ALREADY_LOADED', False)
+    mocker.patch('kubernetes.config.load_config')
+    mock_load_kube_config_raises_exception(mocker)
+    mock_load_kube_config_incluster_success(mocker)
+    res = common.load_kube_config()
+    assert res is None
+
 def test_load_kube_config_second_run(mocker, capsys):
     mocker.patch('kxicli.common.CONFIG_ALREADY_LOADED', True)      
-    mock_load_kube_config_incluster(mocker)
+    mock_load_kube_config_incluster_raises_exception(mocker)
     mocker.patch('kubernetes.config.load_kube_config')    
     res = common.load_kube_config() 
     assert res is None
-    
+
 def test_load_kube_config_no_config(mocker, capsys):    
-    mock_load_kube_config(mocker)
-    mock_load_kube_config_incluster(mocker)
+    mock_load_kube_config_raises_exception(mocker)
+    mock_load_kube_config_incluster_raises_exception(mocker)
     mocker.patch('kxicli.common.CONFIG_ALREADY_LOADED', False)    
     with pytest.raises(Exception) as e:
         common.load_kube_config()         
     assert isinstance(e.value, click.ClickException)
     assert "Kubernetes cluster config not found" in e.value.message   
-           
-def test_load_incluster_pass_load_fails(mocker, capsys):    
-    mocker.patch('kxicli.common.CONFIG_ALREADY_LOADED', False)
-    mocker.patch('kubernetes.config.load_incluster_config')
-    mock_load_kube_config(mocker)
-    res = common.load_kube_config()         
-    assert res is None  
 
 def test_get_access_token_raises_exception(mocker):
     mocker.patch('requests.post', partial(

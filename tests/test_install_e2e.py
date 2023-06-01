@@ -835,7 +835,7 @@ def test_install_setup_creates_new_when_values_file_exists(mocker):
 def test_install_setup_errors_with_no_kube_context(mocker):
     setup_mocks(mocker)
     utils.mock_list_kube_config_contexts(mocker)
-    utils.mock_load_kube_config_incluster(mocker)
+    utils.mock_load_kube_config_incluster_raises_exception(mocker)
     with temp_test_output_file() as test_output_file, temp_config_file() as test_cli_config:
         runner = CliRunner()
         with runner.isolated_filesystem():
