@@ -13,6 +13,7 @@ include:
       - 'security/security.yaml'
       - 'deploy/record-results.yml'
       - "insights/data-science/common.yaml"
+      - "release/promote-release-version.yaml"      
 
 stages:
   - build
@@ -276,3 +277,8 @@ spell-check:
     - !reference [ .default-rules, rules ]
   script:
     - cspell "kxicli/**/*.py"
+
+update-release-operator-version:
+  extends: .update_component_version
+  variables:
+    INSIGHTS_COMPONENT_NAME: "kxi-cli"
