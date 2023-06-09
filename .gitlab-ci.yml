@@ -13,6 +13,7 @@ include:
       - 'security/security.yaml'
       - 'deploy/record-results.yml'
       - "insights/data-science/common.yaml"
+      - "release/promote-release-version.yaml"      
 
 stages:
   - build
@@ -22,6 +23,7 @@ stages:
   - sonarqube
   - publish
   - docs
+  - release
 
 variables:
   PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
@@ -276,3 +278,8 @@ spell-check:
     - !reference [ .default-rules, rules ]
   script:
     - cspell "kxicli/**/*.py"
+
+update-release-version:
+  extends: .update_component_version
+  variables:
+    INSIGHTS_COMPONENT_NAME: "kxi-cli"
