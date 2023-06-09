@@ -279,7 +279,7 @@ spell-check:
   script:
     - cspell "kxicli/**/*.py"
 
-update-release-operator-version:
+update-release-version:
   extends: .update_component_version
   variables:
     INSIGHTS_COMPONENT_NAME: "kxi-cli"
