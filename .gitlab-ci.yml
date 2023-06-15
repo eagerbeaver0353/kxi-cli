@@ -5,6 +5,7 @@ default:
   interruptible: true
 
 include:
+  - template: Security/Secret-Detection.gitlab-ci.yml  
   - project: 'kxdev/shared-tools/ci-templates'
     ref: main
     file:
@@ -20,7 +21,7 @@ stages:
   - test
   - visualisation
   - report-results
-  - sonarqube
+  - security
   - publish
   - docs
   - release
@@ -262,7 +263,7 @@ pages:
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
 
 sonarqube-check:
-  stage: sonarqube
+  stage: security
   extends: .sonar-template
   needs:
     - unit-tests-3.8
@@ -283,3 +284,14 @@ update-release-version:
   extends: .update_component_version
   variables:
     INSIGHTS_COMPONENT_NAME: "kxi-cli"
+
+secret_detection:
+  stage: security
+  variables:
+    SECRET_DETECTION_HISTORIC_SCAN: "true"
+  artifacts:
+    paths:
+      - gl-secret-detection-report.json
+    reports:
+      secret_detection: gl-secret-detection-report.json
+
