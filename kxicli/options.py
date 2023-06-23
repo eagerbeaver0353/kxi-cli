@@ -29,7 +29,8 @@ def print_option_source(message, val, password, silent):
         return None
     if not password:
         message = message + f': {val}'
-    click.echo(message)
+    # Write notice information to stderr
+    click.echo(message, err=True)
 
 
 def print_cmd_line_option(message, val, password, default, silent):
