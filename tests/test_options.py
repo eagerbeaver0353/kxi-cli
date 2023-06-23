@@ -32,45 +32,45 @@ def test_get_namespace(mocker):
 
 def test_print_option_source(capsys):
     options.print_option_source('Print option source with value', 'test_value', False, False)
-    assert capsys.readouterr().out == 'Print option source with value: test_value\n'
+    assert capsys.readouterr().err == 'Print option source with value: test_value\n'
 
     options.print_option_source('Print option source but hide password value', 'test_value', True, False)
-    assert capsys.readouterr().out == 'Print option source but hide password value\n'
+    assert capsys.readouterr().err == 'Print option source but hide password value\n'
     
     options.print_option_source('Print option source with non-string value', 1234, False, False)
-    assert capsys.readouterr().out == 'Print option source with non-string value: 1234\n'
+    assert capsys.readouterr().err == 'Print option source with non-string value: 1234\n'
 
     options.print_option_source('Silent option source', 'test_value', False, True)
-    assert capsys.readouterr().out == ''
+    assert capsys.readouterr().err == ''
 
 
 def test_print_cmd_line_option(capsys):
     options.print_cmd_line_option('Print value from command-line without default', 'a-test-value', False, None, False)
-    assert capsys.readouterr().out == 'Print value from command-line without default: a-test-value\n'
+    assert capsys.readouterr().err == 'Print value from command-line without default: a-test-value\n'
 
     options.print_cmd_line_option('Print value from command-line without default, hiding password value', 'a-test-value', True, None, False)
-    assert capsys.readouterr().out == 'Print value from command-line without default, hiding password value\n'
+    assert capsys.readouterr().err == 'Print value from command-line without default, hiding password value\n'
 
     options.print_cmd_line_option('Print value from command-line with None default lambda', 'a-test-value', False, lambda: None, False)
-    assert capsys.readouterr().out == 'Print value from command-line with None default lambda: a-test-value\n'
+    assert capsys.readouterr().err == 'Print value from command-line with None default lambda: a-test-value\n'
 
     options.print_cmd_line_option('Print value from command-line with None default lambda, hiding password value', 'a-test-value', True, lambda: None, False)
-    assert capsys.readouterr().out == 'Print value from command-line with None default lambda, hiding password value\n'
+    assert capsys.readouterr().err == 'Print value from command-line with None default lambda, hiding password value\n'
 
     options.print_cmd_line_option('Hide value from command-line with default value', 'a-test-value', False, 'a-default-value', False)
-    assert capsys.readouterr().out == ''
+    assert capsys.readouterr().err == ''
 
     options.print_cmd_line_option('Hide value from command-line with default value as password', 'a-test-value', True, 'a-default-value', False)
-    assert capsys.readouterr().out == ''
+    assert capsys.readouterr().err == ''
 
     options.print_cmd_line_option('Hide value from command-line with default lambda, not as password', 'a-test-value', False, lambda: 'a-default-value', False)
-    assert capsys.readouterr().out == ''
+    assert capsys.readouterr().err == ''
 
     options.print_cmd_line_option('Hide value from command-line with default lambda as password', 'a-test-value', True, lambda: 'a-default-value', False)
-    assert capsys.readouterr().out == ''
+    assert capsys.readouterr().err == ''
 
     options.print_cmd_line_option('Hide value from command-line when silent', 'a-test-value', False, 'a-default-value', True)
-    assert capsys.readouterr().out == ''
+    assert capsys.readouterr().err == ''
 
 def test_get_prompt_message():
     test_option = options.Option(
