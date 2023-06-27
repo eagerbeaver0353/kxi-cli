@@ -527,11 +527,11 @@ def filter_max_operator_version(
     versions: list[str],
     insights_version: str,
 ) -> Optional[str]:
-    regex = '-rc.[0-9]+$' if '-rc.' in insights_version else ''
-    matching_versions = []
     minor_version = get_minor_version(insights_version)
+    regex = minor_version + ('\.(0|[1-9]\d*)($|-rc.[1-9]\d*$)' if '-rc.' in insights_version else '\.(0|[1-9]\d*$)')
+    matching_versions = []
     for version in versions:
-        if re.search(regex, version) and version.startswith(minor_version):
+        if re.fullmatch(regex, version):
             matching_versions.append(version)
     if matching_versions == []:
         log.warn(f'Cannot find operator version to install matching insights minor version {insights_version}')
