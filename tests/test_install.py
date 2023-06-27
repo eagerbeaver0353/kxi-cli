@@ -358,7 +358,7 @@ def test_get_operator_version_returns_latest_minor_version_multiple_versions(moc
     mocker.patch('subprocess.run', mocked_helm_search_returns_valid_json_optional_multiple_versions)
     utils.mock_helm_repo_list(mocker)
     chart = helm_chart.Chart('kx-insights/insights')
-    assert install.get_operator_version(chart, '1.3.0', None) == '1.3.1-rc.1'
+    assert install.get_operator_version(chart, '1.3.0', None) is None
 
 def test_get_operator_version_returns_latest_minor_version_rc(mocker):
     mocker.patch('subprocess.run', mocked_helm_search_returns_valid_json_rc)
@@ -585,6 +585,48 @@ def test_filter_max_operator_version_no_match():
     operator_versions = ['1.0.0-rc.1', '1.0.0-rc.2', '1.0.1']
     insights_version = '2.0.0'
     assert install.filter_max_operator_version(operator_versions, insights_version) is None
+
+def test_filter_max_operator_version_with_temp():
+    operator_versions = ['1.6.0', '1.6.1-rc.1-mr-161holding+sha.ffa3b2b9', '1.6.1-rc.1', '1.7.0']
+    insights_version = '1.6.0'
+    res = install.filter_max_operator_version(operator_versions, insights_version)
+    assert res == '1.6.0'
+
+def test_filter_max_operator_version_with_op_ahead():
+    operator_versions = ['1.6.0', '1.6.1-rc.1-mr-161holding+sha.ffa3b2b9', '1.6.1-rc.1', '1.6.1']
+    insights_version = '1.6.0'
+    res = install.filter_max_operator_version(operator_versions, insights_version)
+    assert res == '1.6.1'
+
+def test_filter_max_operator_version_with_temp_and_rc():
+    operator_versions = ['1.6.0', '1.6.1-rc.2-mr-161holding+sha.ffa3b2b9', '1.6.1-rc.1', '1.6.1']
+    insights_version = '1.6.0-rc.2'
+    res = install.filter_max_operator_version(operator_versions, insights_version)
+    assert res == '1.6.1'
+
+def test_filter_max_operator_version_with_no_matching_op():
+    operator_versions = ['1.6.0', '1.6.1-rc.2-mr-161holding+sha.ffa3b2b9', '1.6.1-rc.1', '1.6.1']
+    insights_version = '1.7.0'
+    res = install.filter_max_operator_version(operator_versions, insights_version)
+    assert res is None
+
+def test_filter_max_operator_version_with_no_matching_op_and_rc():
+    operator_versions = ['1.6.0', '1.6.1-rc.2-mr-161holding+sha.ffa3b2b9', '1.6.1-rc.1', '1.6.1']
+    insights_version = '1.7.0-rc.1'
+    res = install.filter_max_operator_version(operator_versions, insights_version)
+    assert res is None
+
+def test_filter_max_operator_version_with_op_released():
+    operator_versions = ['1.6.0', '1.6.1-rc.1-mr-161holding+sha.ffa3b2b9', '1.6.1-rc.3', '1.6.1']
+    insights_version = '1.6.1-rc.1'
+    res = install.filter_max_operator_version(operator_versions, insights_version)
+    assert res == '1.6.1'
+
+def test_filter_max_operator_version_with_rcs():
+    operator_versions = ['1.6.0', '1.6.1-rc.3-mr-161holding+sha.ffa3b2b9', '1.6.1-rc.2', '1.6.0']
+    insights_version = '1.6.1-rc.1'
+    res = install.filter_max_operator_version(operator_versions, insights_version)
+    assert res == '1.6.1-rc.2'
 
 def test_check_for_operator_install_returns_version_to_install(mocker):
     # Operator not already installed, compatible version avaliable on repo
