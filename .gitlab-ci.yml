@@ -284,6 +284,8 @@ update-release-version:
   extends: .update_component_version
   variables:
     INSIGHTS_COMPONENT_NAME: "kxi-cli"
+  needs:
+    - publish package
 
 secret_detection:
   stage: security
