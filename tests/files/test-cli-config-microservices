@@ -1,0 +1,4 @@
+[default]
+usage = microservices
+hostname = https://test.kx.com
+tp_port = 5010

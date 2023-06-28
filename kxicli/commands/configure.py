@@ -1,7 +1,11 @@
 import click
+from kxi import DeploymentType
 from kxicli import config
+from kxicli.cli_group import cli
 
-@click.command()
+
+
+@cli.command(usage=[DeploymentType.MICROSERVICES, DeploymentType.ENTERPRISE])
 @click.option('--profile', default='default', help='Name of profile to configure.')
 def configure(profile):
     """Configure the CLI"""

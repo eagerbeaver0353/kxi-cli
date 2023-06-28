@@ -1,4 +1,5 @@
 [default]
+usage = enterprise
 hostname = https://test.kx.com
 namespace = test
 client.id = client

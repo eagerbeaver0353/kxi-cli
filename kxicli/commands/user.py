@@ -7,6 +7,7 @@ from kxicli import common
 
 from kxicli.commands.common import arg
 from kxicli.resources.user import UserManager, RoleNotFoundException
+from kxicli.cli_group import ProfileAwareGroup, cli
 
 def get_user_manager(
     hostname: str,
@@ -21,9 +22,10 @@ def get_user_manager(
     admin_password = options.admin_password.prompt(admin_password, silent=True)
     return UserManager(hostname, admin_user, admin_password, realm, timeout)
 
-@click.group()
+@cli.group(cls=ProfileAwareGroup)
 def user():
     """Insights user commands"""
+
 
 @user.command()
 @click.argument('username')

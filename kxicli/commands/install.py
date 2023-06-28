@@ -24,7 +24,7 @@ from kxicli import common
 from kxicli import log
 from kxicli import options
 from kxicli import phrases
-from kxicli.cli_group import cli
+from kxicli.cli_group import cli, ProfileAwareGroup
 from kxicli.commands import assembly
 from kxicli.commands.common import arg
 from kxicli.commands.common.namespace import create_namespace
@@ -66,7 +66,7 @@ license_key = 'license.secret'
 image_pull_key = 'image.pullSecret'
 
 
-@cli.group('install', cls=ClickAliasedGroup, aliases=['azure'])
+@cli.group('install', cls=ProfileAwareGroup, aliases=['azure'])
 def install():
     """Insights installation commands"""
 

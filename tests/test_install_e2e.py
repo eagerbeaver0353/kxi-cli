@@ -561,6 +561,7 @@ def test_install_setup_when_reading_client_passwords_from_cli_config(mocker):
         assert compare_files(test_output_file, test_output_file_updated_passwords_config)
         with open(test_cli_config, "r") as f:
             assert f.read() == """[default]
+usage = enterprise
 hostname = https://test.kx.com
 namespace = test
 client.id = client
@@ -587,6 +588,7 @@ def test_install_setup_when_reading_client_passwords_from_command_line(mocker):
         assert compare_files(test_output_file, test_output_file_updated_passwords_cmd_line)
         with open(test_cli_config, "r") as f:
             assert f.read() == """[default]
+usage = enterprise
 hostname = https://test.kx.com
 namespace = test
 client.id = client
@@ -632,6 +634,7 @@ def test_install_setup_when_secrets_exist_and_are_valid(mocker):
         assert compare_files(test_output_file, utils.test_val_file)
         with open(test_cli_config, "r") as f:
             assert f.read() == """[default]
+usage = enterprise
 hostname = https://test.kx.com
 namespace = test
 client.id = client

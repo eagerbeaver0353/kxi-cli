@@ -6,6 +6,7 @@ import click
 from kxicli import azure_ad
 from keycloak import keycloak_admin
 from kxicli import common
+from kxicli.cli_group import ProfileAwareGroup
 
 from azure.identity import DefaultAzureCredential
 from kxicli.commands.install import install
@@ -98,12 +99,12 @@ def log_exception(func=None, *, handle):
     return wrapper
 
 
-@install.group()
+@install.group(cls=ProfileAwareGroup)
 def idp():
     """Azure Identity Provider commands"""
 
 
-@idp.group()
+@idp.group(cls=ProfileAwareGroup)
 def mapper():
     """Identity Provider mapper commands"""
 

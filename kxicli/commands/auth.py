@@ -3,8 +3,9 @@ import click
 from kxicli import common
 from kxicli import options
 from kxicli.commands.common import arg
+from kxicli.cli_group import ProfileAwareGroup, cli
 
-@click.group()
+@cli.group(cls=ProfileAwareGroup)
 def auth():
     """Authentication and authorization commands"""
 

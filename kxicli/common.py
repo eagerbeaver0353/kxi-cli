@@ -14,7 +14,6 @@ from requests.exceptions import HTTPError
 from kxicli import config
 from kxicli import log
 from kxicli import phrases
-from kxicli import common
 
 key_install_outputFile = 'install.outputFile'
 key_chart_repo_name = 'chart.repo.name'

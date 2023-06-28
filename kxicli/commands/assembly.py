@@ -21,6 +21,7 @@ from kxicli.commands import assembly_kxicontroller
 from kxicli.commands.common import arg
 from kxicli.common import get_default_val as default_val
 from kxicli.common import get_help_text as help_text
+from kxicli.cli_group import ProfileAwareGroup, cli
 from kxicli import options
 from kxicli.options import namespace as options_namespace, assembly_backup_filepath, assembly_filepath, \
      hostname as options_hostname, client_id as options_client_id, \
@@ -35,7 +36,7 @@ ASM_LABEL_SELECTOR = 'insights.kx.com/queryEnvironment!=true'
 local_arg_assembly_backup_filepath = assembly_backup_filepath.decorator(click_option_args=['-f', '--filepath'])
 
 
-@click.group(cls=ClickAliasedGroup)
+@cli.group(cls=ProfileAwareGroup)
 def assembly():
     """Assembly interaction commands"""
 
