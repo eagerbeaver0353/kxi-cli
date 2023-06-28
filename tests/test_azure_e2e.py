@@ -148,11 +148,12 @@ class HelmCommandAzureOperator(HelmCommandOperatorInstall):
 @dataclass
 class HelmCommandFetch(HelmCommand):
     version: str = fake_version
-    chart: str = fake_chart_repo_url
-    
+    repo: str = fake_chart_repo_url
+    chart: str = ''
+
     def cmd(self):
         return ['helm', 'fetch',
-                f'{self.chart}/kxi-operator',
+                f'{self.repo}/{self.chart}',
                 '--destination', os.getcwd() + '/tests/files/helm',
                 '--version', self.version,
                 ]
@@ -251,9 +252,10 @@ def test_upgrade(mocker: MockerFixture, cleanup_env_globals):
                 ],
                 env=default_env
             )
-    expected_helm_commands = [    
-                              HelmCommandFetch(),
+    expected_helm_commands = [
+                              HelmCommandFetch(chart='kxi-operator'),
                               HelmCommandAzureOperator(values=values_file_name),
+                              HelmCommandFetch(chart='insights'),
                               HelmCommandAzureInstall(values=values_file_name)
     ]
     install_upgrade_checks(result,
@@ -286,8 +288,9 @@ def test_upgrade_with_no_assemblies_running(mocker: MockerFixture, cleanup_env_g
             env=default_env
         )
     expected_helm_commands = [
-                              HelmCommandFetch(),
+                              HelmCommandFetch(chart='kxi-operator'),
                               HelmCommandAzureOperator(values=values_file_name),
+                              HelmCommandFetch(chart='insights'),
                               HelmCommandAzureInstall(values=values_file_name)
     ]
     install_upgrade_checks(result,
@@ -324,10 +327,11 @@ def test_upgrade_with_chart_repo_url(mocker: MockerFixture, cleanup_env_globals)
                 env=default_env
             )
     expected_helm_commands = [
-                              HelmCommandFetch(chart=test_chart_repo_url),
+                              HelmCommandFetch(repo=test_chart_repo_url, chart='kxi-operator'),
                               HelmCommandAzureOperator(values=values_file_name,
                                                        chart=f'{test_chart_repo_url}/kxi-operator'
                                                        ),
+                              HelmCommandFetch(repo=test_chart_repo_url, chart='insights'),
                               HelmCommandAzureInstall(values=values_file_name,
                                                       chart=f'{test_chart_repo_url}/insights'
                                                       )
@@ -355,8 +359,9 @@ def test_upgrade_without_filepath(mocker: MockerFixture, cleanup_env_globals):
         env=default_env
     )
     expected_helm_commands = [
-                              HelmCommandFetch(),
+                              HelmCommandFetch(chart='kxi-operator'),
                               HelmCommandAzureOperator(values='-'),
+                              HelmCommandFetch(chart='insights'),
                               HelmCommandAzureInstall(values='-')
     ]
     install_upgrade_checks(result,

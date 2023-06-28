@@ -58,7 +58,7 @@ CRD_FILES = [
 ]
 
 CRD_NAMES = [
-    'assemblies.insights.kx.com', 
+    'assemblies.insights.kx.com',
     'assemblyresources.insights.kx.com'
 ]
 
@@ -225,10 +225,10 @@ def setup(namespace, chart_repo_name, chart_repo_url, chart_repo_username,
 @arg.import_users()
 @arg.chart()
 @click.pass_context
-def run(ctx, namespace, chart_repo_name, chart_repo_url, chart_repo_username, 
+def run(ctx, namespace, chart_repo_name, chart_repo_url, chart_repo_username,
           license_secret, license_as_env_var, license_filepath,
           client_cert_secret, image_repo, image_repo_user, image_pull_secret, gui_client_secret, operator_client_secret,
-          keycloak_secret, keycloak_postgresql_secret, keycloak_auth_url, hostname, 
+          keycloak_secret, keycloak_postgresql_secret, keycloak_auth_url, hostname,
           ingress_cert_secret, ingress_cert, ingress_key,
           output_file, filepath, release, version, operator_version, force, import_users, chart):
     """Install kdb Insights Enterprise with a values file"""
@@ -305,7 +305,7 @@ def parse_chart_cli_params(
     if chart_repo_name:
         chart = f"{chart_repo_name}/{extension}"
     elif chart_repo_url and chart_repo_url.startswith('oci://'):
-        chart = f"{chart_repo_url}/{extension}"    
+        chart = f"{chart_repo_url}/{extension}"
 
     try:
         insights_chart = helm_chart.Chart(chart)
@@ -365,9 +365,9 @@ def perform_upgrade(namespace, release, chart, assembly_backup_filepath, version
     deleted, assembly_backup_filepath = teardown_assemblies(namespace, assembly_backup_filepath, force, phrases.upgrade_asm_persist)
     if all(deleted):
         click.secho(phrases.upgrade_insights, bold=True)
-        upgraded =  install_operator_and_release(release, namespace, version, operator_version, operator_release, 
-                                                filepath, image_pull_secret, license_secret, 
-                                                chart, import_users, docker_config, install_operator, 
+        upgraded =  install_operator_and_release(release, namespace, version, operator_version, operator_release,
+                                                filepath, image_pull_secret, license_secret,
+                                                chart, import_users, docker_config, install_operator,
                                                 is_op_upgrade, crd_data, is_upgrade=True)
 
     reapply_assemblies(assembly_backup_filepath, namespace, deleted)
@@ -669,7 +669,7 @@ def prompt_for_ingress_cert(secret: secret.Secret, name, ingress_cert, ingress_k
         ingress_certmanager_disabled = True
         secret = ensure_secret(secret, populate_ingress_cert,
             {
-                'ingress_cert':ingress_cert, 
+                'ingress_cert':ingress_cert,
                 'ingress_key': ingress_key
             }
         )
@@ -958,6 +958,19 @@ def get_crd_data(
         crd_data = read_cached_crd_files(operator_version, Path(insights_chart.full_ref).parent)
     return crd_data
 
+def get_chart_actions(
+    insights_chart: helm_chart.Chart,
+    version: str,
+    docker_config: str = ''
+):
+    if insights_chart.is_remote:
+        cache = helm.get_repository_cache()
+        helm.fetch(insights_chart.repo_name, 'insights', cache, version, docker_config)
+        actions = read_chart_actions(version, Path(cache))
+    else:
+        actions = read_chart_actions(version, Path(insights_chart.full_ref).parent)
+    return actions
+
 def install_operator_and_release(
     release,
     namespace,
@@ -1007,10 +1020,100 @@ def install_operator_and_release(
     if is_upgrade and values_file is None:
         existing_values = yaml.safe_dump(helm.get_values(release, namespace))
 
+    if is_upgrade:
+        run_chart_actions(chart, release, namespace, version, is_upgrade=is_upgrade, docker_config=docker_config)
+
     helm.upgrade_install(release, chart=chart.full_ref, values_file=values_file,
                  args=args, version=version, namespace=namespace, docker_config=docker_config, existing_values=existing_values)
 
     return True
+
+def run_chart_actions(
+    insights_chart: helm_chart.Chart,
+    release: str,
+    namespace: str,
+    version: str,
+    is_upgrade: bool = True,
+    docker_config: str = ''
+):
+    installed_charts = get_installed_charts(release, namespace)
+    installed_version = '0.0.0'
+    if len(installed_charts) > 0:
+        installed_version = installed_charts[0]["app_version"]
+
+    chart_version = version if is_upgrade else installed_version
+    spec = get_chart_actions(insights_chart, chart_version, docker_config=docker_config)
+    if spec is None:
+        return
+
+    env = {
+        'RELEASE': release,
+        'NAMESPACE': namespace
+    }
+
+    changes = extract_changes(spec, is_upgrade, installed_version, version)
+    for change in changes:
+        run_change_action(change, is_upgrade, env)
+
+
+def run_change_action(change, is_upgrade, env):
+    supported_commands = ['delete']
+    name = change.get('name', '')
+    direction = 'upgrade' if is_upgrade else 'rollback'
+    click.echo(f'Performing {direction} action for {name}')
+    for action in change.get('actions', []):
+        for command in supported_commands:
+            if command in action:
+                args = apply_envs(action.get(command), env)
+                log.debug(f'  Running {command}: ' + ' '.join(args))
+                try:
+                    subprocess.run(['kubectl', command] + args, check=True)
+                except subprocess.CalledProcessError:
+                    log.warn(f'Unable to complete {direction} {command} for {name}' +
+                            f' - proceeding with {direction}')
+
+
+def extract_changes(spec, is_upgrade, installed_version, target_version):
+    changes = []
+    for change in spec.get('changes', []):
+        versions = change.get('version', [])
+        if type(versions) is str:
+            versions = [versions]
+
+        lower = installed_version if is_upgrade else target_version
+        upper = target_version if is_upgrade else installed_version
+        if any([version_within(v, lower, upper) for v in versions]):
+            action = extract_action_from_change(change, is_upgrade)
+            if action is not None:
+                changes.append(action)
+    return changes
+
+
+def extract_action_from_change(change, is_upgrade):
+    actions = change.get('upgrade' if is_upgrade else 'rollback', None)
+    # Actions can be a list so we need to explicitly check for 'True' which
+    # implies that we need to use the 'upgrade' field.
+    if actions is True and not is_upgrade:
+        actions = change.get('upgrade', None)
+
+    if type(actions) is list:
+        return {
+            'name': change.get('name', ''),
+            'actions': actions
+        }
+    return None
+
+
+def apply_envs(args: list, env: dict):
+    for k, v in env.items():
+        args = [arg.replace('$'+k, v) for arg in args]
+    return args
+
+
+def version_within(target: str, old: str, new: str):
+    def parse(v): return semver.VersionInfo.parse(v).replace(prerelease=None, build=None)
+    return parse(old) <= parse(target) <= parse(new)
+
 
 def get_operator_location(
     insights_chart: helm_chart.Chart,
@@ -1029,7 +1132,7 @@ def get_operator_location(
 def delete_release_operator_and_crds(release, namespace, force, uninstall_operator, assembly_backup_filepath):
     """Delete insights, operator and CRDs"""
     common.load_kube_config()
-    
+
     if not insights_installed(release, namespace):
         click.echo('\nkdb Insights Enterprise installation not found')
     elif force or click.confirm('\nkdb Insights Enterprise is deployed. Do you want to uninstall?'):
@@ -1176,6 +1279,28 @@ def read_cached_crd_files(
 
     return crd_data
 
+def read_chart_actions(
+    version: str,
+    folder_parent: Path,
+    chart_name: str = 'insights',
+):
+    tar_path = folder_parent / f'{chart_name}-{version}.tgz'
+
+    click.echo(f'Reading upgrade data from {tar_path}')
+    # expect the files to exist in the chart tgz inside the crds folder
+    action_file = f'{chart_name}/assets/actions.yaml'
+    try:
+        raw_data = common.extract_files_from_tar(tar_path, [action_file])
+        actions = yaml.safe_load(raw_data[0])
+    except yaml.YAMLError as e:
+        raise click.clickException(f'Failed to parse chart upgrade actions: {e}')
+    except Exception:
+        # Allow fall through for non-parse errors as the file may actually not exist
+        return None
+
+    return actions
+
+
 def replace_chart_crds(crd_data):
     for body in crd_data:
         common.replace_crd(body['metadata']['name'], body)
@@ -1192,10 +1317,11 @@ def replace_chart_crds(crd_data):
 @arg.chart_repo_url()
 @arg.operator_chart()
 @arg.chart_repo_username()
-def rollback(insights_revision, release, operator_revision, namespace, image_pull_secret, force, assembly_backup_filepath, chart_repo_name, operator_chart, chart_repo_url, chart_repo_username):
+@arg.chart()
+def rollback(insights_revision, release, operator_revision, namespace, image_pull_secret, force, assembly_backup_filepath, chart_repo_name, operator_chart, chart_repo_url, chart_repo_username, chart):
     common.load_kube_config()
     chart_operator = parse_chart_cli_params(operator_chart, chart_repo_name, chart_repo_url, chart_repo_username, 'kxi-operator')
-    
+
     skip_operator_rollback = False
     current_operator_version, current_operator_release  = get_installed_operator_versions(operator_namespace)
     insights_history,operator_history = helm.history(release, 'json', None, current_operator_version, current_operator_release[0])
@@ -1217,7 +1343,7 @@ def rollback(insights_revision, release, operator_revision, namespace, image_pul
 
     # Get the rollback base command for operator
     operator_details,base_command_operator = rollback_operator(operator_revision, skip_operator_rollback, operator_history, current_operator_release, insights_rollback_version, insights_revision, current_operator_version, force)
-    
+
     if not chart_operator.is_remote:
         op_app_version, op_chart_version = chart_operator.get_local_versions()
         if op_app_version  != operator_details[1]:
@@ -1231,6 +1357,9 @@ def rollback(insights_revision, release, operator_revision, namespace, image_pul
         try_rollback(base_command_operator, 'Rollback kxi-operator complete for version ' + operator_details[1])
         # Replace crds
         replace_crds(image_pull_secret, namespace, operator_details[1], chart_operator)
+
+    insights_chart = parse_chart_cli_params(chart, chart_repo_name, chart_repo_url, chart_repo_username)
+    run_chart_actions(insights_chart, release, namespace, insights_rollback_version, is_upgrade = False)
 
     click.secho(phrases.rollback_start, bold=True)
     try_rollback(base_command, 'Rollback kdb Insights Enterprise complete for version ' + insights_rollback_version)
@@ -1277,10 +1406,10 @@ def operator_rollback_version(operator_history, rollback_version,  current_versi
     current_version_op = get_minor_version(current_version)
     data = [d for d in operator_history if d['app_version'].startswith(operator_version_minor)]
     if len(data) == 1 and current_version_op == operator_version_minor:
-        return (None ,current_version_op) 
+        return (None ,current_version_op)
     else:
         return (str(data[len(data)-2]['revision']),data[len(data)-2]['app_version'])
-    
+
 def try_rollback(base_command, phrase):
     try:
         log.debug(f'List command {base_command}')
@@ -1296,7 +1425,7 @@ def history(release, show_operator):
     """
     List the revision history of a kdb Insights Enterprise install
     """
-    common.load_kube_config()    
+    common.load_kube_config()
     current_operator_version, current_operator_release  = get_installed_operator_versions(operator_namespace)
     helm.history(options.chart_repo_name.prompt(release, silent=True), None, show_operator, current_operator_version, current_operator_release[0])
 

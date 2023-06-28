@@ -131,6 +131,7 @@ Using image.pullSecret from embedded default values: kxi-nexus-pull-secret
 Reading CRD data from {utils.test_helm_repo_cache}/kxi-operator-1.2.3.tgz
 Replacing CRD assemblies.insights.kx.com
 Replacing CRD assemblyresources.insights.kx.com
+Reading upgrade data from {utils.test_helm_repo_cache}/insights-1.2.1.tgz
 
 Rolling back Insights
 Rollback kdb Insights Enterprise complete for version 1.2.3
@@ -175,7 +176,7 @@ def test_tgz_only_calls_helm_rollback_fail(mocker):
 Rolling operator back to version 2.2.3 and revision 1.
 Proceed? [y/N]: y
 Error: Mismatch on the operator chart version 1.2.3 and the operator revision 1 version 2.2.3\n"""
-    
+
     assert res.exit_code == 1
     assert expected_output == res.output
 

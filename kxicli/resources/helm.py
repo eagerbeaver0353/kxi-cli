@@ -80,7 +80,6 @@ def get_repository_cache():
 
     return cache
 
-
 def upgrade_install(
         release: str,
         chart: str,

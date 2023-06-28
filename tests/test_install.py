@@ -141,7 +141,7 @@ def test_get_docker_config_secret(mocker):
     assert install.get_docker_config_secret(
         namespace='test-namespace',
         secret_name=common.get_default_val('image.pullSecret')
-        
+
     ) == fake_docker_config_yaml
 
 
@@ -231,7 +231,7 @@ def test_create_postgres_secret_from_cli_config(mocker):
     assert 'postgres-password' in res.data
     assert 'postgresql-password' in res.data
     assert 'password' in res.data
-    
+
     assert base64.b64decode(res.data['postgresql-postgres-password']).decode('ascii') == postgres_pass
     assert base64.b64decode(res.data['postgres-password']).decode('ascii') == postgres_pass
     assert base64.b64decode(res.data['postgresql-password']).decode('ascii') == user_pass
@@ -414,7 +414,7 @@ def test_get_image_and_license_secret_from_values_returns_defaults():
     'kxi-nexus-pull-secret', 'kxi-license')
 
 def test_get_image_and_license_secret_from_values_args_overrides_values_dict():
-    assert install.get_image_and_license_secret_from_values(test_vals, 
+    assert install.get_image_and_license_secret_from_values(test_vals,
                                                             'image-pull-from-arg',
                                                             'license-from-arg') == (
            'image-pull-from-arg', 'license-from-arg')
@@ -481,7 +481,7 @@ def test_ensure_secret_when_secret_exists_and_is_valid(mocker):
 def test_ensure_secret_when_secret_exists_but_is_invalid_w_overwrite(mocker, monkeypatch):
     mock_kube_secret_api(mocker, read=mocked_read_namespaced_secret)
     mock_validate_secret(mocker, is_valid=False)
-    
+
     # patch stdin to 'n' for the prompt rejecting secret overwrite
     monkeypatch.setattr(SYS_STDIN, io.StringIO('y'))
 
@@ -879,7 +879,7 @@ error=Required secret kxi-certificate does not exist
 error=Required secret kxi-nexus-pull-secret does not exist
 error=Required secret kxi-keycloak does not exist
 error=Required secret kxi-postgresql does not exist
-""" 
+"""
 
 
 def test_get_values_and_secrets_from_helm_values_exist_called_from_azure(mocker):
@@ -918,3 +918,131 @@ def test_local_operator_versions_happy_path():
 def test_local_operator_versions_returns_none_correctly():
     chart = helm_chart.Chart(str(insights_tgz))
     assert install.local_operator_versions(chart, prefix = 'unknown-chart-') == []
+
+
+def test_get_chart_actions_with_no_upgrade_actions(mocker):
+    chart = helm_chart.Chart(str(insights_tgz))
+    mock_helm_env(mocker)
+
+    def mocked_extract(*args):
+        raise Exception("Path does not exist")
+
+    mocker.patch('kxicli.common.extract_files_from_tar', mocked_extract)
+    assert install.get_chart_actions(chart, "1.2.3") is None
+
+
+def test_get_chart_actions_with_upgrade_actions(mocker):
+    chart = helm_chart.Chart(str(insights_tgz))
+    mock_helm_env(mocker)
+
+    # mock data returned from tar extraction
+    mocked_extract = mocker.patch('kxicli.common.extract_files_from_tar')
+    mocked_extract.return_value = ["""
+    changes:
+      - version:
+          - 1.6.1
+          - 1.7.0
+        name: 'This is an example upgrade'
+        upgrade:
+          - delete: ['-n', '$NAMESPACE', 'sts/$RELEASE-qe-resource-coordinator']
+        rollback: true
+    """]
+
+    actions = {"changes": [{
+        "version": ["1.6.1", "1.7.0"],
+        "name": "This is an example upgrade",
+        "upgrade": [{"delete": ["-n", "$NAMESPACE", "sts/$RELEASE-qe-resource-coordinator"]}],
+        "rollback": True
+    }]}
+
+    assert actions == install.get_chart_actions(chart, "1.2.3")
+
+
+def test_running_upgrade_without_chart_actions(mocker):
+    mocked_get_charts = mocker.patch("kxicli.commands.install.get_installed_charts")
+    mocked_actions = mocker.patch("kxicli.commands.install.get_chart_actions")
+
+    mocked_get_charts.return_value = [{"app_version": "1.2.0"}]
+    mocked_actions.return_value = None
+    chart = helm_chart.Chart(str(insights_tgz))
+    assert install.run_chart_actions(chart, 'insights', 'kxi', '1.2.3') is None
+
+
+def test_running_upgrade_with_delete_action(mocker):
+    namespace = "kxi"
+    release = "insights"
+
+    def mocked_subprocess(args, **kwargs):
+        assert args == ["kubectl", "delete", "-n", namespace,
+                        "service/" + release + "-resource-coordinator"]
+
+    mocked_actions = mocker.patch("kxicli.commands.install.get_chart_actions")
+    mocked_get_charts = mocker.patch("kxicli.commands.install.get_installed_charts")
+    mocker.patch("subprocess.run", mocked_subprocess)
+
+    mocked_actions.return_value = {"changes": [{
+        "version": ["1.2.1"],
+        "name": "Update Resource Coordinator service to be headless",
+        "upgrade": [{"delete": ["-n", "$NAMESPACE", "service/$RELEASE-resource-coordinator"]}],
+        "rollback": True
+    }]}
+    mocked_get_charts.return_value = [{"app_version": "1.2.0"}]
+
+    chart = helm_chart.Chart(str(insights_tgz))
+    assert install.run_chart_actions(chart, release, namespace, '1.2.3') is None
+
+
+def test_running_upgrade_with_multiple_versions(mocker):
+    namespace = "kxi"
+    release = "insights"
+    commands = [
+        ["kubectl", "delete", "-n", namespace,
+         "service/" + release + "-resource-coordinator"],
+        ["kubectl", "delete", "-n", namespace,
+         "deployment/" + release + "-qe-gateway"]
+    ]
+    subprocess_call = 0
+
+    def mocked_subprocess(args, **kwargs):
+        nonlocal subprocess_call
+        assert args == commands[subprocess_call]
+        subprocess_call += 1
+
+    mocked_actions = mocker.patch("kxicli.commands.install.get_chart_actions")
+    mocked_get_charts = mocker.patch("kxicli.commands.install.get_installed_charts")
+    mocker.patch("subprocess.run", mocked_subprocess)
+
+    mocked_actions.return_value = {"changes": [{
+        "version": ["1.2.1"],
+        "name": "Update Resource Coordinator service to be headless",
+        "upgrade": [{"delete": ["-n", "$NAMESPACE", "service/$RELEASE-resource-coordinator"]}],
+        "rollback": True
+    }, {
+        "version": ["1.2.2"],
+        "name": "Upgrade labels on QE gateways",
+        "upgrade": [{"delete": ["-n", "$NAMESPACE", "deployment/$RELEASE-qe-gateway"]}],
+        "rollback": True
+    }, {
+        "version": ["1.2.4"],
+        "name": "Unused upgrade",
+        "upgrade": [{"delete": ["-n", "$NAMESPACE", "should-not-run"]}]
+    }]}
+    mocked_get_charts.return_value = [{"app_version": "1.2.0"}]
+    chart = helm_chart.Chart(str(insights_tgz))
+    assert install.run_chart_actions(chart, release, namespace, '1.2.3') is None
+
+
+def test_apply_envs():
+    args = ['-n', '$NAMESPACE', 'sts/$RELEASE-resource-coordinator']
+    env = {'NAMESPACE': 'kxi', 'RELEASE': 'insights'}
+    exp = ['-n', 'kxi', 'sts/insights-resource-coordinator']
+    assert exp == install.apply_envs(args, env)
+
+
+def test_version_within():
+    assert install.version_within('1.0.0', '0.0.0', '2.0.0')
+    assert install.version_within('1.2.1', '1.2.0', '1.2.1')
+    assert install.version_within('1.2.1', '0.9.9', '1.3.2')
+    assert install.version_within('1.2.1-rc.10', '1.2.1-rc.2', '1.2.2')
+    assert not install.version_within('1.3.0', '2.1.1', '2.1.2')
+    assert not install.version_within('1.1.1', '1.2.0', '1.0.0')
