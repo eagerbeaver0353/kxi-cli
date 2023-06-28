@@ -146,8 +146,8 @@ def mocked_read_namespaced_secret_return_values(namespace, name):
     return res.get_body()
 
 
-def mocked_read_secret(namespace, 
-                        name, 
+def mocked_read_secret(namespace,
+                        name,
                         image_pull_secret_name=common.get_default_val('image.pullSecret'),
                         ):
     if name == image_pull_secret_name:
@@ -184,8 +184,8 @@ def mock_delete_crd(mocker):
     delete_crd_params = []
     global crd_exists_flag
     crd_exists_flag = True
-    utils.mock_kube_crd_api(mocker, 
-                            create=mocked_create_crd, 
+    utils.mock_kube_crd_api(mocker,
+                            create=mocked_create_crd,
                             delete=mocked_delete_crd
                             )
 
@@ -443,7 +443,7 @@ class HelmCommand():
 @dataclass
 class HelmCommandRepoUpdate(HelmCommand):
     repo: str = test_chart_repo
-    
+
     def cmd(self):
         cmd = ['helm', 'repo', 'update']
         if self.repo:
@@ -455,15 +455,15 @@ class HelmCommandRepoUpdate(HelmCommand):
 class HelmCommandInsightsInstall(HelmCommand):
     def cmd(self):
         cmd = [
-            'helm', 'upgrade', '--install', 
+            'helm', 'upgrade', '--install',
             '--version', self.version,
             '-f', self.values,
-            self.release, 
+            self.release,
             self.chart
         ]
         if self.keycloak_importUsers:
             cmd = cmd + [ '--set', f'keycloak.importUsers={self.keycloak_importUsers}' ]
-        cmd = cmd + ['--namespace', self.namespace]    
+        cmd = cmd + ['--namespace', self.namespace]
         return cmd
 
 
@@ -568,7 +568,7 @@ client.id = client
 client.secret = secret
 guiClientSecret = gui-secret
 operatorClientSecret = operator-secret
-"""    
+"""
     common.config.load_config("default")
 
 
@@ -596,7 +596,7 @@ client.secret = secret
 guiClientSecret = gui-secret-command-line
 operatorClientSecret = operator-secret-command-line
 
-"""    
+"""
     common.config.load_config("default")
 
 
@@ -656,7 +656,7 @@ def test_install_setup_check_output_values_file(mocker):
 def test_install_setup_when_hostname_provided_from_command_line(mocker):
     setup_mocks(mocker)
     with temp_test_output_file() as test_output_file, temp_config_file() as test_cli_config:
-        cmd = ['install', 'setup', '--output-file', test_output_file, '--hostname', 'https://a-test-hostname.kx.com'] 
+        cmd = ['install', 'setup', '--output-file', test_output_file, '--hostname', 'https://a-test-hostname.kx.com']
         test_cfg = {
             'hostname': 'https://a-test-hostname.kx.com',
             'hostname_source': 'command-line'
@@ -668,7 +668,7 @@ def test_install_setup_when_hostname_provided_from_command_line(mocker):
 def test_install_setup_ingress_host_is_an_alias_for_hostname(mocker):
     setup_mocks(mocker)
     with temp_test_output_file() as test_output_file, temp_config_file() as test_cli_config:
-        cmd = ['install', 'setup', '--output-file', test_output_file, '--ingress-host', 'https://a-test-hostname.kx.com'] 
+        cmd = ['install', 'setup', '--output-file', test_output_file, '--ingress-host', 'https://a-test-hostname.kx.com']
         test_cfg = {
             'hostname': 'https://a-test-hostname.kx.com',
             'hostname_source': 'command-line'
@@ -681,7 +681,7 @@ def test_install_setup_when_ingress_cert_secret_provided_on_command_line(mocker)
     setup_mocks(mocker)
     utils.mock_validate_secret(mocker, exists=True, is_valid=True)
     with temp_test_output_file() as test_output_file, temp_config_file() as test_cli_config:
-        cmd = ['install', 'setup', '--output-file', test_output_file,  '--ingress-cert-secret', test_ingress_cert_secret] 
+        cmd = ['install', 'setup', '--output-file', test_output_file,  '--ingress-cert-secret', test_ingress_cert_secret]
         test_cfg = {
             'provide_ingress_cert': None,
             'ingress_sec_exists': True,
@@ -690,7 +690,7 @@ def test_install_setup_when_ingress_cert_secret_provided_on_command_line(mocker)
             'client_sec_exists': True,
             'kc_secret_exists': True,
             'pg_secret_exists': True,
-        }        
+        }
         run_cli(cmd, test_cfg, test_cli_config, test_output_file, 0)
         assert compare_files(test_output_file, test_output_file_manual_ingress)
 
@@ -702,7 +702,7 @@ def test_install_setup_when_ingress_cert_and_key_files_provided_on_command_line(
         temp_test_output_file(file_name='tls_key') as test_key_filepath, temp_config_file() as test_cli_config:
         shutil.copyfile(test_cert, test_cert_filepath)
         shutil.copyfile(test_key, test_key_filepath)
-        cmd = ['install', 'setup', '--output-file', test_output_file, '--ingress-cert', test_cert_filepath, '--ingress-key', test_key_filepath] 
+        cmd = ['install', 'setup', '--output-file', test_output_file, '--ingress-cert', test_cert_filepath, '--ingress-key', test_key_filepath]
         test_cfg = {
             'provide_ingress_cert': 'y',
             'ingress_cert': test_cert_filepath,
@@ -721,7 +721,7 @@ def test_install_setup_when_ingress_cert_file_provided_on_command_line(mocker):
         temp_test_output_file(file_name='tls_key') as test_key_filepath, temp_config_file() as test_cli_config:
         shutil.copyfile(test_cert, test_cert_filepath)
         shutil.copyfile(test_key, test_key_filepath)
-        cmd = ['install', 'setup', '--output-file', test_output_file, '--ingress-cert', test_cert_filepath] 
+        cmd = ['install', 'setup', '--output-file', test_output_file, '--ingress-cert', test_cert_filepath]
         test_cfg = {
             'provide_ingress_cert': 'y',
             'ingress_cert': test_cert_filepath,
@@ -739,7 +739,7 @@ def test_install_setup_with_external_ingress_certmanager(mocker):
         cmd = ['install', 'setup', '--output-file', test_output_file,  '--ingress-certmanager-disabled']
         test_cfg = {
             'provide_ingress_cert': None,
-        }        
+        }
         run_cli(cmd, test_cfg, test_cli_config, test_output_file, 0)
         assert compare_files(test_output_file, test_output_file_external_certmanager)
 
@@ -827,7 +827,7 @@ def test_install_setup_creates_new_when_values_file_exists(mocker):
             user_input = cli_input(cmd[1], **test_cfg)
             result = runner.invoke(main.cli, cmd, input=user_input)
             expected_output = cli_output(cmd[1], test_cli_config, **test_cfg)
-        
+
         assert result.exit_code == 0
         assert result.output == expected_output
         assert compare_files(f'{test_output_file}_new', utils.test_val_file)
@@ -999,7 +999,7 @@ def test_install_run_installs_operator(mocker):
 Do you want to install kxi-operator version 1.2.3? [Y/n]: y
 Installing chart kx-insights/kxi-operator version 1.2.3 with values file from {utils.test_val_file}
 Installing chart kx-insights/insights version 1.2.3 with values file from {utils.test_val_file}
-"""    
+"""
     assert result.exit_code == 0
     assert result.output == expected_output
     assert copy_secret_params == [('kxi-nexus-pull-secret', test_namespace, 'kxi-operator'),
@@ -1063,7 +1063,7 @@ def test_install_run_force_installs_operator(mocker):
 
 Installing chart kx-insights/kxi-operator version 1.2.3 with values file from {utils.test_val_file}
 Installing chart kx-insights/insights version 1.2.3 with values file from {utils.test_val_file}
-"""    
+"""
     assert result.exit_code == 0
     assert result.output == expected_output
     assert copy_secret_params == [('kxi-nexus-pull-secret', test_namespace, 'kxi-operator'),
@@ -1308,7 +1308,7 @@ def test_delete(mocker):
     mock_asm_backup_path(mocker)
     mocker.patch(GET_ASSEMBLIES_LIST_FUNC, mock_list_assembly_multiple)
     mocker.patch(DELETE_ASSEMBLIES_FUNC, mock__delete_assembly)
-    
+
     runner = CliRunner()
     with runner.isolated_filesystem():
         # these are responses to the various prompts
@@ -1366,18 +1366,18 @@ def test_list_versions_custom_repo(mocker):
 
 def test_delete_specify_release(mocker):
     global delete_assembly_args
-    
+
     mock_subprocess_run(mocker)
     mock_set_insights_operator_and_crd_installed_state(mocker, True, False, False)
     mock_delete_crd(mocker)
     mock_asm_backup_path(mocker)
     mocker.patch(GET_ASSEMBLIES_LIST_FUNC, mock_list_assembly_multiple)
     mocker.patch(DELETE_ASSEMBLIES_FUNC, mock__delete_assembly)
-    
+
     delete_assembly_args = []
     asms_array = [test_asm_name, test_asm_name2]
-    
-    
+
+
     runner = CliRunner()
     with runner.isolated_filesystem():
         # these are responses to the various prompts
@@ -1405,9 +1405,9 @@ def test_delete_specific_release_no_assemblies(mocker):
     mock_delete_crd(mocker)
     mocker.patch(GET_ASSEMBLIES_LIST_FUNC, mock_list_assembly_none)
     mocker.patch(DELETE_ASSEMBLIES_FUNC, mock__delete_assembly)
-    
+
     delete_assembly_args = []
-    
+
     runner = CliRunner()
     with runner.isolated_filesystem():
         # these are responses to the various prompts
@@ -1434,7 +1434,7 @@ def test_delete_specific_release_one_assemblies(mocker):
     mock_asm_backup_path(mocker)
     mocker.patch(GET_ASSEMBLIES_LIST_FUNC, mock_list_assembly)
     mocker.patch(DELETE_ASSEMBLIES_FUNC, mock__delete_assembly)
-    
+
     delete_assembly_args = []
     asms_array = [test_asm_name]
 
@@ -1469,9 +1469,9 @@ def test_delete_does_not_prompt_to_remove_operator_and_crd_when_insights_exists(
     mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
     mocker.patch(GET_ASSEMBLIES_LIST_FUNC, mock_list_assembly_multiple)
     mocker.patch(DELETE_ASSEMBLIES_FUNC, mock__delete_assembly)
-    
+
     delete_assembly_args = []
-    
+
     runner = CliRunner()
     with runner.isolated_filesystem():
         # these are responses to the various prompts
@@ -1583,7 +1583,7 @@ def test_delete_removes_insights(mocker):
     mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
     mocker.patch(GET_ASSEMBLIES_LIST_FUNC, mock_list_assembly_multiple)
     mocker.patch(DELETE_ASSEMBLIES_FUNC, mock__delete_assembly)
-    
+
     delete_assembly_args = []
     asms_array = [test_asm_name, test_asm_name2]
 
@@ -1616,7 +1616,7 @@ def test_delete_force_removes_insights_operator_and_crd(mocker):
     mocker.patch(GET_ASSEMBLIES_LIST_FUNC, mock_list_assembly_multiple)
     mocker.patch(DELETE_ASSEMBLIES_FUNC, mock__delete_assembly)
     mocker.patch(LIST_CLUSTER_ASSEMBLIES_FUNC)
-    
+
     delete_assembly_args = []
     asms_array = [test_asm_name, test_asm_name2]
 
@@ -1647,10 +1647,10 @@ def test_delete_from_given_namespace(mocker):
     mock_set_insights_operator_and_crd_installed_state(mocker, True, False, False)
     mocker.patch(GET_ASSEMBLIES_LIST_FUNC, mock_list_assembly_multiple)
     mocker.patch(DELETE_ASSEMBLIES_FUNC, mock__delete_assembly)
-    
+
     global delete_crd_params
     global delete_assembly_args
-    
+
     delete_assembly_args = []
     delete_crd_params = []
     asms_array = [test_asm_name, test_asm_name2]
@@ -1682,10 +1682,10 @@ def test_delete_given_assembly_backup_filepath(mocker):
     mock_set_insights_operator_and_crd_installed_state(mocker, True, False, False)
     mocker.patch(GET_ASSEMBLIES_LIST_FUNC, mock_list_assembly_multiple)
     mocker.patch(DELETE_ASSEMBLIES_FUNC, mock__delete_assembly)
-    
+
     global delete_crd_params
     global delete_assembly_args
-    
+
     delete_assembly_args = []
     delete_crd_params = []
     asms_array = [test_asm_name, test_asm_name2]
@@ -1720,7 +1720,7 @@ def test_delete_when_insights_not_installed(mocker):
     mock_set_insights_operator_and_crd_installed_state(mocker, False, True, True)
     mocker.patch(GET_ASSEMBLIES_LIST_FUNC, mock_list_assembly_multiple)
     mocker.patch(DELETE_ASSEMBLIES_FUNC, mock__delete_assembly)
-    
+
     runner = CliRunner()
     with runner.isolated_filesystem():
         # these are responses to the various prompts
@@ -1870,6 +1870,7 @@ Upgrading insights
 Installing chart kx-insights/kxi-operator version 1.2.3 with previously used values
 Replacing CRD assemblies.insights.kx.com
 Replacing CRD assemblyresources.insights.kx.com
+Reading upgrade data from {utils.test_helm_repo_cache}/insights-1.2.3.tgz
 Installing chart kx-insights/insights version 1.2.3 with previously used values
 
 Reapplying assemblies
@@ -1934,6 +1935,7 @@ Upgrading insights
 Installing chart kx-insights/kxi-operator version 1.2.3 with previously used values
 Replacing CRD assemblies.insights.kx.com
 Replacing CRD assemblyresources.insights.kx.com
+Reading upgrade data from {utils.test_helm_repo_cache}/insights-1.2.3.tgz
 Installing chart kx-insights/insights version 1.2.3 with previously used values
 
 Reapplying assemblies
@@ -2200,6 +2202,7 @@ Upgrading insights
 Installing chart kx-insights/kxi-operator version 1.2.3 with values file from {utils.test_val_file}
 Replacing CRD assemblies.insights.kx.com
 Replacing CRD assemblyresources.insights.kx.com
+Reading upgrade data from {utils.test_helm_repo_cache}/insights-1.2.3.tgz
 Installing chart kx-insights/insights version 1.2.3 with values file from {utils.test_val_file}
 
 Reapplying assemblies
@@ -2269,6 +2272,7 @@ Are you sure you want to teardown {test_asm_name} [y/N]: y
 Waiting for assembly to be torn down
 
 Upgrading insights
+Reading upgrade data from {utils.test_helm_repo_cache}/insights-1.2.3.tgz
 Installing chart kx-insights/insights version 1.2.3 with previously used values
 
 Reapplying assemblies
@@ -2285,7 +2289,7 @@ Upgrade to version 1.2.3 complete
                                                           keycloak_importUsers='false'
                                                           )
                            ],
-                           expected_delete_crd_params=[]                           
+                           expected_delete_crd_params=[]
     )
     assert result.output == expected_output
 
@@ -2337,6 +2341,7 @@ Are you sure you want to teardown {test_asm_name} [y/N]: y
 Waiting for assembly to be torn down
 
 Upgrading insights
+Reading upgrade data from {utils.test_helm_repo_cache}/insights-1.2.3.tgz
 Installing chart kx-insights/insights version 1.2.3 with previously used values
 
 Reapplying assemblies
@@ -2353,7 +2358,7 @@ Upgrade to version 1.2.3 complete
                                                           keycloak_importUsers='false'
                                                           )
                            ],
-                           expected_delete_crd_params=[]                           
+                           expected_delete_crd_params=[]
     )
     assert result.output == expected_output
 
@@ -2496,7 +2501,7 @@ Error: Cannot upgrade from version 1.2.1 to version 1.0.0. Target version must b
 def test_install_upgrade_errors_when_downgrading_operator_to_lower_version(mocker):
     upgrades_mocks(mocker)
     mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
-    mocker.patch('kxicli.commands.install.get_installed_operator_versions', 
+    mocker.patch('kxicli.commands.install.get_installed_operator_versions',
                  lambda x:((['1.2.2'], [test_operator_helm_name])))
     utils.mock_validate_secret(mocker)
     runner = CliRunner()
@@ -2550,7 +2555,7 @@ def mock_helm_list_history(mocker, release='kx-insights', output=None):
     mocker.patch('kxicli.resources.helm.history', utils.mocked_helm_history_rollback)
 
 def mock_helm_list_histor_broken(mocker, release='kx-insights', output=None):
-    mocker.patch('kxicli.resources.helm.history', utils.mocked_helm_history_rollback_broken)    
+    mocker.patch('kxicli.resources.helm.history', utils.mocked_helm_history_rollback_broken)
 
 def test_install_rollback(mocker):
     mocker.patch('subprocess.check_output',return_value="")
@@ -2585,6 +2590,7 @@ Assembly data will be persisted and state will be recovered post-rollback
 Tearing down assembly basic-assembly
 Are you sure you want to teardown basic-assembly [y/N]:     y
 Waiting for assembly to be torn down
+Reading upgrade data from {utils.test_helm_repo_cache}/insights-1.2.1.tgz
 
 Rolling back Insights
 Rollback kdb Insights Enterprise complete for version 1.4.1
@@ -2657,6 +2663,7 @@ Using image.pullSecret from embedded default values: kxi-nexus-pull-secret
 Reading CRD data from {utils.test_helm_repo_cache}/kxi-operator-1.2.3.tgz
 Replacing CRD assemblies.insights.kx.com
 Replacing CRD assemblyresources.insights.kx.com
+Reading upgrade data from {utils.test_helm_repo_cache}/insights-1.2.1.tgz
 
 Rolling back Insights
 Rollback kdb Insights Enterprise complete for version 1.2.3
@@ -2697,7 +2704,7 @@ def test_install_rollback_operator_revision_fail(mocker):
     utils.mock_helm_repo_list(mocker)
     mocker.patch(GET_ASSEMBLIES_LIST_FUNC, mock_list_assembly_none)
     mocker.patch(LIST_CLUSTER_ASSEMBLIES_FUNC)
-    mocker.patch('kxicli.commands.install.helm.repo_update')    
+    mocker.patch('kxicli.commands.install.helm.repo_update')
     runner = CliRunner()
     with runner.isolated_filesystem():
         # these are responses to the various prompts
@@ -2715,7 +2722,7 @@ def test_install_rollback_operator_revision_fail_with_insightsrevision(mocker):
     utils.mock_helm_env(mocker)
     utils.mock_helm_repo_list(mocker)
     mocker.patch(GET_ASSEMBLIES_LIST_FUNC, mock_list_assembly_none)
-    mocker.patch(LIST_CLUSTER_ASSEMBLIES_FUNC)    
+    mocker.patch(LIST_CLUSTER_ASSEMBLIES_FUNC)
     mocker.patch('kxicli.commands.install.helm.repo_update')
     runner = CliRunner()
     with runner.isolated_filesystem():
@@ -2765,6 +2772,7 @@ Assembly data will be persisted and state will be recovered post-rollback
 Tearing down assembly basic-assembly
 Are you sure you want to teardown basic-assembly [y/N]:     y
 Waiting for assembly to be torn down
+Reading upgrade data from {utils.test_helm_repo_cache}/insights-1.2.1.tgz
 
 Rolling back Insights
 Rollback kdb Insights Enterprise complete for version 1.2.3
