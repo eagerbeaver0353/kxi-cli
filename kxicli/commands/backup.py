@@ -18,6 +18,7 @@ from urllib3.exceptions import MaxRetryError, HTTPError
 from kxicli.options import namespace as options_namespace
 from kxicli.commands.common import arg
 from kxicli.common import load_kube_config
+from kxicli.cli_group import ProfileAwareGroup, cli
 
 AZURE_NODENAME_PREFIX: str = 'aks'
 GCP_NODENAME_PREFIX: str = 'gke'
@@ -69,7 +70,7 @@ def _determine_provider():
             f'Exception when calling CustomObjectsApi->list_node: {exception}\n')
 
 
-@click.group()
+@cli.group(cls=ProfileAwareGroup)
 def backup():
     """Insights data backup related commands"""
 

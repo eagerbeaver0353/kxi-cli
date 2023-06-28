@@ -4,6 +4,7 @@ from pathlib import Path
 
 import click
 
+from kxi import DeploymentType
 from kxicli import phrases
 from kxicli import common
 
@@ -53,24 +54,36 @@ def set_config(profile):
         config[profile] = {}
 
     os.makedirs(config_dir, exist_ok=True)
+    config[profile]['usage'] = click.prompt(
+        'Profile type',
+        type=click.Choice([DeploymentType.ENTERPRISE.value, DeploymentType.MICROSERVICES.value]),
+        default=config.get(profile, 'usage', fallback=DeploymentType.ENTERPRISE))
+    
     config[profile]['hostname'] = click.prompt(
         'Hostname',
         type=str,
         default=config.get(profile, 'hostname', fallback=''))
+    
+    if config[profile]['usage'] == DeploymentType.ENTERPRISE:
+        config[profile]['namespace'] = click.prompt(
+            'Namespace',
+            type=str,
+            default=config.get(profile, 'namespace', fallback=''))
 
-    config[profile]['namespace'] = click.prompt(
-        'Namespace',
-        type=str,
-        default=config.get(profile, 'namespace', fallback=''))
+        key = 'client.id'
+        config[profile][key] = click.prompt(
+            'Client ID',
+            type=str,
+            default=config.get(profile, key, fallback=''))
 
-    key = 'client.id'
-    config[profile][key] = click.prompt(
-        'Client ID',
-        type=str,
-        default=config.get(profile, key, fallback=''))
+        if len(config[profile][key]) > 0:
+            config[profile]['client.secret'] = common.enter_password('Client Secret (input hidden)')
 
-    if len(config[profile][key]) > 0:
-        config[profile]['client.secret'] = common.enter_password('Client Secret (input hidden)')
-
+    elif config[profile]['usage'] == DeploymentType.MICROSERVICES:
+        config[profile]['tp_port'] = click.prompt(
+            'TP Port',
+            type=str,
+            default=config.get(profile, 'tp_port', fallback=''))
+        
     with open(config_file, 'w+') as f:
         config.write(f)

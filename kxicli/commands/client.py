@@ -9,8 +9,9 @@ from kxicli import common
 from kxicli import log
 from kxicli import options
 from kxicli.commands.common import arg
+from kxicli.cli_group import cli, ProfileAwareGroup
 
-@click.group()
+@cli.group(cls=ProfileAwareGroup)
 def client():
     """Commands for interacting with clients"""
 
