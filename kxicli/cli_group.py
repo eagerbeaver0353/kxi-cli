@@ -21,7 +21,7 @@ class ProfileAwareGroup(ClickAliasedGroup):
         self._profile = None
 
     def get_cli_usage(self, ctx):
-        profile = "default"
+        profile = None
         if "profile" in ctx.params:
             profile = ctx.params["profile"]
         else:
@@ -32,8 +32,11 @@ class ProfileAwareGroup(ClickAliasedGroup):
             if "profile" in opts:
                 profile = opts["profile"]
             
-        config.load_config(profile)
-        profile_usage = common.get_default_val("usage")
+        profile_usage = DeploymentType.ENTERPRISE
+        
+        if profile:
+            config.load_config(profile)
+            profile_usage = common.get_default_val("usage")
 
         self._cli_usage = profile_usage or DeploymentType.ENTERPRISE
         return self._cli_usage
@@ -47,7 +50,7 @@ class ProfileAwareGroup(ClickAliasedGroup):
 
     def get_command(self, ctx, cmd_name):
         cmd = super().get_command(ctx, cmd_name)
-        if self.get_cli_usage(ctx) in cmd.context_settings.get("obj", {}).get("usage", DeploymentType.ENTERPRISE):
+        if cmd and self.get_cli_usage(ctx) in cmd.context_settings.get("obj", {}).get("usage", DeploymentType.ENTERPRISE):
             return cmd
         else:
             return None
