@@ -1,0 +1,18 @@
+[default]
+usage = enterprise
+hostname = https://test.kx.com
+namespace = test
+client.id = client
+client.secret = secret
+
+[enterprise_profile]
+usage = enterprise
+hostname = https://test2.kx.com
+namespace = test2
+client.id = client2
+client.secret = secret2
+
+[microservices_profile]
+usage = microservices
+hostname = https://test3.kx.com
+tp_port = 5010
