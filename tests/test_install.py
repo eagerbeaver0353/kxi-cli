@@ -3,22 +3,22 @@ import base64
 import copy
 import io
 import json
-import kubernetes as k8s
+import pyk8s
 import pytest
 import click
 from pathlib import Path
 
 from kxicli import common
 from kxicli.commands import install
-from kxicli.resources import secret, helm_chart
+from kxicli.resources import helm_chart
 import mocks
 from utils import IPATH_KUBE_COREV1API, temp_file, test_secret_data, test_secret_type, test_secret_key, \
     mock_kube_deployment_api, mocked_kube_deployment_list, mock_kube_secret_api, mocked_read_namespaced_secret, \
     raise_conflict, raise_not_found, mock_validate_secret, mock_helm_env, mock_helm_get_values,  mock_helm_repo_list, \
-    return_none, fake_docker_config_yaml, test_val_file
+    return_none, fake_docker_config_yaml, test_val_file, fake_secret
 # need to replace the above imports with utils prefixed versions
 import utils
-from test_install_e2e import mocked_read_namespaced_secret_return_values, test_vals, mocked_read_secret, mocked_installed_chart_json, \
+from test_install_e2e import test_vals, mocked_read_secret, mocked_installed_chart_json, \
     mock_list_assembly_multiple, LIST_CLUSTER_ASSEMBLIES_FUNC
 from const import test_user, test_pass, test_lic_file, test_chart_repo_name, test_chart_repo_url, insights_tgz
 
@@ -84,31 +84,6 @@ def mocked_helm_search_returns_empty_json(base_command, check=True, capture_outp
     )
 
 
-def test_get_secret_body_string_data_parameter():
-    sdata = {'a': 'b'}
-
-    expected = k8s.client.V1Secret()
-    expected.metadata = k8s.client.V1ObjectMeta(namespace=test_ns, name=test_secret)
-    expected.type = test_secret_type
-    expected.string_data = sdata
-
-    s = secret.Secret(test_ns, test_secret, test_secret_type, string_data=sdata)
-
-    assert s.get_body() == expected
-
-
-def test_get_secret_body_data_parameter():
-    data = {'a': 'b'}
-
-    expected = k8s.client.V1Secret()
-    expected.metadata = k8s.client.V1ObjectMeta(namespace=test_ns, name=test_secret)
-    expected.type = test_secret_type
-    expected.data = data
-    s = secret.Secret(test_ns, test_secret, test_secret_type, data=data)
-
-    assert s.get_body() == expected
-
-
 def test_create_docker_config():
     test_cfg = {
         'auths': {
@@ -123,21 +98,21 @@ def test_create_docker_config():
     assert install.create_docker_config(test_repo, test_user, test_pass) == test_cfg
 
 
-def test_create_docker_secret(mocker):
-    mock_kube_secret_api(mocker)
+def test_create_docker_secret(mocker, k8s):
+    mock_kube_secret_api(k8s)
 
     test_cfg = install.create_docker_config(test_repo, test_user, test_pass)
 
-    s = secret.Secret(test_ns, test_secret, install.SECRET_TYPE_DOCKERCONFIG_JSON, install.IMAGE_PULL_KEYS)
-    res = install.populate_docker_config_secret(s, test_cfg).get_body()
+    s = fake_secret(test_ns, test_secret, install.SECRET_TYPE_DOCKERCONFIG_JSON, install.IMAGE_PULL_KEYS)
+    res = install.populate_docker_config_secret(s, test_cfg)
 
     assert res.type == 'kubernetes.io/dockerconfigjson'
     assert res.metadata.name == test_secret
     assert '.dockerconfigjson' in res.data
 
 
-def test_get_docker_config_secret(mocker):
-    mock_kube_secret_api(mocker, read=mocked_read_secret)
+def test_get_docker_config_secret(mocker, k8s):
+    mock_kube_secret_api(k8s, read=mocked_read_secret)
     assert install.get_docker_config_secret(
         namespace='test-namespace',
         secret_name=common.get_default_val('image.pullSecret')
@@ -145,34 +120,34 @@ def test_get_docker_config_secret(mocker):
     ) == fake_docker_config_yaml
 
 
-def test_get_docker_config_secret_fail(mocker):
-    mock_kube_secret_api(mocker, read=return_none)
+def test_get_docker_config_secret_fail(mocker, k8s):
+    mock_kube_secret_api(k8s, read=return_none)
     with pytest.raises(click.ClickException):
         install.get_docker_config_secret(
         namespace='test-namespace',
         secret_name=common.get_default_val('image.pullSecret')
         )
 
-def test_create_license_secret_encoded(mocker):
-    mock_kube_secret_api(mocker)
+def test_create_license_secret_encoded(mocker, k8s):
+    mock_kube_secret_api(k8s)
 
-    s = secret.Secret(test_ns, test_secret, install.SECRET_TYPE_OPAQUE, install.LICENSE_KEYS)
+    s = fake_secret(test_ns, test_secret, install.SECRET_TYPE_OPAQUE, install.LICENSE_KEYS)
     s, _ = install.populate_license_secret(s, test_lic_file, True)
-    res = s.get_body()
+    res = s
 
     assert res.type == test_secret_type
     assert res.metadata.name == test_secret
-    assert 'license' in res.string_data
+    assert 'license' in res.stringData
     with open(test_lic_file, 'rb') as license_file:
-        assert base64.b64decode(res.string_data['license']) == license_file.read()
+        assert base64.b64decode(res.stringData['license']) == license_file.read()
 
 
-def test_create_license_secret_decoded(mocker):
-    mock_kube_secret_api(mocker)
+def test_create_license_secret_decoded(k8s):
+    mock_kube_secret_api(k8s)
 
-    s = secret.Secret(test_ns, test_secret, install.SECRET_TYPE_OPAQUE, install.LICENSE_KEYS)
+    s = fake_secret(test_ns, test_secret, install.SECRET_TYPE_OPAQUE, install.LICENSE_KEYS)
     s, _ = install.populate_license_secret(s, test_lic_file, False)
-    res = s.get_body()
+    res = s
 
     assert res.type == test_secret_type
     assert res.metadata.name == test_secret
@@ -181,12 +156,12 @@ def test_create_license_secret_decoded(mocker):
         assert base64.b64decode(res.data['license']) == license_file.read()
 
 
-def test_create_tls_secret(mocker):
-    mock_kube_secret_api(mocker)
+def test_create_tls_secret(k8s):
+    mock_kube_secret_api(k8s)
 
-    s = secret.Secret(test_ns, test_secret, install.SECRET_TYPE_TLS)
+    s = fake_secret(test_ns, test_secret, install.SECRET_TYPE_TLS)
     s = install.populate_tls_secret(s, test_cert, test_key)
-    res = s.get_body()
+    res = s
 
     assert res.type == 'kubernetes.io/tls'
     assert res.metadata.name == test_secret
@@ -194,16 +169,16 @@ def test_create_tls_secret(mocker):
     assert 'tls.key' in res.data
 
 
-def test_create_keycloak_secret_from_cli_config(mocker):
-    mock_kube_secret_api(mocker)
+def test_create_keycloak_secret_from_cli_config(k8s):
+    mock_kube_secret_api(k8s)
     admin_pass = 'test-keycloak-admin-password'
     management_pass = 'test-keycloak-management-password'
     common.config.config['default']['keycloak.admin.password'] = admin_pass
     common.config.config['default']['keycloak.management.password'] = management_pass
 
-    s = secret.Secret(test_ns, test_secret, install.SECRET_TYPE_OPAQUE)
+    s = fake_secret(test_ns, test_secret)
     s = install.populate_keycloak_secret(s)
-    res = s.get_body()
+    res = s
 
     assert res.type == 'Opaque'
     assert res.metadata.name == test_secret
@@ -214,16 +189,16 @@ def test_create_keycloak_secret_from_cli_config(mocker):
     common.config.load_config('default')
 
 
-def test_create_postgres_secret_from_cli_config(mocker):
-    mock_kube_secret_api(mocker)
+def test_create_postgres_secret_from_cli_config(k8s):
+    mock_kube_secret_api(k8s)
     postgres_pass = 'test-postgres-admin-password'
     user_pass = 'test-postgres-user-password'
     common.config.config['default']['postgresql.postgres.password'] = postgres_pass
     common.config.config['default']['postgresql.user.password'] = user_pass
 
-    s = secret.Secret(test_ns, test_secret, install.SECRET_TYPE_OPAQUE)
+    s = fake_secret(test_ns, test_secret)
     s = install.populate_postgresql_secret(s)
-    res = s.get_body()
+    res = s
 
     assert res.type == 'Opaque'
     assert res.metadata.name == test_secret
@@ -239,89 +214,38 @@ def test_create_postgres_secret_from_cli_config(mocker):
     common.config.load_config('default')
 
 
-def test_read_secret_returns_k8s_secret(mocker):
-    mock_kube_secret_api(mocker, read=mocked_read_namespaced_secret)
-
-    s = secret.Secret(test_ns, test_secret)
-    res = s.read()
-
-    assert res.type == test_secret_type
-    assert res.metadata.name == test_secret
-    assert res.data == test_secret_data
-
-
-def test_read_secret_returns_empty_when_does_not_exist(mocker):
-    mock = mocker.patch(IPATH_KUBE_COREV1API)
-    mock.return_value.read_namespaced_secret.side_effect = raise_not_found
-    s = secret.Secret(test_ns, test_secret)
-    res = s.read()
-
-    assert res == None
-
-
-def test_copy_secret(mocker):
-    mock = mocker.patch(IPATH_KUBE_COREV1API)
+def test_copy_secret(mocker, k8s):
+    mock_kube_secret_api(k8s, read=mocked_read_namespaced_secret)
     assert install.copy_secret(test_secret, test_ns, 'to_ns') == None
 
 
-def test_copy_secret_404_exception_when_reading_secret(mocker):
-    mock = mocker.patch(IPATH_KUBE_COREV1API)
-    mock.return_value.read_namespaced_secret.side_effect = raise_not_found
-    with pytest.raises(Exception) as e:
-        install.copy_secret(test_secret, test_ns, 'to_ns')
-    assert isinstance(e.value, click.ClickException)
-    assert 'Exception when trying to get secret (404)\nReason: None\n' in e.value.message
-
-
-def test_copy_secret_404_exception_when_creating_secret(mocker):
-    mock = mocker.patch(IPATH_KUBE_COREV1API)
-    mock.return_value.create_namespaced_secret.side_effect = raise_not_found
-    with pytest.raises(Exception) as e:
-        install.copy_secret(test_secret, test_ns, 'to_ns')
-    assert isinstance(e.value, click.ClickException)
-    assert 'Exception when trying to create secret (404)\nReason: None\n' in e.value.message
-
-
-def test_copy_secret_409_exception_when_creating_secret_does_not_raise_exception(mocker):
-    mock = mocker.patch(IPATH_KUBE_COREV1API)
-    mock.return_value.create_namespaced_secret.side_effect = raise_conflict
+def test_copy_secret_conflict(mocker, k8s):
+    mock_kube_secret_api(k8s, read=mocked_read_namespaced_secret, create=raise_conflict)
     assert install.copy_secret(test_secret, test_ns, 'to_ns') == None
 
 
-def test_get_secret_returns_decoded_secret(mocker):
-    mock_kube_secret_api(mocker, read=mocked_read_namespaced_secret)
+def test_get_secret_returns_decoded_secret(k8s):
+    mock_kube_secret_api(k8s, read=mocked_read_namespaced_secret)
 
-    s = secret.Secret(test_ns, test_secret)
+    s = fake_secret(test_ns, test_secret)
     res = install.get_secret(s, test_secret_key)
 
     assert res == base64.b64decode(test_secret_data[test_secret_key]).decode('ascii')
 
 
-def test_get_secret_when_does_not_exist(mocker):
-    mock_kube_secret_api(mocker)
-    s = secret.Secret(test_ns, test_secret)
+def test_get_secret_when_does_not_exist(k8s):
+    mock_kube_secret_api(k8s)
+    s = fake_secret(test_ns, test_secret)
     res = install.get_secret(s, test_values_yaml)
 
     assert res == None
-
-
-def test_get_secret_when_key_does_not_exist(mocker):
-    mock_kube_secret_api(mocker, read=mocked_read_namespaced_secret_return_values)
-    s = secret.Secret(test_ns, test_secret)
-    res = install.get_secret(s, 'a_bad_key')
+    
+def test_get_secret_keyerror(k8s):
+    mock_kube_secret_api(k8s, read=mocked_read_namespaced_secret)
+    s = fake_secret(test_ns, test_secret)
+    res = install.get_secret(s, "doesnotexists")
 
     assert res == None
-
-
-def test_patch_secret_returns_updated_k8s_secret(mocker):
-    mock_kube_secret_api(mocker)
-    s = secret.Secret(test_ns, test_secret, test_secret_type)
-    s.data = {"secret_key": "new_value"}
-    res = s.patch()
-
-    assert res.type == test_secret_type
-    assert res.metadata.name == test_secret
-    assert res.data == s.data
 
 
 def test_get_operator_version_returns_operator_version_if_passed_regardless_of_rc():
@@ -388,13 +312,13 @@ def test_insights_installed_returns_false_when_does_not_exist(mocker):
     assert install.insights_installed('insights', test_ns) == False
 
 
-def test_get_installed_operator_versions_returns_helm_chart_version(mocker):
-    mock_kube_deployment_api(mocker, read=mocked_kube_deployment_list)
+def test_get_installed_operator_versions_returns_helm_chart_version(k8s):
+    mock_kube_deployment_api(k8s, read=mocked_kube_deployment_list)
     assert install.get_installed_operator_versions('kx-operator') == (['1.2.3'], ['test-helm-name'])
 
 
-def test_get_installed_operator_versions_returns_helm_chart_version_when_does_not_exist(mocker):
-    mock_kube_deployment_api(mocker)
+def test_get_installed_operator_versions_returns_helm_chart_version_when_does_not_exist(k8s):
+    mock_kube_deployment_api(k8s)
     assert install.get_installed_operator_versions('kx-operator') == ([], [])
 
 
@@ -426,133 +350,63 @@ def test_get_image_and_license_secret_returns_error_when_invalid_dict_passed():
     assert f'Invalid values' in e.value.message
 
 
-def test_get_missing_key_with_no_dict_returns_all_keys():
-    keys = ('a','b')
-    assert list(keys) == secret.Secret(test_ns, test_secret, required_keys = keys).get_missing_keys(None)
-
-
-def test_get_missing_key_with_key_missing():
-    assert ['a'] == secret.Secret(test_ns, test_secret, required_keys = ('a','b')).get_missing_keys({'b': 2, 'c': 3})
-
-
-def test_get_missing_key_with_no_key_missing():
-    assert [] == secret.Secret(test_ns, test_secret, required_keys = ('a', 'b')).get_missing_keys({'a': 1, 'b': 2})
-
-
-def test_validate_secret_when_no_secret_exists(mocker):
-    mock_kube_secret_api(mocker)
-    assert (False, True, []) == secret.Secret(test_ns, test_secret, test_secret_type, ['test']).validate()
-
-
-def test_validate_secret_when_missing_a_key(mocker):
-    mock_kube_secret_api(mocker, read=mocked_read_namespaced_secret)
-    assert (True, False, ['test']) == secret.Secret(test_ns, test_secret, test_secret_type, ['test']).validate()
-
-
-def test_validate_secret_when_incorrect_type(mocker):
-    mock_kube_secret_api(mocker, read=mocked_read_namespaced_secret)
-    assert (True, False, []) == secret.Secret(test_ns, test_secret, install.SECRET_TYPE_TLS, (test_secret_key,)).validate()
-
-
-def test_ensure_secret_when_does_not_exist(mocker):
-    mock_kube_secret_api(mocker)
+def test_ensure_secret_when_does_not_exist(k8s):
+    mock_kube_secret_api(k8s)
 
     key = 'a'
-    secret_data = {key: 1}
-    s = secret.Secret(test_ns, test_secret, test_secret_type)
+    secret_data = {key: '1'}
+    s = fake_secret(test_ns, test_secret, test_secret_type)
     res = install.ensure_secret(s, populate, data=secret_data)
 
     assert res.type == test_secret_type
-    assert res.name == test_secret
+    assert res.metadata.name == test_secret
     assert key in res.data
-    assert res.data[key] == 1
+    assert res.data[key] == '1'
 
 
-def test_ensure_secret_when_secret_exists_and_is_valid(mocker):
-    mock_kube_secret_api(mocker, read=mocked_read_namespaced_secret)
-    s = secret.Secret(test_ns, test_secret)
+def test_ensure_secret_when_secret_exists_and_is_valid(k8s):
+    mock_kube_secret_api(k8s, read=mocked_read_namespaced_secret)
+    s = fake_secret(test_ns, test_secret)
     res = install.ensure_secret(s, populate, data=test_secret_data)
 
-    assert res.type is None
-    assert res.name == test_secret
+    assert res.type == "Opaque"
+    assert res.metadata.name == test_secret
     # populate function should not be called to update the data because it's already valid
-    assert res.data is None
+    assert res.data == {}
 
-def test_ensure_secret_when_secret_exists_but_is_invalid_w_overwrite(mocker, monkeypatch):
-    mock_kube_secret_api(mocker, read=mocked_read_namespaced_secret)
+def test_ensure_secret_when_secret_exists_but_is_invalid_w_overwrite(mocker, monkeypatch, k8s):
+    mock_kube_secret_api(k8s, read=mocked_read_namespaced_secret)
     mock_validate_secret(mocker, is_valid=False)
 
     # patch stdin to 'n' for the prompt rejecting secret overwrite
     monkeypatch.setattr(SYS_STDIN, io.StringIO('y'))
 
     new_key = 'xyz'
-    new_data = {new_key: 123}
+    new_data = {new_key: '123'}
 
-    s = secret.Secret(test_ns, test_secret, test_secret_type, data=test_secret_data)
+    s = fake_secret(test_ns, test_secret, test_secret_type, data=test_secret_data)
     res = install.ensure_secret(s, populate, data=new_data)
 
     assert res.type == test_secret_type
-    assert res.name == test_secret
+    assert res.metadata.name == test_secret
     assert new_key in res.data
     assert res.data[new_key] == new_data[new_key]
 
 
-def test_ensure_secret_when_secret_exists_but_is_invalid_w_no_overwrite(mocker, monkeypatch):
-    mock_kube_secret_api(mocker, read=mocked_read_namespaced_secret)
+def test_ensure_secret_when_secret_exists_but_is_invalid_w_no_overwrite(mocker, monkeypatch, k8s):
+    mock_kube_secret_api(k8s, read=mocked_read_namespaced_secret)
     mock_validate_secret(mocker, is_valid=False)
 
     # patch stdin to 'n' for the prompt rejecting secret overwrite
     monkeypatch.setattr(SYS_STDIN, io.StringIO('n'))
 
-    s = secret.Secret(test_ns, test_secret, test_secret_type, data=test_secret_data)
+    s = fake_secret(test_ns, test_secret, test_secret_type, data=test_secret_data)
     res = install.ensure_secret(s, populate, data={'a': 1})
 
     assert res.type == test_secret_type
-    assert res.name == test_secret
+    assert res.metadata.name == test_secret
     assert test_secret_key in res.data
     assert res.data[test_secret_key] == test_secret_data[test_secret_key]
-
-
-def test_create_secret_returns_k8s_secret(mocker):
-    mock_kube_secret_api(mocker)
-
-    s = secret.Secret(test_ns, test_secret, test_secret_type, data=test_secret_data)
-    res = s.create()
-
-    assert res.metadata.namespace == test_ns
-    assert res.type == test_secret_type
-    assert res.metadata.name == test_secret
-    assert res.data == test_secret_data
-
-
-def test_create_secret_returns_exception(mocker):
-    mock_kube_secret_api(mocker, create=raise_not_found)
-    s = secret.Secret(test_ns, test_secret, test_secret_type, data=test_secret_data)
-    res = s.create()
-
-    assert isinstance(res, k8s.client.exceptions.ApiException)
-    assert res.status == 404
-
-
-def test_patch_secret_returns_exception(mocker):
-    mock_kube_secret_api(mocker, patch=raise_not_found)
-    s = secret.Secret(test_ns, test_secret, test_secret_type, data=test_secret_data)
-    res = s.patch()
-
-    assert isinstance(res, k8s.client.exceptions.ApiException)
-    assert res.status == 404
-
-
-def test_exists_returns_true_when_exists(mocker):
-    mock_kube_secret_api(mocker, read=mocked_read_namespaced_secret)
-    s = secret.Secret(test_ns, test_secret, test_secret_type, data=test_secret_data)
-    assert s.exists()
-
-
-def test_exists_returns_false_when_does_not_exist(mocker):
-    mock_kube_secret_api(mocker)
-    s = secret.Secret(test_ns, test_secret, test_secret_type, data=test_secret_data)
-    assert s.exists() == False
 
 
 def test_read_cache_crd_from_file_throws_yaml_error(mocker):
@@ -628,113 +482,114 @@ def test_filter_max_operator_version_with_rcs():
     res = install.filter_max_operator_version(operator_versions, insights_version)
     assert res == '1.6.1-rc.2'
 
-def test_check_for_operator_install_returns_version_to_install(mocker):
+
+def test_check_for_operator_install_returns_version_to_install(mocker, k8s):
     # Operator not already installed, compatible version avaliable on repo
     mock_helm_env(mocker)
     mocker.patch('subprocess.run', mocked_helm_search_returns_valid_json)
     utils.mock_helm_repo_list(mocker)
     chart = helm_chart.Chart('kx-insights/insights')
-    mock_kube_deployment_api(mocker)
+    mock_kube_deployment_api(k8s)
     assert install.check_for_operator_install('kx-insights', test_ns, chart, '1.3.0', None, force=True) == (True, False, '1.3.0', 'kx-insights', [])
 
 
-def test_check_for_operator_install_errors_when_operator_repo_charts_not_compatible(mocker):
+def test_check_for_operator_install_errors_when_operator_repo_charts_not_compatible(mocker, k8s):
     # Operator not already installed, no compatible version avaliable on repo. Error returned
     mock_helm_env(mocker)
     mocker.patch('subprocess.run', mocked_helm_search_returns_valid_json)
     utils.mock_helm_repo_list(mocker)
     chart = helm_chart.Chart('kx-insights/insights')
-    mock_kube_deployment_api(mocker)
+    mock_kube_deployment_api(k8s)
     with pytest.raises(Exception) as e:
-        install.check_for_operator_install('kx-insights', test_ns, chart, '1.8.0', None, True)
+        install.check_for_operator_install('kx-insights', test_ns, chart, '1.8.0', None, force=True)
     assert isinstance(e.value, click.ClickException)
     assert 'Compatible version of operator not found' in e.value.message
 
 
-def test_check_for_operator_install_does_not_install_when_no_repo_charts_available(mocker):
+def test_check_for_operator_install_does_not_install_when_no_repo_charts_available(mocker, k8s):
     # Operator already installed, no compatible version avaliable on repo
     mocker.patch('subprocess.run', mocked_helm_search_returns_empty_json)
     utils.mock_helm_repo_list(mocker)
     chart = helm_chart.Chart('kx-insights/insights')
-    mock_kube_deployment_api(mocker, read=mocked_kube_deployment_list)
-    mocks.list_cluster_custom_object_k8s_api(mocker)
+    mock_kube_deployment_api(k8s, read=mocked_kube_deployment_list)
+    mocks.mock_assembly_list(k8s)
     with pytest.raises(Exception) as e:
-        install.check_for_operator_install('kx-insights', test_ns, chart, '1.8.0', None, True)
+        install.check_for_operator_install('kx-insights', test_ns, chart, '1.8.0', None, force=True)
     assert isinstance(e.value, click.ClickException)
     assert 'Compatible version of operator not found' in e.value.message
 
-def test_check_for_operator_install_errors_when_installed_operator_not_compatible(mocker):
+def test_check_for_operator_install_errors_when_installed_operator_not_compatible(mocker, k8s):
     # Incompatiable operator already installed, no version avaliable on repo. Error returned
     mocker.patch('subprocess.run', mocked_helm_search_returns_empty_json)
-    mock_kube_deployment_api(mocker, read=mocked_kube_deployment_list)
+    mock_kube_deployment_api(k8s, read=mocked_kube_deployment_list)
     utils.mock_helm_repo_list(mocker)
     chart = helm_chart.Chart('kx-insights/insights')
-    mocks.list_cluster_custom_object_k8s_api(mocker)
+    mocks.mock_assembly_list(k8s)
     with pytest.raises(Exception) as e:
-        install.check_for_operator_install('kx-insights', test_ns, chart, '1.8.0', None, True)
+        install.check_for_operator_install('kx-insights', test_ns, chart, '1.8.0', None, force=True)
     assert isinstance(e.value, click.ClickException)
     assert 'Compatible version of operator not found' in e.value.message
 
 
-def test_check_for_operator_install_when_installed_and_available_operators_not_compatible(mocker):
+def test_check_for_operator_install_when_installed_and_available_operators_not_compatible(mocker, k8s):
     # Incompatible operator already installed, no compatible version available on repo. Error returned
     mock_helm_env(mocker)
     mocker.patch('subprocess.run', mocked_helm_search_returns_valid_json)
     utils.mock_helm_repo_list(mocker)
     chart = helm_chart.Chart('kx-insights/insights')
-    mock_kube_deployment_api(mocker, read=mocked_kube_deployment_list)
-    mocks.list_cluster_custom_object_k8s_api(mocker)
+    mock_kube_deployment_api(k8s, read=mocked_kube_deployment_list)
+    mocks.mock_assembly_list(k8s)
     with pytest.raises(Exception) as e:
-        install.check_for_operator_install('kx-insights', test_ns, chart, '1.4.0', None, True)
+        install.check_for_operator_install('kx-insights', test_ns, chart, '1.4.0', None, force=True)
     assert isinstance(e.value, click.ClickException)
     assert 'Compatible version of operator not found' in e.value.message
 
 
-def test_check_for_operator_install_when_provided_insights_and_operators_not_compatible(mocker):
+def test_check_for_operator_install_when_provided_insights_and_operators_not_compatible(mocker, k8s):
     # Provided versions of operator and insights do not match minor versions
     mocker.patch('subprocess.run', mocked_helm_search_returns_empty_json)
-    mock_kube_deployment_api(mocker, read=mocked_kube_deployment_list)
-    mocks.list_cluster_custom_object_k8s_api(mocker)
+    mock_kube_deployment_api(k8s, read=mocked_kube_deployment_list)
+    mocks.mock_assembly_list(k8s)
     with pytest.raises(Exception) as e:
-        install.check_for_operator_install('kx-insights', test_ns, 'insights', '1.3.0', '1.4.0', True)
+        install.check_for_operator_install('kx-insights', test_ns, 'insights', '1.3.0', '1.4.0', force=True)
     assert isinstance(e.value, click.ClickException)
     assert 'kxi-operator version 1.4.0 is incompatible with insights version 1.3.0' in e.value.message
 
 def mocked_get_installed_operator_versions_without_release(namespace):
         return (['1.2.0'], [None])
 
-def test_check_for_operator_install_does_not_install_when_operator_is_not_managed_by_helm(mocker):
+def test_check_for_operator_install_does_not_install_when_operator_is_not_managed_by_helm(mocker, k8s):
     # Operator already installed, no release-name annotation found.
     mock_helm_env(mocker)
     mocker.patch('subprocess.run', mocked_helm_search_returns_valid_json)
     utils.mock_helm_repo_list(mocker)
     chart = helm_chart.Chart('kx-insights/insights')
-    mock_kube_deployment_api(mocker, read=mocked_kube_deployment_list)
+    mock_kube_deployment_api(k8s, read=mocked_kube_deployment_list)
     mocker.patch('kxicli.commands.install.get_installed_operator_versions', mocked_get_installed_operator_versions_without_release)
-    assert install.check_for_operator_install('kx-insights', test_ns, chart, '1.2.3', None, True) == (False, False, None, None, [])
+    assert install.check_for_operator_install('kx-insights', test_ns, chart, '1.2.3', None, force=True) == (False, False, None, None, [])
 
 
-def test_check_for_operator_install_errors_when_incompatible_operator_is_not_managed_by_helm(mocker):
+def test_check_for_operator_install_errors_when_incompatible_operator_is_not_managed_by_helm(mocker, k8s):
     # Operator already installed with a version incompatible with insights, no release-name annotation found.
     mocker.patch('subprocess.run', mocked_helm_search_returns_empty_json)
     utils.mock_helm_repo_list(mocker)
     chart = helm_chart.Chart('kx-insights/insights')
-    mock_kube_deployment_api(mocker, read=mocked_kube_deployment_list)
+    mock_kube_deployment_api(k8s, read=mocked_kube_deployment_list)
     mocker.patch('kxicli.commands.install.get_installed_operator_versions', mocked_get_installed_operator_versions_without_release)
     with pytest.raises(Exception) as e:
-        install.check_for_operator_install('kx-insights', test_ns, chart, '1.3.0', None, True)
+        install.check_for_operator_install('kx-insights', test_ns, chart, '1.3.0', None, force=True)
     assert isinstance(e.value, click.ClickException)
     assert 'Compatible version of operator not found' in e.value.message
 
 
-def test_check_for_operator_install_blocks_when_assemblies_running_in_other_namespaces(mocker, capfd):
+def test_check_for_operator_install_blocks_when_assemblies_running_in_other_namespaces(mocker, capfd, k8s):
     # Operator already installed, assemblies running in other namespaces
     mock_helm_env(mocker)
     mocker.patch('subprocess.run', mocked_helm_search_returns_valid_json)
     utils.mock_helm_repo_list(mocker)
     chart = helm_chart.Chart('kx-insights/insights')
-    mock_kube_deployment_api(mocker, read=mocked_kube_deployment_list)
-    mocks.list_cluster_custom_object_k8s_api(mocker,
+    mock_kube_deployment_api(k8s, read=mocked_kube_deployment_list)
+    mocks.mock_assembly_list(k8s,
                                              response=mock_list_assembly_multiple()
                                              )
     assert install.check_for_operator_install('kx-insights', test_ns, chart, '1.3.0', None, force=True) == (False, False, None, None, [])
@@ -747,15 +602,13 @@ basic-assembly2  {utils.namespace()}
 warn=Cannot upgrade kxi-operator
 """
 
-def test_check_for_cluster_assemblies_returns_none(mocker):
-    mocks.list_cluster_custom_object_k8s_api(mocker)
+def test_check_for_cluster_assemblies_returns_none(k8s):
+    mocks.mock_assembly_list(k8s)
     assert not install.check_for_cluster_assemblies(exclude_namespace=test_ns)
 
 
-def test_check_for_cluster_assemblies_prints_asm_list(mocker, capfd):
-    mocks.list_cluster_custom_object_k8s_api(mocker,
-                                            response=mock_list_assembly_multiple()
-                                            )
+def test_check_for_cluster_assemblies_prints_asm_list(k8s, capfd):
+    mocks.mock_assembly_list(k8s, response=mock_list_assembly_multiple())
     assert install.check_for_cluster_assemblies(exclude_namespace=test_ns)
     out, _ = capfd.readouterr()
     assert out == f"""warn=Assemblies are running in other namespaces
@@ -818,7 +671,7 @@ def test_is_valid_upgrade_version_raises_exception_upon_downgrade(mocker):
     assert 'Cannot upgrade from version 1.2.1 to version 1.0.0. Target version must be higher than currently installed version.' in e.value.message
 
 
-def test_check_upgrade_version_allows_upgrade():
+def test_check_upgrade_version_allows_rollback():
     assert install.check_operator_rollback_version('1.3.3', '1.3.0') == None
     assert install.check_operator_rollback_version('1.3.3', '1.3.4') == None
     assert install.check_operator_rollback_version('1.3.3', '1.3.6') == None
@@ -836,7 +689,7 @@ def test_check_operator_rollback_version_raises_exception_upon_downgrade():
     assert isinstance(e.value, click.ClickException)
     assert 'Insights rollback target version 1.5.0-rc.18 is incompatible with target operator version 1.4.0-rc.17. Minor versions must match.' in e.value.message
 
-def test_get_values_and_secrets_from_helm_values_exist(mocker):
+def test_get_values_and_secrets_from_helm_values_exist(mocker, k8s):
     mock_helm_repo_list(mocker, test_chart_repo_name, test_chart_repo_url)
     mocker.patch('kxicli.commands.install.helm.repo_update')
     test_val_data_updated = copy.deepcopy(test_vals)
@@ -853,7 +706,7 @@ def test_get_values_and_secrets_from_helm_values_exist(mocker):
                                           None
                                           ) == (None, test_ns, test_chart_repo_url, 'kxi-nexus-pull-secret', test_lic_secret)
 
-def test_get_values_and_secrets_from_helm_values_dont_exist(mocker, capfd):
+def test_get_values_and_secrets_from_helm_values_dont_exist(mocker, capfd, k8s):
     mock_helm_repo_list(mocker, test_chart_repo_name, test_chart_repo_url)
     mocker.patch('kxicli.commands.install.helm.repo_update')
     test_val_data_updated = copy.deepcopy(test_vals)
@@ -882,7 +735,7 @@ error=Required secret kxi-postgresql does not exist
 """
 
 
-def test_get_values_and_secrets_from_helm_values_exist_called_from_azure(mocker):
+def test_get_values_and_secrets_from_helm_values_exist_called_from_azure(mocker, k8s):
     test_val_data_updated = copy.deepcopy(test_vals)
     test_val_data_updated['global']['image']['repository'] = 'test-repo.com'
     mock_helm_get_values(mocker, test_val_data_updated)

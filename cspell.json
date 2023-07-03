@@ -54,6 +54,7 @@
     "backupcommand",
     "PGDATABASE",
     "PGUSER",
-    "yamlcontent"
+    "yamlcontent",
+    "customresourcedefinitions"
   ]
 }

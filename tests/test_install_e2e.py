@@ -11,8 +11,11 @@ from pathlib import Path
 from subprocess import CompletedProcess
 from tempfile import mkdtemp
 from typing import List, Optional
+from unittest.mock import MagicMock
+import pyk8s
 import pytest
 import click
+from pytest_mock import MockerFixture
 import requests_mock
 
 import yaml, json
@@ -20,7 +23,6 @@ from click.testing import CliRunner
 from kxicli import common
 from kxicli import main
 from kxicli import phrases
-from kxicli.resources import secret
 from kxicli.resources.helm import LocalHelmVersion, minimum_helm_version, HelmVersionChecked, \
     required_helm_version
 from kxicli.commands.assembly import CONFIG_ANNOTATION
@@ -140,20 +142,11 @@ def compare_files(file1: str, file2: str):
         return filecmp.cmp(file1, file2, shallow=False)
 
 
-def mocked_read_namespaced_secret_return_values(namespace, name):
-    res = secret.Secret(namespace, name, main.install.SECRET_TYPE_OPAQUE)
-    res = main.install.populate_install_secret(res, 'values.yaml', {'values': test_vals})
-    return res.get_body()
-
-
-def mocked_read_secret(namespace,
-                        name,
+def mocked_read_secret(namespace=None,
+                        name=None,
                         image_pull_secret_name=common.get_default_val('image.pullSecret'),
                         ):
-    if name == image_pull_secret_name:
-        return utils.fake_docker_config_secret
-    else:
-        return mocked_read_namespaced_secret_return_values(namespace,name)
+    return utils.fake_docker_config_secret
 
 
 def mocked_helm_add_repo(repo, url, username, password):
@@ -179,17 +172,18 @@ def mocked_helm_version_checked():
     )
     return helm_version_checked
 
-def mock_delete_crd(mocker):
+def mock_delete_crd(mocker: MockerFixture, k8s: MagicMock):
     global delete_crd_params
     delete_crd_params = []
     global crd_exists_flag
     crd_exists_flag = True
-    utils.mock_kube_crd_api(mocker,
+    utils.mock_kube_crd_api(k8s,
                             create=mocked_create_crd,
                             delete=mocked_delete_crd
                             )
+    mocker.patch.object(pyk8s.models.V1CustomResourceDefinition, "wait_until_not_ready")
 
-def mocked_delete_crd(name):
+def mocked_delete_crd(name=None, **kwargs):
     global delete_crd_params
     delete_crd_params.append(name)
     global crd_exists_flag
@@ -205,7 +199,7 @@ def mocked_copy_secret(name, from_ns, to_ns):
     copy_secret_params.append((name, from_ns, to_ns))
 
 
-def mock_copy_secret(mocker):
+def mock_copy_secret(mocker, k8s):
     global copy_secret_params
     copy_secret_params = []
     mocker.patch('kxicli.commands.install.copy_secret', mocked_copy_secret)
@@ -218,11 +212,6 @@ def mocked_k8s_list_empty_config():
 def mocked_create_namespace(namespace):
     # Test function to mock
     pass
-
-
-def mock_create_namespace(mocker):
-    mocker.patch('kxicli.resources.helm.create_namespace', mocked_create_namespace)
-    mocker.patch('kxicli.commands.install.create_namespace', mocked_create_namespace)
 
 
 def mocked_get_operator_version(chart_repo_name, insights_version, operator_version):
@@ -323,21 +312,21 @@ def mocked_crd_exists(name):
     return crd_exists_flag
 
 
-def mock_secret_helm_add(mocker):
-    utils.mock_kube_secret_api(mocker, read=utils.raise_not_found)
+def mock_secret_helm_add(mocker, k8s):
+    utils.mock_kube_secret_api(k8s, read=utils.raise_not_found)
     mock_empty_helm_repo_list(mocker)
     helm_add_repo_params = ()
     mocker.patch('kxicli.commands.install.helm.add_repo', mocked_helm_add_repo)
 
 
 def mock_list_assembly_none(namespace):
-    return {'items': []}
+    return []
 
 
 def mock_list_assembly(namespace):
     with open(utils.test_asm_file) as f:
         test_asm = yaml.safe_load(f)
-    return {'items': [test_asm]}
+    return [test_asm]
 
 
 def mock_list_assembly_multiple(*args, **kwargs):
@@ -348,17 +337,15 @@ def mock_list_assembly_multiple(*args, **kwargs):
         test_asm2 = yaml.safe_load(f)
         test_asm2['metadata']['namespace'] = utils.namespace()
 
-    return {'items': [test_asm, test_asm2]}
+    return [test_asm, test_asm2]
 
 
-def mock_delete_assembly(mocker):
-    CUSTOM_OBJECT_API = 'kubernetes.client.CustomObjectsApi'
+def mock_delete_assembly(mocker, k8s):
     PREFERRED_VERSION_FUNC = 'kxicli.commands.assembly.get_preferred_api_version'
     PREFERRED_VERSION = 'v1'
-    mock_instance = mocker.patch(CUSTOM_OBJECT_API).return_value
     mocker.patch(PREFERRED_VERSION_FUNC, return_value=PREFERRED_VERSION)
-    mock_instance.return_value.delete_namespaced_custom_object.return_value = utils.return_none
-    mock_instance.get_namespaced_custom_object.side_effect = utils.raise_not_found
+    k8s.assemblies.delete.return_value = utils.return_none
+    k8s.assemblies.read.side_effect = utils.raise_not_found
 
 
 def mock_create_assembly(hostname, client_id, client_secret, realm, namespace, body, use_kubeconfig, wait=None):
@@ -387,18 +374,16 @@ def mock_asm_backup_path(mocker):
     mocker.patch('kxicli.commands.assembly._backup_filepath', lambda filepath, force: test_asm_backup)
 
 
-def setup_mocks(mocker):
-    mock_secret_helm_add(mocker)
-    mock_create_namespace(mocker)
+def setup_mocks(mocker, k8s):
+    mock_secret_helm_add(mocker, k8s)
     mock_generate_password(mocker)
 
-def upgrades_mocks(mocker):
+def upgrades_mocks(mocker, k8s):
     mock_subprocess_run(mocker)
-    mock_create_namespace(mocker)
-    utils.mock_kube_secret_api(mocker, read=mocked_read_secret)
-    mock_copy_secret(mocker)
-    mock_delete_crd(mocker)
-    mock_delete_assembly(mocker)
+    utils.mock_kube_secret_api(k8s, read=mocked_read_secret)
+    mock_copy_secret(mocker, k8s)
+    mock_delete_crd(mocker, k8s)
+    mock_delete_assembly(mocker, k8s)
     utils.mock_helm_repo_list(mocker)
     global running_assembly
     running_assembly = {test_asm_name:True}
@@ -407,8 +392,8 @@ def upgrades_mocks(mocker):
     mocker.patch('kxicli.commands.assembly._create_assembly', mock_create_assembly)
 
 
-def install_setup_output_check(mocker, test_cfg, expected_exit_code):
-    setup_mocks(mocker)
+def install_setup_output_check(mocker, test_cfg, expected_exit_code, k8s):
+    setup_mocks(mocker, k8s)
     with temp_test_output_file() as test_output_file, temp_config_file() as test_cli_config:
         cmd = ['install', 'setup', '--output-file', test_output_file]
         run_cli(cmd, test_cfg, test_cli_config, test_output_file, expected_exit_code)
@@ -422,8 +407,8 @@ def run_cli(cmd, test_cfg, cli_config = None, output_file = None, expected_exit_
         expected_output = cli_output(verb, cli_config, output_file, **test_cfg)
         result = runner.invoke(main.cli, cmd, input=user_input)
 
-    assert result.exit_code == expected_exit_code
     assert result.output == expected_output
+    assert result.exit_code == expected_exit_code
 
 
 @dataclass
@@ -535,19 +520,19 @@ def cleanup_env_globals():
 
 # Tests
 
-def test_install_setup_when_creating_secrets(mocker):
-    install_setup_output_check(mocker, {}, 0)
+def test_install_setup_when_creating_secrets(mocker, k8s):
+    install_setup_output_check(mocker, {}, 0, k8s)
 
 
-def test_install_setup_when_using_existing_docker_creds(mocker):
+def test_install_setup_when_using_existing_docker_creds(mocker, k8s):
     test_cfg = {
         'use_existing_creds': 'y'
     }
-    install_setup_output_check(mocker, test_cfg, 0)
+    install_setup_output_check(mocker, test_cfg, 0, k8s)
 
 
-def test_install_setup_when_reading_client_passwords_from_cli_config(mocker):
-    setup_mocks(mocker)
+def test_install_setup_when_reading_client_passwords_from_cli_config(mocker, k8s):
+    setup_mocks(mocker, k8s)
 
     common.config.config_file = os.path.dirname(__file__) + '/files/test-cli-config-client-secrets'
     test_cfg = {
@@ -572,8 +557,8 @@ operatorClientSecret = operator-secret
     common.config.load_config("default")
 
 
-def test_install_setup_when_reading_client_passwords_from_command_line(mocker):
-    setup_mocks(mocker)
+def test_install_setup_when_reading_client_passwords_from_command_line(mocker, k8s):
+    setup_mocks(mocker, k8s)
 
     common.config.config_file = os.path.dirname(__file__) + '/files/test-cli-config-client-secrets'
     test_cfg = {
@@ -600,7 +585,7 @@ operatorClientSecret = operator-secret-command-line
     common.config.load_config("default")
 
 
-def test_install_setup_when_secret_exists_but_is_invalid(mocker):
+def test_install_setup_when_secret_exists_but_is_invalid(mocker, k8s):
     test_cfg = {
         'lic_sec_exists': True,
         'lic_sec_is_valid': False,
@@ -614,11 +599,11 @@ def test_install_setup_when_secret_exists_but_is_invalid(mocker):
         'pg_secret_is_valid': False
     }
     utils.mock_validate_secret(mocker, is_valid=False)
-    install_setup_output_check(mocker, test_cfg, 0)
+    install_setup_output_check(mocker, test_cfg, 0, k8s)
 
 
-def test_install_setup_when_secrets_exist_and_are_valid(mocker):
-    setup_mocks(mocker)
+def test_install_setup_when_secrets_exist_and_are_valid(mocker, k8s):
+    setup_mocks(mocker, k8s)
     utils.mock_validate_secret(mocker)
     with temp_test_output_file() as test_output_file, temp_config_file() as test_cli_config:
         cmd = ['install', 'setup', '--output-file', test_output_file]
@@ -645,16 +630,16 @@ operatorClientSecret = aRandomPassword
 """
 
 
-def test_install_setup_check_output_values_file(mocker):
-    setup_mocks(mocker)
+def test_install_setup_check_output_values_file(mocker, k8s):
+    setup_mocks(mocker, k8s)
     with temp_test_output_file() as test_output_file, temp_config_file() as test_cli_config:
         cmd = ['install', 'setup', '--output-file', test_output_file]
         run_cli(cmd, {}, test_cli_config, test_output_file, 0)
         assert compare_files(test_output_file, expected_test_output_file)
 
 
-def test_install_setup_when_hostname_provided_from_command_line(mocker):
-    setup_mocks(mocker)
+def test_install_setup_when_hostname_provided_from_command_line(mocker, k8s):
+    setup_mocks(mocker, k8s)
     with temp_test_output_file() as test_output_file, temp_config_file() as test_cli_config:
         cmd = ['install', 'setup', '--output-file', test_output_file, '--hostname', 'https://a-test-hostname.kx.com']
         test_cfg = {
@@ -665,8 +650,8 @@ def test_install_setup_when_hostname_provided_from_command_line(mocker):
         assert compare_files(test_output_file, test_output_file_updated_hostname)
 
 
-def test_install_setup_ingress_host_is_an_alias_for_hostname(mocker):
-    setup_mocks(mocker)
+def test_install_setup_ingress_host_is_an_alias_for_hostname(mocker, k8s):
+    setup_mocks(mocker, k8s)
     with temp_test_output_file() as test_output_file, temp_config_file() as test_cli_config:
         cmd = ['install', 'setup', '--output-file', test_output_file, '--ingress-host', 'https://a-test-hostname.kx.com']
         test_cfg = {
@@ -677,8 +662,8 @@ def test_install_setup_ingress_host_is_an_alias_for_hostname(mocker):
         assert compare_files(test_output_file, test_output_file_updated_hostname)
 
 
-def test_install_setup_when_ingress_cert_secret_provided_on_command_line(mocker):
-    setup_mocks(mocker)
+def test_install_setup_when_ingress_cert_secret_provided_on_command_line(mocker, k8s):
+    setup_mocks(mocker, k8s)
     utils.mock_validate_secret(mocker, exists=True, is_valid=True)
     with temp_test_output_file() as test_output_file, temp_config_file() as test_cli_config:
         cmd = ['install', 'setup', '--output-file', test_output_file,  '--ingress-cert-secret', test_ingress_cert_secret]
@@ -695,8 +680,8 @@ def test_install_setup_when_ingress_cert_secret_provided_on_command_line(mocker)
         assert compare_files(test_output_file, test_output_file_manual_ingress)
 
 
-def test_install_setup_when_ingress_cert_and_key_files_provided_on_command_line(mocker):
-    setup_mocks(mocker)
+def test_install_setup_when_ingress_cert_and_key_files_provided_on_command_line(mocker, k8s):
+    setup_mocks(mocker, k8s)
     utils.mock_validate_secret(mocker, exists=False, is_valid=True)
     with temp_test_output_file() as test_output_file, temp_test_output_file(file_name='tls_crt') as test_cert_filepath, \
         temp_test_output_file(file_name='tls_key') as test_key_filepath, temp_config_file() as test_cli_config:
@@ -714,8 +699,8 @@ def test_install_setup_when_ingress_cert_and_key_files_provided_on_command_line(
         assert compare_files(test_output_file, test_output_file_manual_ingress)
 
 
-def test_install_setup_when_ingress_cert_file_provided_on_command_line(mocker):
-    setup_mocks(mocker)
+def test_install_setup_when_ingress_cert_file_provided_on_command_line(mocker, k8s):
+    setup_mocks(mocker, k8s)
     utils.mock_validate_secret(mocker, exists=False, is_valid=True)
     with temp_test_output_file() as test_output_file, temp_test_output_file(file_name='tls_crt') as test_cert_filepath, \
         temp_test_output_file(file_name='tls_key') as test_key_filepath, temp_config_file() as test_cli_config:
@@ -733,8 +718,8 @@ def test_install_setup_when_ingress_cert_file_provided_on_command_line(mocker):
         assert compare_files(test_output_file, test_output_file_manual_ingress)
 
 
-def test_install_setup_with_external_ingress_certmanager(mocker):
-    setup_mocks(mocker)
+def test_install_setup_with_external_ingress_certmanager(mocker, k8s):
+    setup_mocks(mocker, k8s)
     with temp_test_output_file() as test_output_file, temp_config_file() as test_cli_config:
         cmd = ['install', 'setup', '--output-file', test_output_file,  '--ingress-certmanager-disabled']
         test_cfg = {
@@ -744,8 +729,8 @@ def test_install_setup_with_external_ingress_certmanager(mocker):
         assert compare_files(test_output_file, test_output_file_external_certmanager)
 
 
-def test_install_setup_when_passed_license_env_var_in_command_line(mocker):
-    setup_mocks(mocker)
+def test_install_setup_when_passed_license_env_var_in_command_line(mocker, k8s):
+    setup_mocks(mocker, k8s)
     utils.mock_validate_secret(mocker)
     with temp_test_output_file() as test_output_file, temp_config_file() as test_cli_config:
         cmd = ['install', 'setup', '--output-file', test_output_file, '--license-as-env-var', 'True']
@@ -761,8 +746,8 @@ def test_install_setup_when_passed_license_env_var_in_command_line(mocker):
         assert compare_files(test_output_file, test_output_file_lic_env_var)
 
 
-def test_install_setup_when_passed_kc_license_filename(mocker):
-    setup_mocks(mocker)
+def test_install_setup_when_passed_kc_license_filename(mocker, k8s):
+    setup_mocks(mocker, k8s)
     with temp_test_output_file() as test_output_file, temp_config_file() as test_cli_config, temp_test_output_file(
             file_name='kc.lic') as test_kc_lic:
         with open(test_kc_lic, 'w') as f:
@@ -776,8 +761,8 @@ def test_install_setup_when_passed_kc_license_filename(mocker):
         assert compare_files(test_output_file, test_output_file_lic_on_demand)
 
 
-def test_install_setup_when_providing_license_secret(mocker):
-    setup_mocks(mocker)
+def test_install_setup_when_providing_license_secret(mocker, k8s):
+    setup_mocks(mocker, k8s)
     utils.mock_validate_secret(mocker)
     with temp_test_output_file() as test_output_file, temp_config_file() as test_cli_config:
         cmd = ['install', 'setup', '--output-file', test_output_file, '--license-secret', common.get_default_val('license.secret')]
@@ -793,8 +778,8 @@ def test_install_setup_when_providing_license_secret(mocker):
         assert compare_files(test_output_file, utils.test_val_file)
 
 
-def test_install_setup_overwrites_when_values_file_exists(mocker):
-    setup_mocks(mocker)
+def test_install_setup_overwrites_when_values_file_exists(mocker, k8s):
+    setup_mocks(mocker, k8s)
     with temp_test_output_file() as test_output_file, temp_config_file() as test_cli_config:
         with open(test_output_file, 'w') as f:
             f.write(TEST_VALUES_FILE)
@@ -809,8 +794,8 @@ def test_install_setup_overwrites_when_values_file_exists(mocker):
         assert compare_files(test_output_file, utils.test_val_file)
 
 
-def test_install_setup_creates_new_when_values_file_exists(mocker):
-    setup_mocks(mocker)
+def test_install_setup_creates_new_when_values_file_exists(mocker, k8s):
+    setup_mocks(mocker, k8s)
     with temp_test_output_file() as test_output_file, temp_config_file() as test_cli_config:
         with open(test_output_file, 'w') as f:
             f.write(TEST_VALUES_FILE)
@@ -835,41 +820,24 @@ def test_install_setup_creates_new_when_values_file_exists(mocker):
             assert f.read() == TEST_VALUES_FILE # assert that the original file is unchanged
 
 
-def test_install_setup_errors_with_no_kube_context(mocker):
-    setup_mocks(mocker)
-    utils.mock_list_kube_config_contexts(mocker)
-    utils.mock_load_kube_config_incluster_raises_exception(mocker)
-    with temp_test_output_file() as test_output_file, temp_config_file() as test_cli_config:
-        runner = CliRunner()
-        with runner.isolated_filesystem():
-            result = runner.invoke(main.cli, ['install', 'setup', '--output-file', test_output_file])
-        assert result.exit_code == 1
-        assert result.output == f"""{phrases.header_setup}
-Using namespace from config file {test_cli_config}: {utils.namespace()}
-Error: Kubernetes cluster config not found
-"""
-
-
-def test_install_setup_runs_in_cluster(mocker):
-    setup_mocks(mocker)
+def test_install_setup_runs_in_cluster(mocker, k8s):
+    setup_mocks(mocker, k8s)
     test_ns = utils.namespace()
-    utils.mock_list_kube_config_contexts(mocker)
-    mocker.patch('kubernetes.config.load_incluster_config')
+    k8s.in_cluster = True
     mocker.patch('kxicli.options.get_namespace', lambda: test_ns)
     test_cfg = {
         'incluster': True
     }
-    install_setup_output_check(mocker, test_cfg, 0)
+    install_setup_output_check(mocker, test_cfg, 0, k8s)
 
 
-def test_install_run_when_provided_file(mocker):
+def test_install_run_when_provided_file(mocker, k8s):
     mock_subprocess_run(mocker)
     mock_set_insights_operator_and_crd_installed_state(mocker, False, True, True)
-    mock_create_namespace(mocker)
     mock_get_operator_version(mocker)
     utils.mock_validate_secret(mocker)
     utils.mock_helm_repo_list(mocker)
-    utils.mock_kube_secret_api(mocker, read=mocked_read_secret)
+    utils.mock_kube_secret_api(k8s, read=mocked_read_secret)
     mocker.patch(LIST_CLUSTER_ASSEMBLIES_FUNC)
 
     runner = CliRunner()
@@ -893,10 +861,10 @@ Installing chart kx-insights/insights version 1.2.3 with values file from {utils
     ])
 
 
-def test_install_run_when_no_file_provided(mocker):
-    setup_mocks(mocker)
+def test_install_run_when_no_file_provided(mocker, k8s):
+    setup_mocks(mocker, k8s)
     utils.mock_helm_repo_list(mocker)
-    utils.mock_kube_secret_api(mocker, read=mocked_read_secret)
+    utils.mock_kube_secret_api(k8s, read=mocked_read_secret)
     mock_subprocess_run(mocker)
     mocker.patch('subprocess.check_output', mocked_helm_list_returns_empty_json)
     mock_set_insights_operator_and_crd_installed_state(mocker, False, False, False)
@@ -932,10 +900,10 @@ Installing chart kx-insights/insights version 1.2.3 with values file from values
             HelmCommandInsightsInstall(values = 'values.yaml', chart = 'kx-insights/insights')
         ])
 
-def test_install_run_when_no_file_provided_import_users_false(mocker):
-    setup_mocks(mocker)
+def test_install_run_when_no_file_provided_import_users_false(mocker, k8s):
+    setup_mocks(mocker, k8s)
     utils.mock_helm_repo_list(mocker)
-    utils.mock_kube_secret_api(mocker, read=mocked_read_secret)
+    utils.mock_kube_secret_api(k8s, read=mocked_read_secret)
     mock_subprocess_run(mocker)
     mocker.patch('subprocess.check_output', mocked_helm_list_returns_empty_json)
     mock_set_insights_operator_and_crd_installed_state(mocker, False, False, False)
@@ -975,15 +943,14 @@ Installing chart kx-insights/insights version 1.2.3 with values file from values
         ])
 
 
-def test_install_run_installs_operator(mocker):
+def test_install_run_installs_operator(mocker, k8s):
     mock_subprocess_run(mocker)
-    mock_create_namespace(mocker)
-    mock_copy_secret(mocker)
+    mock_copy_secret(mocker, k8s)
     mock_set_insights_operator_and_crd_installed_state(mocker, False, False, False)
     mock_get_operator_version(mocker)
     utils.mock_validate_secret(mocker)
     utils.mock_helm_repo_list(mocker)
-    utils.mock_kube_secret_api(mocker, read=mocked_read_secret)
+    utils.mock_kube_secret_api(k8s, read=mocked_read_secret)
     global copy_secret_params
     copy_secret_params = []
 
@@ -1011,15 +978,14 @@ Installing chart kx-insights/insights version 1.2.3 with values file from {utils
     ])
 
 
-def test_install_run_when_provided_oci_chart_repo_url(mocker):
+def test_install_run_when_provided_oci_chart_repo_url(mocker, k8s):
     mock_subprocess_run(mocker)
-    mock_create_namespace(mocker)
-    mock_copy_secret(mocker)
+    mock_copy_secret(mocker, k8s)
     mock_set_insights_operator_and_crd_installed_state(mocker, False, False, False)
     mock_get_operator_version(mocker)
     utils.mock_validate_secret(mocker)
     utils.mock_helm_repo_list(mocker)
-    utils.mock_kube_secret_api(mocker, read=mocked_read_secret)
+    utils.mock_kube_secret_api(k8s, read=mocked_read_secret)
     mocker.patch('kxicli.resources.helm.get_helm_version_checked', mocked_helm_version_checked)
 
     runner = CliRunner()
@@ -1043,15 +1009,14 @@ Installing chart {test_chart_repo_url_oci}/insights version 1.2.3 with values fi
     ])
 
 
-def test_install_run_force_installs_operator(mocker):
+def test_install_run_force_installs_operator(mocker, k8s):
     mock_subprocess_run(mocker)
-    mock_create_namespace(mocker)
-    mock_copy_secret(mocker)
+    mock_copy_secret(mocker, k8s)
     mock_set_insights_operator_and_crd_installed_state(mocker, False, False, False)
     mock_get_operator_version(mocker)
     utils.mock_validate_secret(mocker)
     utils.mock_helm_repo_list(mocker)
-    utils.mock_kube_secret_api(mocker, read=mocked_read_secret)
+    utils.mock_kube_secret_api(k8s, read=mocked_read_secret)
     global copy_secret_params
     copy_secret_params = []
 
@@ -1075,15 +1040,14 @@ Installing chart kx-insights/insights version 1.2.3 with values file from {utils
     ])
 
 
-def test_install_run_with_operator_version(mocker):
+def test_install_run_with_operator_version(mocker, k8s):
     mock_subprocess_run(mocker)
-    mock_create_namespace(mocker)
-    mock_copy_secret(mocker)
+    mock_copy_secret(mocker, k8s)
     mock_set_insights_operator_and_crd_installed_state(mocker, False, False, False)
     mock_get_operator_version(mocker)
     utils.mock_validate_secret(mocker)
     utils.mock_helm_repo_list(mocker)
-    utils.mock_kube_secret_api(mocker, read=mocked_read_secret)
+    utils.mock_kube_secret_api(k8s, read=mocked_read_secret)
     global copy_secret_params
     copy_secret_params = []
 
@@ -1106,15 +1070,14 @@ Installing chart kx-insights/insights version 1.2.3 with values file from {utils
         HelmCommandInsightsInstall()
     ])
 
-def test_install_run_with_no_operator_version_available(mocker):
+def test_install_run_with_no_operator_version_available(mocker, k8s):
     mock_subprocess_run(mocker)
-    mock_create_namespace(mocker)
-    mock_copy_secret(mocker)
+    mock_copy_secret(mocker, k8s)
     mock_set_insights_operator_and_crd_installed_state(mocker, False, False, False)
     mocker.patch('kxicli.commands.install.get_operator_version', utils.return_none)
     utils.mock_validate_secret(mocker)
     utils.mock_helm_repo_list(mocker)
-    utils.mock_kube_secret_api(mocker, read=mocked_read_secret)
+    utils.mock_kube_secret_api(k8s, read=mocked_read_secret)
     global copy_secret_params
     copy_secret_params = []
 
@@ -1132,15 +1095,14 @@ Error: Compatible version of operator not found
     check_subprocess_run_commands([HelmCommandRepoUpdate()])
 
 
-def test_install_run_with_compitable_operator_already_installed(mocker):
+def test_install_run_with_compitable_operator_already_installed(mocker, k8s):
     mock_subprocess_run(mocker)
     mock_set_insights_operator_and_crd_installed_state(mocker, False, True, True)
-    mock_create_namespace(mocker)
     mocker.patch('kxicli.commands.install.get_operator_version', utils.return_none)
     utils.mock_validate_secret(mocker)
     utils.mock_helm_env(mocker)
     utils.mock_helm_repo_list(mocker)
-    utils.mock_kube_secret_api(mocker, read=mocked_read_secret)
+    utils.mock_kube_secret_api(k8s, read=mocked_read_secret)
     mocker.patch(LIST_CLUSTER_ASSEMBLIES_FUNC)
 
     runner = CliRunner()
@@ -1162,15 +1124,14 @@ Installing chart kx-insights/insights version 1.2.3 with values file from {utils
     ])
 
 
-def test_install_run_installs_operator_with_modified_secrets(mocker):
+def test_install_run_installs_operator_with_modified_secrets(mocker, k8s):
     new_image_secret = 'new-image-pull-secret'
     new_lic_secret = 'new-license-secret'
 
     read_secret_func = partial(mocked_read_secret, image_pull_secret_name=new_image_secret)
     mock_subprocess_run(mocker)
-    mock_create_namespace(mocker)
-    utils.mock_kube_secret_api(mocker, read=read_secret_func)
-    mock_copy_secret(mocker)
+    utils.mock_kube_secret_api(k8s, read=read_secret_func)
+    mock_copy_secret(mocker, k8s)
     mock_set_insights_operator_and_crd_installed_state(mocker, False, False, False)
     mock_get_operator_version(mocker)
     utils.mock_validate_secret(mocker)
@@ -1207,15 +1168,14 @@ Installing chart kx-insights/insights version 1.2.3 with values file from {value
     assert [subprocess_run_command[1].kwargs.get(key) for key in ['check', 'input', 'text']] == [True, None, None]
 
 
-def test_install_run_when_no_context_set(mocker):
+def test_install_run_when_no_context_set(mocker, k8s):
+    k8s.config.namespace = None
     mock_subprocess_run(mocker)
     mock_set_insights_operator_and_crd_installed_state(mocker, False, True, True)
-    mock_create_namespace(mocker)
     mock_get_operator_version(mocker)
-    mocker.patch('kubernetes.config.list_kube_config_contexts', mocked_k8s_list_empty_config)
     utils.mock_validate_secret(mocker)
     utils.mock_helm_repo_list(mocker)
-    utils.mock_kube_secret_api(mocker, read=mocked_read_secret)
+    utils.mock_kube_secret_api(k8s, read=mocked_read_secret)
     mocker.patch(LIST_CLUSTER_ASSEMBLIES_FUNC)
 
     runner = CliRunner()
@@ -1240,14 +1200,13 @@ Installing chart kx-insights/insights version 1.2.3 with values file from {utils
     ])
 
 
-def test_install_run_exits_when_already_installed(mocker):
+def test_install_run_exits_when_already_installed(mocker, k8s):
     mock_subprocess_run(mocker)
     mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
-    mock_create_namespace(mocker)
     mock_get_operator_version(mocker)
     utils.mock_validate_secret(mocker)
     utils.mock_helm_repo_list(mocker)
-    utils.mock_kube_secret_api(mocker, read=mocked_read_secret)
+    utils.mock_kube_secret_api(k8s, read=mocked_read_secret)
 
     runner = CliRunner()
     with runner.isolated_filesystem():
@@ -1262,7 +1221,7 @@ Would you like to upgrade to version 1.2.3? [y/N]: n
     assert result.output == expected_output
 
 
-def test_install_run_prompts_when_repo_does_not_exist(mocker):
+def test_install_run_prompts_when_repo_does_not_exist(mocker, k8s):
     # return an empty repo list, then a populated one after the repo has been added
     helm_list = [
         [],
@@ -1272,12 +1231,11 @@ def test_install_run_prompts_when_repo_does_not_exist(mocker):
     mocker.patch('kxicli.resources.helm.add_repo', mocked_helm_add_repo)
     mocker.patch('kxicli.resources.helm.repo_update')
     mock_subprocess_run(mocker)
-    mock_create_namespace(mocker)
-    mock_copy_secret(mocker)
+    mock_copy_secret(mocker, k8s)
     mock_set_insights_operator_and_crd_installed_state(mocker, False, False, False)
     mock_get_operator_version(mocker)
     utils.mock_validate_secret(mocker)
-    utils.mock_kube_secret_api(mocker, read=mocked_read_secret)
+    utils.mock_kube_secret_api(k8s, read=mocked_read_secret)
     runner = CliRunner()
     user_input = f"""
 {test_user}
@@ -1301,11 +1259,12 @@ Installing chart kx-insights/insights version 1.2.3 with values file from {utils
     assert result.output == expected_output
 
 
-def test_delete(mocker):
+def test_delete(mocker, k8s):
+    mock_asm_backup_path(mocker)
     mock_subprocess_run(mocker)
     mock_set_insights_operator_and_crd_installed_state(mocker, True, False, False)
-    mock_delete_crd(mocker)
-    mock_asm_backup_path(mocker)
+    mock_delete_crd(mocker, k8s)
+    mock_copy_secret(mocker, k8s)
     mocker.patch(GET_ASSEMBLIES_LIST_FUNC, mock_list_assembly_multiple)
     mocker.patch(DELETE_ASSEMBLIES_FUNC, mock__delete_assembly)
 
@@ -1326,7 +1285,7 @@ Uninstalling release insights in namespace {test_namespace}
     assert delete_crd_params == []
 
 
-def test_list_versions_default_repo(mocker):
+def test_list_versions_default_repo(mocker, k8s):
     mock_subprocess_run(mocker)
     mock_set_insights_operator_and_crd_installed_state(mocker, True, False, False)
 
@@ -1345,7 +1304,7 @@ def test_list_versions_default_repo(mocker):
         )
 
 
-def test_list_versions_custom_repo(mocker):
+def test_list_versions_custom_repo(mocker, k8s):
     mock_subprocess_run(mocker)
     mock_set_insights_operator_and_crd_installed_state(mocker, True, False, False)
 
@@ -1364,13 +1323,14 @@ def test_list_versions_custom_repo(mocker):
         )
 
 
-def test_delete_specify_release(mocker):
+def test_delete_specify_release(mocker, k8s):
     global delete_assembly_args
 
+    mock_asm_backup_path(mocker)
     mock_subprocess_run(mocker)
     mock_set_insights_operator_and_crd_installed_state(mocker, True, False, False)
-    mock_delete_crd(mocker)
-    mock_asm_backup_path(mocker)
+    mock_delete_crd(mocker, k8s)
+    mock_copy_secret(mocker, k8s)
     mocker.patch(GET_ASSEMBLIES_LIST_FUNC, mock_list_assembly_multiple)
     mocker.patch(DELETE_ASSEMBLIES_FUNC, mock__delete_assembly)
 
@@ -1397,12 +1357,12 @@ Uninstalling release atestrelease in namespace {test_namespace}
     check_subprocess_run_commands([HelmCommandDelete(release='atestrelease')])
     assert delete_crd_params == []
 
-def test_delete_specific_release_no_assemblies(mocker):
+def test_delete_specific_release_no_assemblies(mocker, k8s):
     global delete_assembly_args
 
     mock_subprocess_run(mocker)
     mock_set_insights_operator_and_crd_installed_state(mocker, True, False, False)
-    mock_delete_crd(mocker)
+    mock_delete_crd(mocker, k8s)
     mocker.patch(GET_ASSEMBLIES_LIST_FUNC, mock_list_assembly_none)
     mocker.patch(DELETE_ASSEMBLIES_FUNC, mock__delete_assembly)
 
@@ -1425,13 +1385,14 @@ Uninstalling release atestrelease in namespace {test_namespace}
     check_subprocess_run_commands([HelmCommandDelete(release='atestrelease')])
     assert delete_crd_params == []
 
-def test_delete_specific_release_one_assemblies(mocker):
+def test_delete_specific_release_one_assemblies(mocker, k8s):
     global delete_assembly_args
 
+    mock_asm_backup_path(mocker)
     mock_subprocess_run(mocker)
     mock_set_insights_operator_and_crd_installed_state(mocker, True, False, False)
-    mock_delete_crd(mocker)
-    mock_asm_backup_path(mocker)
+    mock_delete_crd(mocker, k8s)
+    mock_copy_secret(mocker, k8s)
     mocker.patch(GET_ASSEMBLIES_LIST_FUNC, mock_list_assembly)
     mocker.patch(DELETE_ASSEMBLIES_FUNC, mock__delete_assembly)
 
@@ -1458,14 +1419,14 @@ Uninstalling release atestrelease in namespace {test_namespace}
     assert delete_crd_params == []
 
 
-def test_delete_does_not_prompt_to_remove_operator_and_crd_when_insights_exists(mocker):
+def test_delete_does_not_prompt_to_remove_operator_and_crd_when_insights_exists(mocker, k8s):
     """
     Tests if a user answers 'n' to removing insights, the kxi exits without further prompts
     """
     global delete_assembly_args
 
     mock_subprocess_run(mocker)
-    mock_delete_crd(mocker)
+    mock_delete_crd(mocker, k8s)
     mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
     mocker.patch(GET_ASSEMBLIES_LIST_FUNC, mock_list_assembly_multiple)
     mocker.patch(DELETE_ASSEMBLIES_FUNC, mock__delete_assembly)
@@ -1488,12 +1449,13 @@ kdb Insights Enterprise is deployed. Do you want to uninstall? [y/N]: n
     assert delete_crd_params == []
 
 
-def test_delete_removes_insights_and_operator(mocker):
+def test_delete_removes_insights_and_operator(mocker, k8s):
     global delete_assembly_args
 
-    mock_subprocess_run(mocker)
-    mock_delete_crd(mocker)
     mock_asm_backup_path(mocker)
+    mock_subprocess_run(mocker)
+    mock_delete_crd(mocker, k8s)
+    mock_copy_secret(mocker, k8s)
     mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
     mocker.patch(GET_ASSEMBLIES_LIST_FUNC, mock_list_assembly_multiple)
     mocker.patch(DELETE_ASSEMBLIES_FUNC, mock__delete_assembly)
@@ -1527,9 +1489,9 @@ Uninstalling release test-op-helm in namespace kxi-operator
     assert delete_crd_params == test_crds
 
 
-def test_delete_when_insights_and_operator_not_installed(mocker):
+def test_delete_when_insights_and_operator_not_installed(mocker, k8s):
     mock_subprocess_run(mocker)
-    mock_delete_crd(mocker)
+    mock_delete_crd(mocker, k8s)
     mock_set_insights_operator_and_crd_installed_state(mocker, False, False, False)
     mocker.patch(LIST_CLUSTER_ASSEMBLIES_FUNC)
 
@@ -1547,10 +1509,10 @@ kdb Insights Enterprise kxi-operator not found
     assert delete_crd_params == []
 
 
-def test_delete_error_deleting_crds(mocker):
+def test_delete_error_deleting_crds(mocker, k8s):
     mock_subprocess_run(mocker)
     mock_set_insights_operator_and_crd_installed_state(mocker, False, False, True)
-    utils.mock_kube_crd_api(mocker, delete=utils.raise_not_found)
+    utils.mock_kube_crd_api(k8s, delete=utils.raise_not_found)
     mocker.patch(LIST_CLUSTER_ASSEMBLIES_FUNC)
 
     runner = CliRunner()
@@ -1559,13 +1521,11 @@ def test_delete_error_deleting_crds(mocker):
         expected_output = f"""
 kdb Insights Enterprise installation not found
 Deleting CRD assemblies.insights.kx.com
-error=Exception when calling ApiextensionsV1Api->delete_custom_resource_definition: (404)
+error=Exception when trying to delete CustomResourceDefinition(assemblies.insights.kx.com): 404
 Reason: None
-
 Deleting CRD assemblyresources.insights.kx.com
-error=Exception when calling ApiextensionsV1Api->delete_custom_resource_definition: (404)
+error=Exception when trying to delete CustomResourceDefinition(assemblyresources.insights.kx.com): 404
 Reason: None
-
 
 kdb Insights Enterprise kxi-operator not found
 """
@@ -1574,12 +1534,13 @@ kdb Insights Enterprise kxi-operator not found
     check_subprocess_run_commands([])
 
 
-def test_delete_removes_insights(mocker):
+def test_delete_removes_insights(mocker, k8s):
     global delete_assembly_args
 
-    mock_subprocess_run(mocker)
-    mock_delete_crd(mocker)
     mock_asm_backup_path(mocker)
+    mock_subprocess_run(mocker)
+    mock_delete_crd(mocker, k8s)
+    mock_copy_secret(mocker, k8s)
     mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
     mocker.patch(GET_ASSEMBLIES_LIST_FUNC, mock_list_assembly_multiple)
     mocker.patch(DELETE_ASSEMBLIES_FUNC, mock__delete_assembly)
@@ -1606,12 +1567,13 @@ Uninstalling release insights in namespace {test_namespace}
     check_subprocess_run_commands([HelmCommandDelete()])
 
 
-def test_delete_force_removes_insights_operator_and_crd(mocker):
+def test_delete_force_removes_insights_operator_and_crd(mocker, k8s):
     global delete_assembly_args
 
-    mock_subprocess_run(mocker)
-    mock_delete_crd(mocker)
     mock_asm_backup_path(mocker)
+    mock_subprocess_run(mocker)
+    mock_delete_crd(mocker, k8s)
+    mock_copy_secret(mocker, k8s)
     mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
     mocker.patch(GET_ASSEMBLIES_LIST_FUNC, mock_list_assembly_multiple)
     mocker.patch(DELETE_ASSEMBLIES_FUNC, mock__delete_assembly)
@@ -1641,9 +1603,10 @@ Uninstalling release test-op-helm in namespace kxi-operator
     assert delete_crd_params == test_crds
 
 
-def test_delete_from_given_namespace(mocker):
-    mock_subprocess_run(mocker)
+def test_delete_from_given_namespace(mocker, k8s):
     mock_asm_backup_path(mocker)
+    mock_subprocess_run(mocker)
+    mock_copy_secret(mocker, k8s)
     mock_set_insights_operator_and_crd_installed_state(mocker, True, False, False)
     mocker.patch(GET_ASSEMBLIES_LIST_FUNC, mock_list_assembly_multiple)
     mocker.patch(DELETE_ASSEMBLIES_FUNC, mock__delete_assembly)
@@ -1677,7 +1640,7 @@ Uninstalling release insights in namespace a_test_namespace
     check_subprocess_run_commands([HelmCommandDelete(namespace='a_test_namespace')])
     assert delete_crd_params == []
 
-def test_delete_given_assembly_backup_filepath(mocker):
+def test_delete_given_assembly_backup_filepath(mocker, k8s):
     mock_subprocess_run(mocker)
     mock_set_insights_operator_and_crd_installed_state(mocker, True, False, False)
     mocker.patch(GET_ASSEMBLIES_LIST_FUNC, mock_list_assembly_multiple)
@@ -1714,9 +1677,9 @@ Uninstalling release insights in namespace {test_namespace}
     assert delete_crd_params == []
 
 
-def test_delete_when_insights_not_installed(mocker):
+def test_delete_when_insights_not_installed(mocker, k8s):
     mock_subprocess_run(mocker)
-    mock_delete_crd(mocker)
+    mock_delete_crd(mocker, k8s)
     mock_set_insights_operator_and_crd_installed_state(mocker, False, True, True)
     mocker.patch(GET_ASSEMBLIES_LIST_FUNC, mock_list_assembly_multiple)
     mocker.patch(DELETE_ASSEMBLIES_FUNC, mock__delete_assembly)
@@ -1736,12 +1699,13 @@ kdb Insights Enterprise installation not found
     assert delete_crd_params == []
 
 
-def test_delete_operator_fails_when_assemblies_running(mocker):
+def test_delete_operator_fails_when_assemblies_running(mocker, k8s):
     global delete_assembly_args
 
-    mock_subprocess_run(mocker)
-    mock_delete_crd(mocker)
     mock_asm_backup_path(mocker)
+    mock_subprocess_run(mocker)
+    mock_delete_crd(mocker, k8s)
+    mock_copy_secret(mocker, k8s)
     mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
     mocker.patch(GET_ASSEMBLIES_LIST_FUNC, mock_list_assembly_multiple)
     mocker.patch(DELETE_ASSEMBLIES_FUNC, mock__delete_assembly)
@@ -1775,8 +1739,8 @@ Error: Cannot delete kxi-operator
     ])
     assert delete_crd_params == []
 
-def test_install_when_not_deploying_keycloak(mocker):
-    setup_mocks(mocker)
+def test_install_when_not_deploying_keycloak(mocker, k8s):
+    setup_mocks(mocker, k8s)
     with temp_test_output_file() as test_output_file, temp_config_file() as test_cli_config:
         shutil.copyfile(expected_test_output_file, test_output_file)
         # Ideally would patch sys.argv with args but can't find a way to get this to stick
@@ -1794,7 +1758,7 @@ def test_install_when_not_deploying_keycloak(mocker):
         assert compare_files(test_output_file, test_val_file_shared_keycloak)
 
 
-def test_get_values_returns_error_when_does_not_exist(mocker):
+def test_get_values_returns_error_when_does_not_exist(mocker, k8s):
     runner = CliRunner()
 
     helm_error = 'Error: release: not found'
@@ -1807,7 +1771,7 @@ def test_get_values_returns_error_when_does_not_exist(mocker):
     assert result.output == f"Error: {phrases.helm_get_values_fail.format(release='insights', namespace='missing', helm_error=helm_error)}\n"
 
 
-def test_get_values_returns_decoded_secret(mocker):
+def test_get_values_returns_decoded_secret(mocker, k8s):
     data = {'a': 1}
     utils.mock_helm_get_values(mocker, data)
     runner = CliRunner()
@@ -1818,8 +1782,8 @@ def test_get_values_returns_decoded_secret(mocker):
     # trim off trailing \n added by click.echo
     assert result.output[:-1] == yaml.safe_dump(data)
 
-def test_upgrade(mocker):
-    upgrades_mocks(mocker)
+def test_upgrade(mocker, k8s):
+    upgrades_mocks(mocker, k8s)
     mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
     mock_get_operator_version(mocker)
     utils.mock_validate_secret(mocker)
@@ -1827,7 +1791,7 @@ def test_upgrade(mocker):
     mocker.patch('kxicli.commands.install.read_cached_crd_files', mock_read_cached_crd_data)
     utils.mock_helm_fetch(mocker)
     utils.mock_helm_get_values(mocker, utils.test_val_data)
-    utils.mock_kube_crd_api(mocker, create=mocked_create_crd, delete=mocked_delete_crd)
+    utils.mock_kube_crd_api(k8s, create=mocked_create_crd, delete=mocked_delete_crd)
     if os.path.exists(test_asm_backup):
         os.remove(test_asm_backup)
     with open(utils.test_asm_file) as f:
@@ -1883,8 +1847,8 @@ Upgrade to version 1.2.3 complete
     install_upgrade_checks(result)
     assert result.output == expected_output
 
-def test_upgrade_import_users(mocker):
-    upgrades_mocks(mocker)
+def test_upgrade_import_users(mocker, k8s):
+    upgrades_mocks(mocker, k8s)
     mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
     mock_get_operator_version(mocker)
     utils.mock_validate_secret(mocker)
@@ -1892,7 +1856,7 @@ def test_upgrade_import_users(mocker):
     mocker.patch('kxicli.commands.install.read_cached_crd_files', mock_read_cached_crd_data)
     utils.mock_helm_fetch(mocker)
     utils.mock_helm_get_values(mocker, utils.test_val_data)
-    utils.mock_kube_crd_api(mocker, create=mocked_create_crd, delete=mocked_delete_crd)
+    utils.mock_kube_crd_api(k8s, create=mocked_create_crd, delete=mocked_delete_crd)
     if os.path.exists(test_asm_backup):
         os.remove(test_asm_backup)
     with open(utils.test_asm_file) as f:
@@ -1954,8 +1918,8 @@ Upgrade to version 1.2.3 complete
     assert result.output == expected_output
 
 
-def test_upgrade_without_backup_filepath(mocker):
-    upgrades_mocks(mocker)
+def test_upgrade_without_backup_filepath(mocker, k8s):
+    upgrades_mocks(mocker, k8s)
     mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
     mock_get_operator_version(mocker)
     utils.mock_validate_secret(mocker)
@@ -1963,7 +1927,7 @@ def test_upgrade_without_backup_filepath(mocker):
     mocker.patch('kxicli.commands.install.read_cached_crd_files', mock_read_cached_crd_data)
     utils.mock_helm_fetch(mocker)
     utils.mock_helm_get_values(mocker, utils.test_val_data)
-    utils.mock_kube_crd_api(mocker, create=mocked_create_crd, delete=mocked_delete_crd)
+    utils.mock_kube_crd_api(k8s, create=mocked_create_crd, delete=mocked_delete_crd)
     with open(utils.test_val_file, 'r') as values_file:
         values = str(values_file.read())
     runner = CliRunner()
@@ -1982,8 +1946,8 @@ y
     install_upgrade_checks(result)
 
 
-def test_upgrade_skips_to_install_when_not_running(mocker):
-    upgrades_mocks(mocker)
+def test_upgrade_skips_to_install_when_not_running(mocker, k8s):
+    upgrades_mocks(mocker, k8s)
     mock_set_insights_operator_and_crd_installed_state(mocker, False, False, False)
     mock_get_operator_version(mocker)
     utils.mock_validate_secret(mocker)
@@ -2015,8 +1979,8 @@ Upgrade to version 1.2.3 complete
 
 
 
-def test_upgrade_skips_to_install_when_not_running_but_fails_with_no_values_file(mocker):
-    upgrades_mocks(mocker)
+def test_upgrade_skips_to_install_when_not_running_but_fails_with_no_values_file(mocker, k8s):
+    upgrades_mocks(mocker, k8s)
     mock_set_insights_operator_and_crd_installed_state(mocker, False, False, False)
     mock_get_operator_version(mocker)
     utils.mock_validate_secret(mocker)
@@ -2040,8 +2004,8 @@ Error: {phrases.values_filepath_missing}
     assert result.output == expected_output
 
 
-def test_upgrade_when_user_declines_to_teardown_assembly(mocker):
-    upgrades_mocks(mocker)
+def test_upgrade_when_user_declines_to_teardown_assembly(mocker, k8s):
+    upgrades_mocks(mocker, k8s)
     mocker.patch(GET_ASSEMBLIES_LIST_FUNC, mock_list_assembly_multiple)
     mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
     utils.mock_validate_secret(mocker)
@@ -2097,8 +2061,8 @@ Custom assembly resource {test_asm_name2} created!
     assert result.output == expected_output
 
 
-def test_upgrade_does_not_reapply_assemblies_when_upgrade_fails(mocker):
-    upgrades_mocks(mocker)
+def test_upgrade_does_not_reapply_assemblies_when_upgrade_fails(mocker, k8s):
+    upgrades_mocks(mocker, k8s)
     mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
     mock_get_operator_version(mocker)
     utils.mock_validate_secret(mocker)
@@ -2106,7 +2070,7 @@ def test_upgrade_does_not_reapply_assemblies_when_upgrade_fails(mocker):
     mocker.patch('kxicli.commands.install.read_cached_crd_files', mock_read_cached_crd_data)
     utils.mock_helm_fetch(mocker)
     utils.mock_helm_get_values(mocker, utils.test_val_data)
-    utils.mock_kube_crd_api(mocker, create=mocked_create_crd, delete=mocked_delete_crd)
+    utils.mock_kube_crd_api(k8s, create=mocked_create_crd, delete=mocked_delete_crd)
     if os.path.exists(test_asm_backup):
         os.remove(test_asm_backup)
     with open(utils.test_asm_file) as f:
@@ -2162,13 +2126,12 @@ Error: Command "helm upgrade --install --version 1.2.3 -f - test-op-helm kx-insi
     assert os.path.isfile(test_asm_backup)
     os.remove(test_asm_backup)
 
-def test_install_run_upgrades_when_already_installed(mocker):
-    upgrades_mocks(mocker)
+def test_install_run_upgrades_when_already_installed(mocker, k8s):
+    upgrades_mocks(mocker, k8s)
     mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
-    mock_create_namespace(mocker)
     mock_get_operator_version(mocker)
     utils.mock_validate_secret(mocker)
-    utils.mock_kube_crd_api(mocker, create=mocked_create_crd, delete=mocked_delete_crd)
+    utils.mock_kube_crd_api(k8s, create=mocked_create_crd, delete=mocked_delete_crd)
     utils.mock_helm_env(mocker)
     mocker.patch('kxicli.commands.install.read_cached_crd_files', mock_read_cached_crd_data)
     utils.mock_helm_fetch(mocker)
@@ -2224,8 +2187,8 @@ Upgrade to version 1.2.3 complete
     assert result.output == expected_output
 
 
-def test_upgrade_without_op_name_prompts_to_skip_operator_install(mocker):
-    upgrades_mocks(mocker)
+def test_upgrade_without_op_name_prompts_to_skip_operator_install(mocker, k8s):
+    upgrades_mocks(mocker, k8s)
     mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
     mock_get_operator_version(mocker)
     mocker.patch('kxicli.commands.install.get_installed_operator_versions', mocked_get_installed_operator_versions_without_release)
@@ -2233,7 +2196,7 @@ def test_upgrade_without_op_name_prompts_to_skip_operator_install(mocker):
     utils.mock_helm_env(mocker)
     utils.mock_helm_fetch(mocker)
     utils.mock_helm_get_values(mocker, utils.test_val_data)
-    utils.mock_kube_crd_api(mocker, create=mocked_create_crd, delete=mocked_delete_crd)
+    utils.mock_kube_crd_api(k8s, create=mocked_create_crd, delete=mocked_delete_crd)
     if os.path.exists(test_asm_backup):
         os.remove(test_asm_backup)
     with open(utils.test_asm_file) as f:
@@ -2295,15 +2258,15 @@ Upgrade to version 1.2.3 complete
 
 
 
-def test_upgrade_prompts_to_skip_operator_install_when_assemblies_running(mocker):
-    upgrades_mocks(mocker)
+def test_upgrade_prompts_to_skip_operator_install_when_assemblies_running(mocker, k8s):
+    upgrades_mocks(mocker, k8s)
     mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
     mock_get_operator_version(mocker)
     utils.mock_validate_secret(mocker)
     utils.mock_helm_env(mocker)
     utils.mock_helm_fetch(mocker)
     utils.mock_helm_get_values(mocker, utils.test_val_data)
-    utils.mock_kube_crd_api(mocker, create=mocked_create_crd, delete=mocked_delete_crd)
+    utils.mock_kube_crd_api(k8s, create=mocked_create_crd, delete=mocked_delete_crd)
     if os.path.exists(test_asm_backup):
         os.remove(test_asm_backup)
     mocker.patch(LIST_CLUSTER_ASSEMBLIES_FUNC, mock_list_assembly_multiple)
@@ -2362,15 +2325,15 @@ Upgrade to version 1.2.3 complete
     )
     assert result.output == expected_output
 
-def test_upgrade_exits_when_user_does_not_proceed_when_assemblies_running(mocker):
-    upgrades_mocks(mocker)
+def test_upgrade_exits_when_user_does_not_proceed_when_assemblies_running(mocker, k8s):
+    upgrades_mocks(mocker, k8s)
     mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
     mock_get_operator_version(mocker)
     utils.mock_validate_secret(mocker)
     utils.mock_helm_env(mocker)
     utils.mock_helm_fetch(mocker)
     utils.mock_helm_get_values(mocker, utils.test_val_data)
-    utils.mock_kube_crd_api(mocker, create=mocked_create_crd, delete=mocked_delete_crd)
+    utils.mock_kube_crd_api(k8s, create=mocked_create_crd, delete=mocked_delete_crd)
     if os.path.exists(test_asm_backup):
         os.remove(test_asm_backup)
     mocker.patch(LIST_CLUSTER_ASSEMBLIES_FUNC, mock_list_assembly_multiple)
@@ -2399,8 +2362,8 @@ Error: Cannot upgrade kxi-operator
     assert result.output == expected_output
 
 
-def test_upgrade_with_no_assemblies(mocker):
-    upgrades_mocks(mocker)
+def test_upgrade_with_no_assemblies(mocker, k8s):
+    upgrades_mocks(mocker, k8s)
     mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
     mock_get_operator_version(mocker)
     utils.mock_validate_secret(mocker)
@@ -2408,7 +2371,7 @@ def test_upgrade_with_no_assemblies(mocker):
     mocker.patch('kxicli.commands.install.read_cached_crd_files', mock_read_cached_crd_data)
     utils.mock_helm_fetch(mocker)
     utils.mock_helm_get_values(mocker, utils.test_val_data)
-    utils.mock_kube_crd_api(mocker, create=mocked_create_crd, delete=mocked_delete_crd)
+    utils.mock_kube_crd_api(k8s, create=mocked_create_crd, delete=mocked_delete_crd)
     mocker.patch(GET_ASSEMBLIES_LIST_FUNC, mock_list_assembly_none)
     global running_assembly
     running_assembly = {}
@@ -2421,7 +2384,7 @@ def test_upgrade_with_no_assemblies(mocker):
     install_upgrade_checks(result, expected_running_assembly={})
 
 
-def test_install_upgrade_errors_when_repo_does_not_exist(mocker):
+def test_install_upgrade_errors_when_repo_does_not_exist(mocker, k8s):
     # return an empty repo list, then a populated one after the repo has been added
     helm_list = [
         [],
@@ -2431,12 +2394,11 @@ def test_install_upgrade_errors_when_repo_does_not_exist(mocker):
     mocker.patch('kxicli.resources.helm.add_repo', mocked_helm_add_repo)
     mocker.patch('kxicli.resources.helm.repo_update')
     mock_subprocess_run(mocker)
-    mock_create_namespace(mocker)
-    mock_copy_secret(mocker)
+    mock_copy_secret(mocker, k8s)
     mock_set_insights_operator_and_crd_installed_state(mocker, False, False, False)
     mock_get_operator_version(mocker)
     utils.mock_validate_secret(mocker)
-    utils.mock_kube_secret_api(mocker, read=mocked_read_secret)
+    utils.mock_kube_secret_api(k8s, read=mocked_read_secret)
     runner = CliRunner()
     user_input = f"""
 {test_user}
@@ -2465,8 +2427,8 @@ Upgrade to version 1.2.3 complete
     assert result.output == expected_output
 
 
-def test_install_upgrade_errors_when_downgrading_to_lower_version(mocker):
-    upgrades_mocks(mocker)
+def test_install_upgrade_errors_when_downgrading_to_lower_version(mocker, k8s):
+    upgrades_mocks(mocker, k8s)
     mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
     utils.mock_validate_secret(mocker)
     runner = CliRunner()
@@ -2482,8 +2444,8 @@ Error: Cannot upgrade from version 1.2.1 to version 1.0.0. Target version must b
     assert result.output == expected_output
 
 
-def test_install_run_errors_when_downgrading_to_lower_version(mocker):
-    upgrades_mocks(mocker)
+def test_install_run_errors_when_downgrading_to_lower_version(mocker, k8s):
+    upgrades_mocks(mocker, k8s)
     mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
     utils.mock_validate_secret(mocker)
     runner = CliRunner()
@@ -2498,8 +2460,8 @@ Error: Cannot upgrade from version 1.2.1 to version 1.0.0. Target version must b
     assert result.output == expected_output
 
 
-def test_install_upgrade_errors_when_downgrading_operator_to_lower_version(mocker):
-    upgrades_mocks(mocker)
+def test_install_upgrade_errors_when_downgrading_operator_to_lower_version(mocker, k8s):
+    upgrades_mocks(mocker, k8s)
     mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
     mocker.patch('kxicli.commands.install.get_installed_operator_versions',
                  lambda x:((['1.2.2'], [test_operator_helm_name])))
@@ -2519,7 +2481,7 @@ Error: Cannot upgrade from version 1.2.2 to version 1.2.0. Target version must b
     assert result.output == expected_output
 
 
-def test_install_values_validated_on_run_and_upgrade(mocker):
+def test_install_values_validated_on_run_and_upgrade(mocker, k8s):
     utils.mock_helm_repo_list(mocker)
     mocker.patch('kxicli.resources.helm.repo_update')
     test_cfg = {
@@ -2557,15 +2519,14 @@ def mock_helm_list_history(mocker, release='kx-insights', output=None):
 def mock_helm_list_histor_broken(mocker, release='kx-insights', output=None):
     mocker.patch('kxicli.resources.helm.history', utils.mocked_helm_history_rollback_broken)
 
-def test_install_rollback(mocker):
+def test_install_rollback(mocker, k8s):
     mocker.patch('subprocess.check_output',return_value="")
     mock_helm_list_history_same_operator(mocker)
-    upgrades_mocks(mocker)
+    upgrades_mocks(mocker, k8s)
     mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
-    mock_create_namespace(mocker)
     mock_get_operator_version(mocker)
     utils.mock_validate_secret(mocker)
-    utils.mock_kube_crd_api(mocker, create=mocked_create_crd, delete=mocked_delete_crd)
+    utils.mock_kube_crd_api(k8s, create=mocked_create_crd, delete=mocked_delete_crd)
     utils.mock_helm_env(mocker)
     utils.mock_helm_fetch(mocker)
     mocker.patch('kxicli.commands.install.get_installed_operator_versions', mocked_get_installed_operator_versions_without_release_14)
@@ -2602,16 +2563,15 @@ Submitting assembly basic-assembly\nCustom assembly resource basic-assembly crea
     assert result.exit_code == 0
     assert expected_output == result.output
 
-def test_install_rollback_fail_version(mocker):
+def test_install_rollback_fail_version(mocker, k8s):
     mocker.patch('subprocess.check_output',return_value="")
     mock_helm_list_history(mocker)
     expected_output = "Error: Insights rollback target version 1.2.3 is incompatible with target operator version 1.4.0. Minor versions must match.\n"
-    upgrades_mocks(mocker)
+    upgrades_mocks(mocker, k8s)
     mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
-    mock_create_namespace(mocker)
     mock_get_operator_version(mocker)
     utils.mock_validate_secret(mocker)
-    utils.mock_kube_crd_api(mocker, create=mocked_create_crd, delete=mocked_delete_crd)
+    utils.mock_kube_crd_api(k8s, create=mocked_create_crd, delete=mocked_delete_crd)
     utils.mock_helm_env(mocker)
     utils.mock_helm_fetch(mocker)
     mocker.patch('kxicli.commands.install.get_installed_operator_versions', mocked_get_installed_operator_versions_without_release_14)
@@ -2625,15 +2585,14 @@ def test_install_rollback_fail_version(mocker):
     assert result.exit_code == 1
     assert expected_output ==  result.output
 
-def test_install_rollback_revision(mocker):
+def test_install_rollback_revision(mocker, k8s):
     mocker.patch('subprocess.check_output',return_value="")
     mock_helm_list_history(mocker)
-    upgrades_mocks(mocker)
+    upgrades_mocks(mocker, k8s)
     mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
-    mock_create_namespace(mocker)
     mock_get_operator_version(mocker)
     utils.mock_validate_secret(mocker)
-    utils.mock_kube_crd_api(mocker, create=mocked_create_crd, delete=mocked_delete_crd)
+    utils.mock_kube_crd_api(k8s, create=mocked_create_crd, delete=mocked_delete_crd)
     utils.mock_helm_env(mocker)
     mocker.patch('kxicli.commands.install.read_cached_crd_files', mock_read_cached_crd_data)
     utils.mock_helm_fetch(mocker)
@@ -2647,7 +2606,8 @@ def test_install_rollback_revision(mocker):
             ['install', 'rollback', '1', '--operator-revision', '1', '--namespace', test_namespace, '--assembly-backup-filepath', test_asm_backup],
             input=user_input
         )
-    expected_output = f"""Rolling Insights back to version 1.2.3 and revision 1. \nRolling operator back to version 1.2.3 and revision 1.
+    expected_output = f"""Rolling Insights back to version 1.2.3 and revision 1.
+Rolling operator back to version 1.2.3 and revision 1.
 Proceed? [y/N]: y
 
 Backing up assemblies
@@ -2675,7 +2635,7 @@ Submitting assembly basic-assembly\nCustom assembly resource basic-assembly crea
     assert result.exit_code == 0
     assert expected_output == result.output
 
-def test_install_rollback_insights_revision_fail(mocker):
+def test_install_rollback_insights_revision_fail(mocker, k8s):
     mocker.patch('subprocess.check_output',return_value="")
     utils.mock_helm_env(mocker)
     expected_output = 'Error: Could not find revision 4 in history\n'
@@ -2695,7 +2655,7 @@ def test_install_rollback_insights_revision_fail(mocker):
     assert result.exit_code == 1
     assert expected_output == result.output
 
-def test_install_rollback_operator_revision_fail(mocker):
+def test_install_rollback_operator_revision_fail(mocker, k8s):
     mocker.patch('subprocess.check_output',return_value="")
     mocker.patch('kxicli.commands.install.get_installed_operator_versions', mocked_get_installed_operator_versions_without_release_14)
     expected_output = 'Error: Could not find revision 4 in kxi-operator history\n'
@@ -2714,7 +2674,7 @@ def test_install_rollback_operator_revision_fail(mocker):
     assert result.exit_code == 1
     assert expected_output == result.output
 
-def test_install_rollback_operator_revision_fail_with_insightsrevision(mocker):
+def test_install_rollback_operator_revision_fail_with_insightsrevision(mocker, k8s):
     mocker.patch('kxicli.commands.install.get_installed_operator_versions', mocked_get_installed_operator_versions_without_release_14)
     mocker.patch('subprocess.check_output',return_value="")
     expected_output = 'Error: Could not find revision 4 in kxi-operator history\n'
@@ -2733,15 +2693,14 @@ def test_install_rollback_operator_revision_fail_with_insightsrevision(mocker):
     assert result.exit_code == 1
     assert expected_output == result.output
 
-def test_install_rollback_skips_operator_when_assemblies_running(mocker):
+def test_install_rollback_skips_operator_when_assemblies_running(mocker, k8s):
     mocker.patch('subprocess.check_output',return_value="")
     mock_helm_list_history(mocker)
-    upgrades_mocks(mocker)
+    upgrades_mocks(mocker, k8s)
     mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
-    mock_create_namespace(mocker)
     mock_get_operator_version(mocker)
     utils.mock_validate_secret(mocker)
-    utils.mock_kube_crd_api(mocker, create=mocked_create_crd, delete=mocked_delete_crd)
+    utils.mock_kube_crd_api(k8s, create=mocked_create_crd, delete=mocked_delete_crd)
     utils.mock_helm_env(mocker)
     mocker.patch('kxicli.commands.install.read_cached_crd_files', mock_read_cached_crd_data)
     utils.mock_helm_fetch(mocker)

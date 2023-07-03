@@ -1,7 +1,7 @@
 import click
 import secrets
 import string
-import kubernetes as k8s
+import pyk8s
 import kxicli.common
 
 from functools import partial
@@ -73,7 +73,8 @@ def generate_password():
 
 
 class Option():
-    def __init__(self, *click_option_args , config_name=None, fallback=None, force=False, password=False, prompt_message='', **click_option_kwargs):
+    def __init__(self, *click_option_args , config_name=None, fallback=None, force=False, password=False, 
+                 prompt_message='', default_before_user_input=False, **click_option_kwargs):
         self._click_option_args = click_option_args
         self._click_option_kwargs = click_option_kwargs
         self._config_name = config_name
@@ -81,6 +82,7 @@ class Option():
         self._force = force
         self._password = password
         self._prompt_message = prompt_message
+        self._default_before_user_input = default_before_user_input
 
     @property
     def click_option_args(self):
@@ -110,26 +112,55 @@ class Option():
     def prompt_message(self):
         return self._prompt_message
 
+    @property
+    def default_before_user_input(self):
+        return self._default_before_user_input
+
 
     def prompt(self, cmd_line_value=None, **kwargs):
+        """Get config value from various sources.
+        
+        Priority:
+            - CLI
+            - CONFIG file
+            - (if default_over_user_input) DEFAULT value
+            - (TTY) USER PROMPT
+            - (if not default_over_user_input) DEFAULT value
+            - FALLBACK value.
+
+        Args:
+            cmd_line_value: Command line argument value.
+
+        Raises:
+            click.ClickException: Raised when values cannot be determined.
+
+        Returns:
+            The config value.
+        """
         prompt_message = get_prompt_message(self, kwargs.get('prompt_message'))
         silent =  kwargs.get('silent')
+        default_fn = self.click_option_kwargs.get('default')
+        default = default_fn() if default_fn else default_val(self.config_name)
 
         # cmd line arg
         if cmd_line_value is not None:
             val = cmd_line_value
-            print_cmd_line_option(f'Using {self.config_name} from command line option', val, 
-                self.password, self.click_option_kwargs.get('default'), silent)
+            print_cmd_line_option(f'Using {self.config_name} from command line option', val,
+                self.password, default_fn, silent)
         # config file
         elif config.config.has_option(config.config.default_section, self.config_name):
             val = config.config.get(config.config.default_section, self.config_name)
             print_option_source(f'Using {self.config_name} from config file {config.config_file}', val, self.password, silent)
+        # When default has higher priority than user input.
+        elif self.default_before_user_input and default:
+            val = default
+            print_option_source(f'Using {self.config_name} from dynamic default values', val, self.password, silent)
         # check if there's a tty and not explicitly no prompt
         elif prompt_message and kxicli.common.is_interactive_session() and not silent:
-            val = interactive_prompt(prompt_message, self.password, default_val(self.config_name))
+            val = interactive_prompt(prompt_message, self.password, default)
         # embedded default values
         elif self.config_name in kxicli.common.DEFAULT_VALUES:
-            val = kxicli.common.DEFAULT_VALUES[self.config_name]
+            val = default
             print_option_source(f'Using {self.config_name} from embedded default values', val, self.password, silent)
         elif self.fallback:
             val = self.fallback()
@@ -155,19 +186,8 @@ class Option():
 
 
 def get_namespace():
-    in_cluster = False
-    try:
-        _, active_context = k8s.config.list_kube_config_contexts()
-    except k8s.config.config_exception.ConfigException:
-        try:
-            k8s.config.load_incluster_config()
-            in_cluster = True
-        except k8s.config.config_exception.ConfigException:
-            return None
-    if not in_cluster and 'namespace' in active_context['context']:
-        return  active_context['context']['namespace']
-    if in_cluster:
-        return open("/var/run/secrets/kubernetes.io/serviceaccount/namespace").read()
+    ns = pyk8s.cl.config.namespace
+    return ns if ns != "default" else None
 
 namespace = Option(
     '-n',
@@ -175,7 +195,8 @@ namespace = Option(
     config_name = key_namespace,
     default = lambda: get_namespace(),
     help = help_text(key_namespace),
-    prompt_message = phrases.namespace
+    prompt_message = phrases.namespace,
+    default_before_user_input = True
 )
 
 filepath = Option(
@@ -201,7 +222,7 @@ operator_version = Option(
 )
 
 output_file = Option(
-    '--output-file', 
+    '--output-file',
     config_name = key_install_outputFile,
     help = help_text(key_install_outputFile),
     default = lambda: default_val(key_install_outputFile)
@@ -271,14 +292,14 @@ client_cert_secret = Option (
     help=help_text(key_client_cert_secret)
 )
 
-image_repo = Option ( 
+image_repo = Option (
     '--image-repo',
     config_name = key_image_repository,
     prompt_message = phrases.image_repo,
     help=help_text(key_image_repository)
 )
 
-image_repo_user = Option ( 
+image_repo_user = Option (
     '--image-repo-user',
     config_name = key_image_repository_user,
     prompt_message = phrases.image_user,
@@ -492,7 +513,7 @@ operator_revision = Option(
     '--operator-revision',
     default = None,
     help='Revision of operator to rollback to'
-    
+
 )
 
 operator_history = Option (

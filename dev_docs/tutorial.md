@@ -269,36 +269,29 @@ Kubernetes has an official Python client that provides Python classes and method
 
 The common pattern for using these is
 
-1. Load the Kubernetes config file to get authorization tokens for the API
-2. Create an instance of the API class that you want to use, essentially equivalent to the `apiVersion` in the yaml
-   manifests
-3. Try to run the call
-4. Catch any exceptions
+1. Create a K8sClient or use the default pyk8s.cl object.
+2. Try to run the call
+3. Catch any exceptions
 
 For example
 
 ```python
 # cli.py
-import kubernetes as k8s
+import pyk8s
 
 # Omitted other commands
 
 @main.command()
 @click.option('--namespace', required=True, help='Namespace to list the pods from')
 def pods(namespace):
-    # 1. Load the config
-    k8s.config.load_config()
-    # 2. Create an instance of the Core V1 API
-    v1 = k8s.client.CoreV1Api()
-    # 3. Try to run the call
     try:
         click.echo('Listing pods with their IPs:')
-        resp = v1.list_namespaced_pod(namespace=namespace)
-        for item in resp.items:
-            click.echo(f'{item.status.pod_ip}\t{item.spec.node_name}\t{item.metadata.name}')
-    # 4. Catch any exceptions
-    except k8s.client.rest.ApiException as e:
-        click.echo(f'Exception when calling CoreV1Api->list_namespace_pod: {e}')
+        resp = pyk8s.cl.pods.get(namespace=namespace)
+        for item in resp:
+            click.echo(f'{item.status.podIP}\t{item.spec.nodeName}\t{item.metadata.name}')
+    # Catch any exceptions
+    except pyk8s.exceptions.ApiException as e:
+        click.echo(f'Exception when calling pyk8s.cl.pods.get: {e}')
 ```
 
 The Kubernetes package isn't in the standard library so this needs to be added to the `setup.py` to ensure it exists for
@@ -314,7 +307,7 @@ setup(
     py_modules=['devcli'],
     install_requires=[ 
         'Click',
-        'kubernetes' # Add a requirement on kubernetes
+        'pyk8s' # Add a requirement on pyk8s
     ],  
     entry_points={
         'console_scripts': [

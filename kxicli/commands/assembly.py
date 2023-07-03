@@ -6,12 +6,11 @@ import sys
 import time
 from tempfile import mkstemp
 import requests
-from kubernetes.client.exceptions import ApiException
 from tabulate import tabulate
 
 
 import click
-import kubernetes as k8s
+import pyk8s
 import yaml
 from click_aliases import ClickAliasedGroup
 
@@ -60,24 +59,15 @@ def _format_assembly_status(assembly):
 def _assembly_status_k8s(namespace, name):
     """Get status of assembly via kubernetes API"""
 
-    common.load_kube_config()
-    api = k8s.client.CustomObjectsApi()
-
     try:
-        res = api.get_namespaced_custom_object(
-            group=API_GROUP,
-            version=API_VERSION,
-            namespace=namespace,
-            plural=API_PLURAL,
-            name=name,
-        )
-    except k8s.client.rest.ApiException as exception:
-        if exception.status == 404:
-            raise click.ClickException(f'Assembly {name} not found')
-        else:
-            click.echo(f'Exception when calling CustomObjectsApi->get_namespaced_custom_object: {exception}\n')
-    
-    return res
+        return pyk8s.cl.assemblies.read(name, namespace=namespace)
+    except pyk8s.exceptions.NotFoundError:
+        raise click.ClickException(f'Assembly {name} not found')
+    except Exception as exception:
+        raise click.ClickException(
+            f'Exception when calling CustomObjectsApi->get_namespaced_custom_object: {exception}'
+        ) from exception
+
 
 
 def _assembly_status(namespace=None, name=None, hostname=None, client_id=None, client_secret=None, realm=None, use_kubeconfig=False, print_status=False):
@@ -121,43 +111,25 @@ def _list_assemblies(hostname=None, client_id=None, client_secret=None, realm=No
     return True
 
 
-def get_assemblies_list(namespace, label_selector=ASM_LABEL_SELECTOR):
+def get_assemblies_list(namespace, label_selector=ASM_LABEL_SELECTOR, field_selector=None):
     """List assemblies via the kubernetes API"""
-    common.load_kube_config()
-    api = k8s.client.CustomObjectsApi()
-    res = api.list_namespaced_custom_object(
-        group=API_GROUP,
-        version=API_VERSION,
-        namespace=namespace,
-        plural=API_PLURAL,
-        label_selector=label_selector,
-    )
-    return res
+    return pyk8s.cl.assemblies.get(field_selector=field_selector, label_selector=label_selector, namespace=namespace)
 
 
-def list_cluster_assemblies(**kwargs):
+def list_cluster_assemblies(field_selector=None, label_selector=None):
     """List assemblies via the kubernetes API"""
-    common.load_kube_config()
-    api = k8s.client.CustomObjectsApi()
-    res = api.list_cluster_custom_object(
-        group=API_GROUP,
-        version=API_VERSION,
-        plural=API_PLURAL,
-        **kwargs
-    )
-    return res
+    return pyk8s.cl.assemblies.get(field_selector=field_selector, label_selector=label_selector, namespace=None)
 
 
 def format_assemblies_list_k8s(assembly_list):
     """Extract assemblies returned from the kubernetes API"""
     asm_list = []
-    if 'items' in assembly_list:
-        for asm in assembly_list['items']:
-            if 'metadata' in asm and 'name' in asm['metadata']:
-                asm_list.append((asm['metadata']['name'], asm['metadata']['namespace']))
-    
+    for asm in assembly_list:
+        if 'metadata' in asm and 'name' in asm['metadata']:
+            asm_list.append((asm['metadata']['name'], asm['metadata']['namespace']))
+
     return (asm_list, ['ASSEMBLY NAME', 'NAMESPACE'])
-        
+
 
 def _format_assemblies_list_kxic(assembly_list):
     """Extract assemblies returned from the kxi-controller API"""
@@ -178,20 +150,18 @@ def print_2d_list(data, headers):
 def backup_assemblies(namespace, filepath, force):
     """Get assemblies' definitions"""
     res = get_assemblies_list(namespace)
-    backup = copy.deepcopy(res)
-    backup['items'] = []
+    backup = {"items": []}
 
     asm_list = []
     asm_backup_list = []
 
-    if 'items' in res:
-        for asm in res['items']:
-            if 'metadata' in asm and 'name' in asm['metadata']:
-                asm_list.append(asm['metadata']['name'])
-                if 'annotations' in asm['metadata'] and CONFIG_ANNOTATION in asm['metadata']['annotations']:
-                    asm_backup_list.append(asm['metadata']['name'])
-                    last_applied = json.loads(asm['metadata']['annotations'][CONFIG_ANNOTATION])
-                    backup['items'].append(last_applied)
+    for asm in res:
+        if 'metadata' in asm and 'name' in asm['metadata']:
+            asm_list.append(asm['metadata']['name'])
+            if 'annotations' in asm['metadata'] and CONFIG_ANNOTATION in asm['metadata']['annotations']:
+                asm_backup_list.append(asm['metadata']['name'])
+                last_applied = json.loads(asm['metadata']['annotations'][CONFIG_ANNOTATION])
+                backup['items'].append(last_applied)
 
     if len(asm_list) == 0:
         click.echo('No assemblies to back up')
@@ -213,7 +183,7 @@ def backup_assemblies(namespace, filepath, force):
 
 
 def _backup_filepath(filepath, force):
-    if filepath: 
+    if filepath:
         if not force and os.path.exists(filepath) and \
             not click.confirm(f'\n{filepath} file exists. Do you want to overwrite it with a new assembly backup file?'):
             filepath = click.prompt('Please enter the path to write the assembly backup file')
@@ -261,7 +231,7 @@ def try_append(created = None, hostname=None, client_id=None, client_secret=None
     except requests.exceptions.HTTPError as e:
         res = json.loads(e.response.text)
         click.echo(f"Error: {res['message']}. {res['detail']['message']}")
-    except ApiException as e:
+    except pyk8s.exceptions.ApiException as e:
         res = json.loads(e.body)
         click.echo(f"Error: {res['reason']}. {res['message']}")
 
@@ -280,18 +250,9 @@ def _add_last_applied_configuration_annotation(body):
 
 def _create_assembly_k8s(namespace, body):
     """Create an assembly via k8s api"""
-    api_version = body['apiVersion'].split('/')
-    
-    common.load_kube_config()
-    api = k8s.client.CustomObjectsApi()
+    asm = pyk8s.ResourceItem.parse_obj(body)
+    return asm.create_(namespace=namespace)
 
-    api.create_namespaced_custom_object(
-        group=api_version[0],
-        version=api_version[1],
-        namespace=namespace,
-        plural='assemblies',
-        body=body,
-    )
 
 def _create_assembly(hostname, client_id, client_secret, realm, namespace, body, use_kubeconfig, wait=None):
     """Create an assembly"""
@@ -326,25 +287,15 @@ def _create_assembly(hostname, client_id, client_secret, realm, namespace, body,
     return True
 
 def _delete_assembly_k8s_api(namespace, name):
-    common.load_kube_config()
-    api = k8s.client.CustomObjectsApi()
-
     try:
-        api.delete_namespaced_custom_object(
-            group=API_GROUP,
-            version=get_preferred_api_version(API_GROUP),
-            namespace=namespace,
-            plural=API_PLURAL,
-            name=name,
-        )
-    except k8s.client.rest.ApiException as exception:
-        if exception.status == 404:
-            click.echo(f'Ignoring teardown, {name} not found')
-            return False
-        else:
-            click.echo(f'Exception when calling CustomObjectsApi->delete_namespaced_custom_object: {exception}\n')
-            return False
-    
+        pyk8s.cl.assemblies.delete(name, namespace=namespace)
+    except pyk8s.exceptions.NotFoundError:
+        click.echo(f'Ignoring teardown, {name} not found')
+        return False
+    except Exception as exception:
+        click.echo(f'Exception when trying to delete Assembly({name}): {exception}\n')
+        return False
+
     return True
 
 
@@ -355,14 +306,14 @@ def _delete_assembly(namespace=None, name=None, wait=None, force=False, hostname
     if not force and not click.confirm(f'Are you sure you want to teardown {name}'):
         click.echo(f'Not tearing down assembly {name}')
         return False
- 
+
     if use_kubeconfig:
         namespace = options_namespace.prompt(namespace)
         asm_delete_success = _delete_assembly_k8s_api(namespace, name)
     else:
         hostname, token = get_kxic_options(hostname, client_id, client_secret, realm)
         asm_delete_success = assembly_kxicontroller.teardown(hostname, token, name)
-    
+
     if not asm_delete_success:
         return False
 
@@ -376,9 +327,9 @@ def wait_for_assembly_teardown(namespace, name, hostname, client_id, client_secr
     with click.progressbar(range(10), label='Waiting for assembly to be torn down') as bar:
         for n in bar:
             try:
-                _assembly_status(namespace, 
+                _assembly_status(namespace,
                     name,
-                    hostname, 
+                    hostname,
                     client_id,
                     client_secret,
                     realm,
@@ -391,7 +342,7 @@ def wait_for_assembly_teardown(namespace, name, hostname, client_id, client_secr
             time.sleep((2 ** n) + (random.randint(0, 1000) / 1000))
     if asm_running:
         log.error('Assembly was not torn down in time, exiting')
-    
+
     return not asm_running
 
 
@@ -399,11 +350,10 @@ def delete_running_assemblies(namespace, wait, force):
     """Deletes all assemblies running in a namespace"""
     asm_list = get_assemblies_list(namespace)
     deleted = []
-    if 'items' in asm_list:
-        for asm in asm_list['items']:
-            if 'metadata' in asm and 'name' in asm['metadata']:
-                deleted.append(
-                    _delete_assembly(namespace=namespace, name=asm['metadata']['name'], wait=wait, force=force, use_kubeconfig=True))
+    for asm in asm_list:
+        if 'metadata' in asm and 'name' in asm['metadata']:
+            deleted.append(
+                _delete_assembly(namespace=namespace, name=asm['metadata']['name'], wait=wait, force=force, use_kubeconfig=True))
 
     return deleted
 
@@ -503,18 +453,11 @@ def teardown(namespace, name, wait, force, hostname, client_id, client_secret, r
 
 
 def get_preferred_api_version(group_name):
-    k8s.config.load_config()
-    api_instance = k8s.client.ApisApi()
-
-    version = None
-    for api in api_instance.get_api_versions().groups:
-        if api.name == group_name:
-            version = api.preferred_version.version
-
-    if version == None:
+    try:
+        return pyk8s.cl.assemblies.api_version
+    except Exception:
         raise click.ClickException(f'Could not find preferred API version for group {group_name}')
 
-    return version
 
 def get_kxic_options(hostname, client_id, client_secret, realm):
     hostname = common.sanitize_hostname(options.hostname.prompt(hostname, silent=True))

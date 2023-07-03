@@ -1,4 +1,6 @@
-from click.testing import CliRunner, tempfile
+import tempfile
+
+from click.testing import CliRunner
 
 from kxicli import main
 

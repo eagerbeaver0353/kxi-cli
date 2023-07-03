@@ -6,18 +6,13 @@ import urllib
 from enum import Enum
 
 import click
-import kubernetes as k8s
+import pyk8s
 import yaml
 from click import ClickException
-from kubernetes import client, utils, dynamic, watch
-from kubernetes.client import api_client
-from kubernetes.client.rest import ApiException
-from kubernetes.utils import FailToCreateError
 from urllib3 import HTTPResponse
 from urllib3.exceptions import MaxRetryError, HTTPError
 from kxicli.options import namespace as options_namespace
 from kxicli.commands.common import arg
-from kxicli.common import load_kube_config
 from kxicli.cli_group import ProfileAwareGroup, cli
 
 AZURE_NODENAME_PREFIX: str = 'aks'
@@ -25,7 +20,8 @@ GCP_NODENAME_PREFIX: str = 'gke'
 AWS_NODENAME_PREFIX: str = 'eks'
 K8UP_IMAGE: str = 'ghcr.io/k8up-io/k8up:v2'
 
-K8UP_CRD_URL="https://github.com/k8up-io/k8up/releases/download/k8up-4.0.1/k8up-crd.yaml"
+K8UP_CRD_URL="https://github.com/k8up-io/k8up/releases/download/k8up-4.3.0/k8up-crd.yaml"
+K8UP_HELM_VERSION="4.3.0"
 
 class Provider(Enum):
     @classmethod
@@ -44,14 +40,12 @@ target_cluster_provider = Provider.UNKNOWN
 
 
 def _determine_provider():
-    load_kube_config()
-    api = client.CoreV1Api()
     global target_cluster_provider
 
     click.secho('Determining cloud provider...', bold=True)
     try:
-        node_list = api.list_node()
-        for node in node_list.items:
+        node_list = pyk8s.cl.nodes.get()
+        for node in node_list:
             if AZURE_NODENAME_PREFIX in node.metadata.name:
                 target_cluster_provider = Provider.AZURE
                 break
@@ -65,9 +59,9 @@ def _determine_provider():
         click.secho(
             f'Cloud provider: {target_cluster_provider.value}', bold=True)
         return target_cluster_provider
-    except k8s.client.rest.ApiException as exception:
+    except Exception as exception:
         raise ClickException(
-            f'Exception when calling CustomObjectsApi->list_node: {exception}\n')
+            f'Exception when trying to list Kubernetes Nodes: {exception}\n')
 
 
 @cli.group(cls=ProfileAwareGroup)
@@ -123,12 +117,12 @@ def snapshots(azure_blob_name, namespace):
 
     click.secho('Check and list created snapshots', bold=True)
     try:
-        _snapshot_pod_creation(azure_blob_name, namespace)
+        pod=_snapshot_pod_creation(azure_blob_name, namespace)
 
-        _snapshot_list_from_logs(namespace)
+        _snapshot_list_from_logs(pod)
 
     finally:
-        click.secho('Check and list created snapshots', bold=True)
+        click.secho('Deleting pod', bold=True)
         _snapshot_pod_deletion(namespace)
 
 
@@ -144,13 +138,7 @@ def set_backup(backup_name, azure_blob_name, namespace):
 
 
 def _create_backup(backup_name, azure_blob_name, namespace):
-    api = dynamic.DynamicClient(
-        api_client.ApiClient(configuration=load_kube_config())
-    )
-
-    crd_api = api.resources.get(
-        api_version="k8up.io/v1", kind="Backup"
-    )
+    crd_api = pyk8s.cl.get_api(kind="Backup")
 
     azure_crd_manifest = {
         "apiVersion": "k8up.io/v1",
@@ -190,14 +178,6 @@ def _create_backup(backup_name, azure_blob_name, namespace):
 
 
 def _snapshot_pod_creation(azure_blob_name, namespace):
-    api = dynamic.DynamicClient(
-        api_client.ApiClient(configuration=load_kube_config())
-    )
-
-    crd_api = api.resources.get(
-        api_version="v1", kind="Pod"
-    )
-
     k8up_snapshot_list_manifest = {
         "apiVersion": "v1",
         "kind": "Pod",
@@ -271,97 +251,63 @@ def _snapshot_pod_creation(azure_blob_name, namespace):
         }
     }
     try:
-        job_creation_response = crd_api.create(k8up_snapshot_list_manifest)
+        job_creation_response = pyk8s.cl.pods.create(k8up_snapshot_list_manifest)
         click.echo(
             f'Pod creation done: {job_creation_response.metadata.name}\n')
+        return job_creation_response
     except Exception as e:
         raise ClickException(f'Pod creation failed: {e}\n')
 
 
-def _snapshot_list_from_logs(namespace):
-    load_kube_config()
-    w = watch.Watch()
-    pod_name = "k8up-snapshot-list-pod"
-    api_instance = client.CoreV1Api()
-    try:
-       for event in w.stream(func=api_instance.list_namespaced_pod,
-                              namespace=namespace,
-                              label_selector="name=k8up-snapshot-list-pod",
-                              timeout_seconds=60):
-            if event["object"].status.phase == "Succeeded":
-                w.stop()
-                api_response = api_instance.read_namespaced_pod_log(
-                    name=pod_name, namespace=namespace)
-                click.echo(api_response)
-                return
-    except ApiException as e:
-        raise ClickException(
-            f'Found exception in reading the logs, timed out: {str(e)}')
+def _snapshot_list_from_logs(pod):
+    click.echo('Reading logs')
+    pod.wait_until_status("Succeeded", timeout=60)
+    click.echo("\n".join(pod.logs()))
 
 
 def _annotate_postgres(namespace):
-    load_kube_config()
-    pod_name = "insights-postgresql-0"
-    body = {
-        "metadata":{
-            "annotations": {
+    pod = pyk8s.cl.pods.read("insights-postgresql-0", namespace=namespace)
+    try:
+        pod.metadata.annotations.update({
                 "k8up.io/backupcommand": 'sh -c \'PGDATABASE="$POSTGRES_DB" PGUSER="$POSTGRES_USER" PGPASSWORD="$POSTGRES_PASSWORD" pg_dump --clean\'',
                 "k8up.io/file-extension": '.sql'
-                }
-            }
-    }
-    try:
-        api_instance = client.CoreV1Api()
-        api_response = api_instance.patch_namespaced_pod(
-            name=pod_name, namespace=namespace, body=body
-            )
-        click.echo(f'Postgres pod annotation successful: {api_response.pod_name}')
-    except ApiException as e:
+        })
+        pod.patch_()
+        click.echo(f'Postgres pod annotation successful: {pod.metadata.name}')
+    except Exception as e:
         raise ClickException(
             f'Found exception in Postgres pod annotation: {str(e)}')
-    
+
 
 def _snapshot_pod_deletion(namespace):
-    load_kube_config()
-    pod_name = "k8up-snapshot-list-pod"
+    pod = pyk8s.cl.pods.read("k8up-snapshot-list-pod", namespace=namespace)
     try:
-        api_instance = client.CoreV1Api()
-        api_instance.delete_namespaced_pod(
-            name=pod_name, namespace=namespace)
-        click.echo(f'Pod deletion successful: {pod_name}')
-    except ApiException as e:
+        pod.delete_()
+        click.echo(f'Pod deletion successful: {pod.metadata.name}')
+    except Exception as e:
         raise ClickException(
-            f'Found exception in deleting pod: {pod_name}, {str(e)}')
+            f'Found exception in deleting pod: {pod.metadata.name}, {str(e)}')
 
 
 def _create_secrets(az_stg_acc_name, az_stg_acc_key, restic_pw, namespace):
-    data = {'username': base64.b64encode(az_stg_acc_name.encode()).decode(
-    ), 'password': base64.b64encode(az_stg_acc_key.encode()).decode()}
-    load_kube_config()
-    core_api_instance = client.CoreV1Api()
-    pretty = 'true'
-    body = client.V1Secret()
-    body.api_version = 'v1'
-    body.data = data
-    body.kind = 'Secret'
-    body.metadata = {'name': 'azure-blob-creds'}
-    body.type = 'Opaque'
+    secret = pyk8s.models.V1Secret()
+    secret.metadata.name = 'azure-blob-creds'
+    secret.set("username", az_stg_acc_name)
+    secret.set("password", az_stg_acc_key)
+
     try:
-        core_api_instance.create_namespaced_secret(
-            namespace, body, pretty=pretty)
-        click.echo(f'Secret created: azure-blob-creds')
-    except ApiException as e:
+        secret.create_(namespace=namespace)
+        click.echo(f'Secret created: {secret.metadata.name}')
+    except Exception as e:
         traceback.print_exc()
         raise ClickException("%s" % (str(e)))
 
-    data = {'password': base64.b64encode(restic_pw.encode()).decode()}
-    body.data = data
-    body.metadata = {'name': 'backup-repo'}
+    secret.set("password", restic_pw)
+    secret.metadata.name = 'backup-repo'
     try:
-        core_api_instance.create_namespaced_secret(
-            namespace, body, pretty=pretty)
-        click.echo(f'Secret created: backup-repo')
-    except ApiException as e:
+        secret.create_(namespace=namespace)
+        click.echo(f'Secret created: {secret.metadata.name}')
+    except Exception as e:
         traceback.print_exc()
         raise ClickException("%s" % (str(e)))
 
@@ -374,7 +320,7 @@ def _install_operator(namespace):
         raise ClickException(str(cpe))
 
     install_base_command = ['helm', 'upgrade', '--install',
-                            '--namespace', namespace, 'k8up', 'k8up-io/k8up']
+                            '--namespace', namespace, 'k8up', 'k8up-io/k8up', '--version', K8UP_HELM_VERSION]
     try:
         subprocess.run(install_base_command, check=True)
         click.secho('Kubernetes Backup Operator installed.', bold=True)
@@ -383,13 +329,11 @@ def _install_operator(namespace):
 
 
 def _install_crd_definitions(namespace):
-    load_kube_config()
-    k8s_client = client.ApiClient()
     yamlcontent = yaml.safe_load_all(urllib.request.urlopen(K8UP_CRD_URL))
     for y in yamlcontent:
         try:
-            utils.create_from_dict(k8s_client, y, namespace=namespace)
+            pyk8s.cl.apply(data=y, namespace=namespace)
             click.secho(
                 'Kubernetes Backup Operator CRD definitions created.', bold=True)
-        except (ApiException, FailToCreateError, HTTPError) as e:
+        except (pyk8s.exceptions.ApiException, HTTPError) as e:
             raise ClickException(f'CRD definition creation failed: {str(e)}\n')

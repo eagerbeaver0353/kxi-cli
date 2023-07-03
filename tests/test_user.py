@@ -21,35 +21,35 @@ common.config.load_config("default")
 
 def mocked_user_manager(*args, **kwargs):
     class MockUserManager:
-        
+
         _raise_HTTP_Exception = partialmethod(http_response,
                           status_code=404,
                           content=json.dumps({'message': "Unknown", 'detail': {'message': "HTTP Error"}}).encode('utf-8'))
-    
+
         def __init__(self, host: str, username: str, password: str, user_realm: str = "insights", timeout: int = 2):
             pass
-        
+
         def create_user(self, *args, **kwargs):
             self._raise_HTTP_Exception()
 
         def list_users(self, *args, **kwargs):
             self._raise_HTTP_Exception()
-        
+
         def get_roles(self, *args, **kwargs):
             self._raise_HTTP_Exception()
-        
+
         def get_assigned_roles(self, *args, **kwargs):
             self._raise_HTTP_Exception()
-        
+
         def reset_password(self, *args, **kwargs):
             self._raise_HTTP_Exception()
-        
+
         def assign_roles(self, *args, **kwargs):
             self._raise_HTTP_Exception()
-        
+
         def remove_roles(self, *args, **kwargs):
             self._raise_HTTP_Exception()
-        
+
         def delete_user(self, *args, **kwargs):
             self._raise_HTTP_Exception()
 

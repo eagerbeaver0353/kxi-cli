@@ -7,13 +7,13 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Callable, Optional, cast
 
 import click
 import semver
 import re
-import kubernetes as k8s
 import yaml
+import pyk8s
 from click import ClickException
 from click_aliases import ClickAliasedGroup
 from cryptography import x509
@@ -27,9 +27,8 @@ from kxicli import phrases
 from kxicli.cli_group import cli, ProfileAwareGroup
 from kxicli.commands import assembly
 from kxicli.commands.common import arg
-from kxicli.commands.common.namespace import create_namespace
 from kxicli.common import get_default_val as default_val, key_gui_client_secret, key_operator_client_secret
-from kxicli.resources import secret, helm, helm_chart
+from kxicli.resources import helm, helm_chart
 
 DOCKER_CONFIG_FILE_PATH = str(Path.home() / '.docker' / 'config.json')
 operator_namespace = 'kxi-operator'
@@ -84,18 +83,14 @@ def setup(namespace, chart_repo_name, chart_repo_url, chart_repo_username,
 
     click.secho(phrases.header_setup, bold=True)
     namespace = options.namespace.prompt(namespace)
-    create_namespace(namespace)
+    pyk8s.cl.config.namespace = namespace
+    pyk8s.models.V1Namespace.ensure(namespace)
 
-    try:
-        _, active_context = k8s.config.list_kube_config_contexts()
-        click.echo(phrases.ns_and_cluster.format(namespace=namespace, \
-            cluster=active_context["context"]["cluster"]))
-    except k8s.config.ConfigException:
-        try:
-            k8s.config.load_incluster_config()
-            click.echo(f'Running in namespace {namespace} in-cluster')
-        except k8s.config.ConfigException:
-            raise click.ClickException("Kubernetes cluster config not found")
+    if pyk8s.cl.in_cluster:
+        click.echo(f'Running in namespace {namespace} in-cluster')
+    else:
+        click.echo(phrases.ns_and_cluster.format(namespace=pyk8s.cl.config.namespace, \
+            cluster=pyk8s.cl.config.context))
 
     # Setup secret by looking for them in the following hierarchy
     #   - cmd line arg
@@ -150,18 +145,18 @@ def setup(namespace, chart_repo_name, chart_repo_url, chart_repo_username,
                 'host': hostname
             },
             'license': {
-                'secretName': license_secret.name
+                'secretName': license_secret.metadata.name
             },
             'caIssuer': {
-                'name': client_cert_secret.name,
-                'secretName': client_cert_secret.name
+                'name': client_cert_secret.metadata.name,
+                'secretName': client_cert_secret.metadata.name
             },
             'image': {
                 'repository': image_repo
             },
             'imagePullSecrets': [
                 {
-                    'name': image_pull_secret.name
+                    'name': image_pull_secret.metadata.name
                 }
             ],
             'keycloak': {
@@ -174,13 +169,13 @@ def setup(namespace, chart_repo_name, chart_repo_url, chart_repo_username,
     if deploy_keycloak():
         install_file['keycloak'] = {
             'auth': {
-                'existingSecret': keycloak_secret.name
+                'existingSecret': keycloak_secret.metadata.name
             },
             'postgresql': {
                 'auth': {
-                    'existingSecret': keycloak_postgresql_secret.name
+                    'existingSecret': keycloak_postgresql_secret.metadata.name
                 },
-                'existingSecret': keycloak_postgresql_secret.name
+                'existingSecret': keycloak_postgresql_secret.metadata.name
             }
         }
     else:
@@ -192,7 +187,7 @@ def setup(namespace, chart_repo_name, chart_repo_url, chart_repo_username,
         install_file['global']['ingress']['certmanager'] = False
 
     if use_tls_secret:
-        install_file['global']['ingress']['tlsSecret'] = ingress_cert_secret_object.name
+        install_file['global']['ingress']['tlsSecret'] = ingress_cert_secret_object.metadata.name
 
     if license_as_env_var:
         install_file['global']['license']['asFile'] = False
@@ -244,7 +239,7 @@ def run(ctx, namespace, chart_repo_name, chart_repo_url, chart_repo_username,
 
     insights_chart = parse_chart_cli_params(chart, chart_repo_name, chart_repo_url, chart_repo_username)
 
-    docker_config = get_docker_config_secret(namespace, image_pull_secret, DOCKER_SECRET_KEY)
+    docker_config = get_docker_config_secret(namespace, cast(str, image_pull_secret), DOCKER_SECRET_KEY)
 
     if is_valid_upgrade_version(release, namespace, version):
         if click.confirm(f'Would you like to upgrade to version {version}?'):
@@ -288,7 +283,7 @@ def upgrade(namespace, release, chart_repo_name, chart_repo_url, chart_repo_user
 
     is_valid_upgrade_version(release, namespace, version)
 
-    docker_config = get_docker_config_secret(namespace, image_pull_secret, DOCKER_SECRET_KEY)
+    docker_config = get_docker_config_secret(namespace, cast(str, image_pull_secret), DOCKER_SECRET_KEY)
 
     perform_upgrade(namespace, release, insights_chart, assembly_backup_filepath, version, operator_version, image_pull_secret,
                     license_secret, filepath, import_users, docker_config, force)
@@ -456,21 +451,21 @@ def check_azure_oci_repo(values_dict, chart_repo_url):
     # we only need the first part of the url
     return f'oci://{global_image_repository.split("/")[0]}'
 
-def get_secret(secret_object: secret.Secret,
+def get_secret(secret_object: pyk8s.models.V1Secret,
                secret_data_name: str
     ):
     """
     Return decoded secret
     """
-    secret_value = secret_object.read()
+    secret_value = secret_object.read_()
     if secret_value:
         try:
             secret_value = base64.b64decode(secret_value.data[secret_data_name]).decode('ascii')
         except KeyError:
-            log.error(f'Cannot find key {secret_data_name} in secret {secret_object.name}')
+            log.error(f'Cannot find key {secret_data_name} in secret {secret_object.metadata.name}')
             return None
     else:
-        log.debug(f'Cannot find values secret {secret_object.name}')
+        log.debug(f'Cannot find values secret {secret_object.metadata.name}')
 
     return secret_value
 
@@ -484,7 +479,7 @@ def get_minor_version(version):
 def get_operator_version(
     chart: helm_chart.Chart,
     insights_version: str,
-    operator_version: str
+    operator_version: Optional[str]
 ):
     """Determine operator version to use. Retrieve the most recent operator minor version matching the insights version"""
     if operator_version is None:
@@ -492,7 +487,7 @@ def get_operator_version(
                                 available_operator_versions(chart),
                                 insights_version
                         )
-    return operator_version
+    return cast(str, operator_version)
 
 
 def available_operator_versions(chart: helm_chart.Chart) -> list[str]:
@@ -562,54 +557,58 @@ def sanitize_auth_url(raw_string):
     return trimmed
 
 
-def prompt_for_license(secret: secret.Secret, filepath, license_as_env_var):
+def prompt_for_license(secret: pyk8s.models.V1Secret, filepath, license_as_env_var):
     """Prompt for an existing license or create on if it doesn't exist"""
     license_on_demand = False
 
-    exists, is_valid, _ = secret.validate()
+    exists, is_valid, _ = secret.validate_keys()
     if not exists:
         secret, license_on_demand = populate_license_secret(secret, filepath=filepath, as_env=license_as_env_var)
-        secret.create()
+        secret.create_()
+        click.echo(phrases.secret_created.format(name=secret.metadata.name))
     elif not is_valid:
-        if click.confirm(phrases.secret_exist_invalid.format(name=secret.name)):
-            click.echo(phrases.secret_overwriting.format(name=secret.name))
+        if click.confirm(phrases.secret_exist_invalid.format(name=secret.metadata.name)):
+            click.echo(phrases.secret_overwriting.format(name=secret.metadata.name))
             secret, license_on_demand = populate_license_secret(secret, filepath=filepath, as_env=license_as_env_var)
-            secret.patch()
+            secret.patch_()
+            click.echo(phrases.secret_updated.format(name=secret.metadata.name))
     else:
-        click.echo(phrases.secret_use_existing.format(name=secret.name))
+        click.echo(phrases.secret_use_existing.format(name=secret.metadata.name))
     return secret, license_on_demand
 
 
-def ensure_secret(secret: secret.Secret, populate_function: Callable, data = None):
-    exists, is_valid, _ = secret.validate()
+def ensure_secret(secret: pyk8s.models.V1Secret, populate_function: Callable, data = None):
+    exists, is_valid, _ = secret.validate_keys()
     if not exists:
         secret = populate_function(secret, data=data)
-        secret.create()
+        secret.create_()
+        click.echo(phrases.secret_created.format(name=secret.metadata.name))
     elif not is_valid:
-        if click.confirm(phrases.secret_exist_invalid.format(name=secret.name)):
-            click.echo(phrases.secret_overwriting.format(name=secret.name))
+        if click.confirm(phrases.secret_exist_invalid.format(name=secret.metadata.name)):
+            click.echo(phrases.secret_overwriting.format(name=secret.metadata.name))
             secret = populate_function(secret, data=data)
-            secret.patch()
+            secret.patch_()
+            click.echo(phrases.secret_updated.format(name=secret.metadata.name))
     else:
-        click.echo(phrases.secret_use_existing.format(name=secret.name))
+        click.echo(phrases.secret_use_existing.format(name=secret.metadata.name))
     return secret
 
 
-def populate_cert(secret: secret.Secret, **kwargs):
+def populate_cert(secret: pyk8s.models.V1Secret, **kwargs):
     """Populates a certificate secret with a cert and key"""
     key = gen_private_key()
     cert = gen_cert(key)
     return populate_tls_secret(secret, cert, key)
 
 
-def prompt_for_image_details(secret: secret.Secret, image_repo, image_repo_user):
+def prompt_for_image_details(secret: pyk8s.models.V1Secret, image_repo, image_repo_user):
     """Prompt for an existing image pull secret or create on if it doesn't exist"""
     image_repo = options.image_repo.prompt(image_repo)
     secret = ensure_secret(secret, populate_image_pull_secret, {'image_repo': image_repo, 'image_repo_user': image_repo_user})
     return image_repo, secret
 
 
-def populate_image_pull_secret(secret: secret.Secret, **kwargs):
+def populate_image_pull_secret(secret: pyk8s.models.V1Secret, **kwargs):
     data = kwargs.get('data')
     image_repo = data['image_repo']
     image_repo_user = data['image_repo_user']
@@ -636,7 +635,7 @@ def populate_image_pull_secret(secret: secret.Secret, **kwargs):
     return secret
 
 
-def populate_keycloak_secret(secret: secret.Secret, **kwargs):
+def populate_keycloak_secret(secret: pyk8s.models.V1Secret, **kwargs):
     admin_password = options.keycloak_admin_password.prompt()
     management_password = options.keycloak_management_password.prompt()
 
@@ -648,7 +647,7 @@ def populate_keycloak_secret(secret: secret.Secret, **kwargs):
     return secret
 
 
-def populate_postgresql_secret(secret: secret.Secret, **kwargs):
+def populate_postgresql_secret(secret: pyk8s.models.V1Secret, **kwargs):
     postgresql_postgres_password = options.postgresql_postgres_password.prompt()
     postgresql_password = options.postgresql_user_password.prompt()
 
@@ -662,7 +661,7 @@ def populate_postgresql_secret(secret: secret.Secret, **kwargs):
     return secret
 
 
-def prompt_for_ingress_cert(secret: secret.Secret, name, ingress_cert, ingress_key, ingress_certmanager_disabled):
+def prompt_for_ingress_cert(secret: pyk8s.models.V1Secret, name, ingress_cert, ingress_key, ingress_certmanager_disabled):
     use_tls_secret = False
     if name or ingress_cert or ingress_key:
         use_tls_secret = True
@@ -680,7 +679,7 @@ def prompt_for_ingress_cert(secret: secret.Secret, name, ingress_cert, ingress_k
     return ingress_certmanager_disabled, use_tls_secret, secret
 
 
-def populate_ingress_cert(secret: secret.Secret, **kwargs):
+def populate_ingress_cert(secret: pyk8s.models.V1Secret, **kwargs):
     path_to_cert = options.ingress_cert.prompt(kwargs.get('data')['ingress_cert'])
     with open(path_to_cert, 'r') as cert_file:
         cert_data = cert_file.read()
@@ -723,7 +722,7 @@ def check_existing_docker_config(image_repo, file_path):
     return None
 
 
-def populate_license_secret(secret: secret.Secret, filepath = None, as_env = False):
+def populate_license_secret(secret: pyk8s.models.V1Secret, filepath = None, as_env = False):
     """Populate the data in a license secret"""
     license_on_demand = False
 
@@ -740,14 +739,14 @@ def populate_license_secret(secret: secret.Secret, filepath = None, as_env = Fal
     }
 
     if as_env:
-        secret.string_data = license_data
+        secret.stringData = license_data
     else:
         secret.data = license_data
 
     return secret, license_on_demand
 
 
-def populate_docker_config_secret(secret: secret.Secret, docker_config):
+def populate_docker_config_secret(secret: pyk8s.models.V1Secret, docker_config):
     """Populate a secret with a docker config file"""
     docker_config = json.dumps(docker_config).encode()
     secret.data = {
@@ -760,14 +759,14 @@ def get_docker_config_secret(
         secret_name: str,
         secret_data_name: str = DOCKER_SECRET_KEY
 ) -> str:
-    s = secret.Secret(namespace, secret_name)
+    s = pyk8s.models.V1Secret(metadata=pyk8s.models.V1ObjectMeta(namespace=namespace, name=secret_name))
     docker_config = get_secret(s, secret_data_name)
     if docker_config is not None:
         return docker_config
     else:
         raise click.ClickException('Docker config secret not found in Cluster')
 
-def populate_tls_secret(secret: secret.Secret, cert, key):
+def populate_tls_secret(secret: pyk8s.models.V1Secret, cert, key):
     """Create a TLS secret in a given namespace from a cert and private key"""
 
     # the private key must be unencrypted for a k8s secret
@@ -871,7 +870,7 @@ def gen_cert(private_key):
 
 def check_for_cluster_assemblies(exclude_namespace):
     assemblies = assembly.list_cluster_assemblies(field_selector=f'metadata.namespace!={exclude_namespace}')
-    if len(assemblies['items']) == 0:
+    if len(assemblies) == 0:
         return False
     log.warn('Assemblies are running in other namespaces')
     asm_list = assembly.format_assemblies_list_k8s(assemblies)
@@ -1002,7 +1001,7 @@ def install_operator_and_release(
     existing_values = None
 
     if install_operator:
-        create_namespace(operator_namespace)
+        pyk8s.models.V1Namespace.ensure(operator_namespace)
 
         copy_secret(image_pull_secret, namespace, operator_namespace)
         copy_secret(license_secret, namespace, operator_namespace)
@@ -1131,7 +1130,6 @@ def get_operator_location(
 
 def delete_release_operator_and_crds(release, namespace, force, uninstall_operator, assembly_backup_filepath):
     """Delete insights, operator and CRDs"""
-    common.load_kube_config()
 
     if not insights_installed(release, namespace):
         click.echo('\nkdb Insights Enterprise installation not found')
@@ -1161,21 +1159,13 @@ def delete_release_operator_and_crds(release, namespace, force, uninstall_operat
         click.echo(f'\nkdb Insights Enterprise kxi-operator not found')
 
 
-def copy_secret(name, from_ns, to_ns):
-    common.load_kube_config()
-    api = k8s.client.CoreV1Api()
+def copy_secret(name: str, from_ns, to_ns):
+    secret = pyk8s.cl.secrets.read(name=name, namespace=from_ns)
     try:
-        secret = api.read_namespaced_secret(namespace=from_ns, name=name)
-    except k8s.client.rest.ApiException as exception:
-        raise click.ClickException(f'Exception when trying to get secret {exception}')
+        secret.create_(namespace=to_ns)
+    except pyk8s.exceptions.ConflictError:
+        pass
 
-    secret.metadata = k8s.client.V1ObjectMeta(namespace=to_ns, name=name)
-
-    try:
-        secret = api.create_namespaced_secret(namespace=to_ns, body=secret)
-    except k8s.client.rest.ApiException as exception:
-        if not exception.status == 409:
-            raise click.ClickException(f'Exception when trying to create secret {exception}')
 
 
 def insights_installed(release, namespace):
@@ -1196,11 +1186,10 @@ def get_installed_charts(release, namespace):
 
 def get_installed_operator_versions(namespace: str = operator_namespace):
     """Retrieve running operator versions"""
-    api_instance = k8s.client.AppsV1Api(k8s.client.ApiClient())
-    operators = api_instance.list_namespaced_deployment(namespace, label_selector='app.kubernetes.io/name=kxi-operator')
+    operators = pyk8s.cl.deployments.get(label_selector='app.kubernetes.io/name=kxi-operator', namespace=namespace)
     operator_versions = []
     operator_releases = []
-    for item in operators.items:
+    for item in operators:
         operator_versions.append(item.metadata.labels.get("helm.sh/chart").lstrip("kxi-operator-"))
         operator_releases.append(item.metadata.labels.get(operator_release_name))
     return (operator_versions, operator_releases)
@@ -1232,7 +1221,9 @@ def validate_values(namespace, values_dict):
         if v[3]:
             default = default_val(k)
             name = get_from_values_store(v[0], values_dict, default)
-            exists, is_valid, _ = secret.Secret(namespace, name, v[1], v[2]).validate()
+            s = pyk8s.models.V1Secret(metadata=pyk8s.models.V1ObjectMeta(namespace=namespace, name=cast(str, name)),
+                                  type=v[1], _required_keys=v[2])
+            exists, is_valid, _ = s.validate_keys()
             if not exists:
                 log.error(phrases.secret_validation_not_exist.format(name=name))
                 exit_execution = True
@@ -1255,7 +1246,8 @@ def lookup_secret(namespace, arg, values_file, default_key):
         log.debug(f'No command line argument passed for {default_key}, looking up in values stores')
         arg = get_from_values_store(v[0], values_file_dict, default_val(default_key))
 
-    s = secret.Secret(namespace, arg, v[1], v[2])
+    s = pyk8s.models.V1Secret(metadata=pyk8s.models.V1ObjectMeta(namespace=namespace, name=cast(str, arg)),
+                                  type=v[1], _required_keys=v[2])
     return s
 
 def read_cached_crd_files(
@@ -1319,7 +1311,6 @@ def replace_chart_crds(crd_data):
 @arg.chart_repo_username()
 @arg.chart()
 def rollback(insights_revision, release, operator_revision, namespace, image_pull_secret, force, assembly_backup_filepath, chart_repo_name, operator_chart, chart_repo_url, chart_repo_username, chart):
-    common.load_kube_config()
     chart_operator = parse_chart_cli_params(operator_chart, chart_repo_name, chart_repo_url, chart_repo_username, 'kxi-operator')
 
     skip_operator_rollback = False
@@ -1425,7 +1416,6 @@ def history(release, show_operator):
     """
     List the revision history of a kdb Insights Enterprise install
     """
-    common.load_kube_config()
     current_operator_version, current_operator_release  = get_installed_operator_versions(operator_namespace)
     helm.history(options.chart_repo_name.prompt(release, silent=True), None, show_operator, current_operator_version, current_operator_release[0])
 
