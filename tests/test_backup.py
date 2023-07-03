@@ -4,12 +4,12 @@ from io import BytesIO
 from pathlib import Path
 from subprocess import CompletedProcess
 from unittest.mock import MagicMock
+import pyk8s
 
 import pytest
 import yaml
 from click import ClickException, BaseCommand
 from click.testing import CliRunner
-from kubernetes.client import ApiException
 from pytest_mock import MockerFixture
 from urllib3 import HTTPResponse
 
@@ -18,8 +18,6 @@ from kxicli.commands import backup
 from kxicli.commands.backup import Provider
 from test_helm import fun_subprocess_run
 from utils import IPATH_KUBE_COREV1API
-from kubernetes.client import ApiException, V1Node, V1NodeList, V1ObjectMeta
-from kubernetes import dynamic
 
 default_env: dict = {
     'KUBECONFIG': str(Path(__file__).parent / 'files' / 'test-kube-config')
@@ -34,20 +32,18 @@ def _subprocess_run(
     return CompletedProcess(args="fake_process", returncode=0, stdout='', stderr='')
 
 
-def test_snapshot_pod_deletion(mocker):
-    mocker.patch(IPATH_KUBE_COREV1API)
+def test_snapshot_pod_deletion(k8s):
     backup._snapshot_pod_deletion(namespace="insights")
 
 
-def test_snapshot_pod_deletion_fail(mocker):
-    mock = mocker.patch(IPATH_KUBE_COREV1API)
-    mock.return_value.delete_namespaced_pod.side_effect = ApiException()
+def test_snapshot_pod_deletion_fail(k8s):
+    k8s.pods.read().delete_.side_effect = pyk8s.exceptions.ApiException()
+
     with pytest.raises(ClickException):
         backup._snapshot_pod_deletion(namespace="insights")
 
 
-def test_init(mocker: MockerFixture):
-    mock = mocker.patch(IPATH_KUBE_COREV1API)
+def test_init(mocker: MockerFixture, k8s: MagicMock):
     urllib_mock = mocker.patch('urllib.request.urlopen')
     urllib_mock.return_value = yaml.safe_dump_all([{
         'apiVersion': 'v1',
@@ -65,7 +61,7 @@ def test_init(mocker: MockerFixture):
         }
     }])
     mocker.patch(fun_subprocess_run, _subprocess_run)
-    mock.return_value.list_node.return_value = [
+    k8s.nodes.get.return_value = [
         {
             'metadata': {
                 'name': backup.AZURE_NODENAME_PREFIX
@@ -105,7 +101,7 @@ class MockHTTPResponse(HTTPResponse):
         yield data
 
 
-def test_snapshot_list_from_logs(mocker: MockerFixture):
+def test_snapshot_list_from_logs(mocker: MockerFixture, k8s: MagicMock):
     data_str = json.dumps({
         "type": "ADDED",
         "object": {
@@ -119,56 +115,41 @@ def test_snapshot_list_from_logs(mocker: MockerFixture):
             }}
     }) + "\n"
 
-    mocker.patch('kubernetes.client.api.core_v1_api.CoreV1Api.list_namespaced_pod').return_value = MockHTTPResponse(
-        body=BytesIO(data_str.encode())
-    )
-    mocker.patch('kubernetes.watch.watch._find_return_type').return_value = "V1PodList"
-    mocker.patch('kubernetes.client.api.core_v1_api.CoreV1Api.read_namespaced_pod_log').return_value = "somelog"
-    backup._snapshot_list_from_logs(namespace="insights")
+    pod = pyk8s.models.V1Pod()
+    mocker.patch.object(pod, "wait_until_status")
+    mocker.patch.object(pod, "logs", return_value="somelog")
+    backup._snapshot_list_from_logs(pod)
 
 
-def test_snapshot_list_from_logs_fail(mocker: MockerFixture):
-    mocker.patch('kubernetes.client.api.core_v1_api.CoreV1Api.list_namespaced_pod').side_effect = ApiException(
-        "something")
-    with pytest.raises(ClickException):
-        backup._snapshot_list_from_logs(namespace="insights")
+def test_snapshot_list_from_logs_fail(mocker: MockerFixture, k8s: MagicMock):
+    pod = pyk8s.models.V1Pod()
+    mocker.patch.object(pod, "wait_until_status", side_effect=pyk8s.exceptions.ApiException("something"))
+    with pytest.raises(pyk8s.exceptions.ApiException):
+        backup._snapshot_list_from_logs(pod)
 
 
-def test_determine_provider_aks(mocker: MockerFixture):
-    mocker.patch('kubernetes.client.api.core_v1_api.CoreV1Api.list_node').return_value = V1NodeList(items=[
-        V1Node(metadata=V1ObjectMeta(name="aks"))
-    ])
+def test_determine_provider_aks(k8s: MagicMock):
+    k8s.nodes.get.return_value = [pyk8s.models.V1Node(metadata=pyk8s.models.V1ObjectMeta(name="aks"))]
 
     assert backup._determine_provider() == Provider.AZURE
 
 
-def test_determine_provider_eks(mocker: MockerFixture):
-    mocker.patch('kubernetes.client.api.core_v1_api.CoreV1Api.list_node').return_value = V1NodeList(items=[
-        V1Node(metadata=V1ObjectMeta(name="eks"))
-    ])
+def test_determine_provider_eks(k8s: MagicMock):
+    k8s.nodes.get.return_value = [pyk8s.models.V1Node(metadata=pyk8s.models.V1ObjectMeta(name="eks"))]
 
     assert backup._determine_provider() == Provider.AWS
 
 
-def test_determine_provider_gke(mocker: MockerFixture):
-    mocker.patch('kubernetes.client.api.core_v1_api.CoreV1Api.list_node').return_value = V1NodeList(items=[
-        V1Node(metadata=V1ObjectMeta(name="gke"))
-    ])
+def test_determine_provider_gke(k8s: MagicMock):
+    k8s.nodes.get.return_value = [pyk8s.models.V1Node(metadata=pyk8s.models.V1ObjectMeta(name="gke"))]
 
     assert backup._determine_provider() == Provider.GCP
 
 
-def test_determine_provider_fail(mocker: MockerFixture):
-    mocker.patch('kubernetes.client.api.core_v1_api.CoreV1Api.list_node').side_effect = ApiException(
-        "something")
+def test_determine_provider_fail(mocker: MockerFixture, k8s: MagicMock):
+    k8s.nodes.get.side_effect = pyk8s.exceptions.ApiException("something")
     with pytest.raises(ClickException):
         backup._determine_provider()
-
-
-@pytest.fixture
-def create_mock_dynamic(mocker: MockerFixture):
-    dynamic_patch = mocker.patch('kxicli.commands.backup.dynamic.DynamicClient')
-    return dynamic_patch.return_value.resources.get.return_value.create
 
 
 @pytest.fixture
@@ -176,35 +157,29 @@ def click_mock(mocker: MockerFixture):
     return mocker.patch('kxicli.commands.backup.click')
 
 
-def test_snapshot_pod_creation(create_mock_dynamic, click_mock):
-    metadata = MagicMock()
-    metadata.name = "k8up-snapshot-list-pod"
-    create_mock_dynamic.return_value = MagicMock(metadata=metadata)
+def test_snapshot_pod_creation(k8s, click_mock):
+    k8s.pods.create.side_effect = lambda x: pyk8s.models.V1Pod.parse_obj(x)
     backup._snapshot_pod_creation(azure_blob_name="something", namespace="insights")
-    create_mock_dynamic.assert_called()
     click_mock.echo.assert_called_with('Pod creation done: k8up-snapshot-list-pod\n')
+    k8s.pods.create.assert_called()
 
 
-def test_snapshot_pod_creation_fail(create_mock_dynamic):
-    create_mock_dynamic.side_effect = Exception(
-        "something")
+def test_snapshot_pod_creation_fail(k8s):
+    k8s.pods.create.side_effect = Exception("something")
     with pytest.raises(ClickException, match="Pod creation failed"):
         backup._snapshot_pod_creation(azure_blob_name="something", namespace="insights")
-    create_mock_dynamic.assert_called()
+    k8s.pods.create.assert_called()
 
 
-def test_create_backup(create_mock_dynamic, click_mock):
-    metadata = MagicMock()
-    metadata.name = "something"
-    create_mock_dynamic.return_value = MagicMock(metadata=metadata)
+def test_create_backup(k8s, click_mock):
+    k8s.get_api(kind="Backup").create.side_effect = lambda x: pyk8s.models.V1Pod.parse_obj(x)
     backup._create_backup(backup_name="something", azure_blob_name="something", namespace="insights")
-    create_mock_dynamic.assert_called()
+    k8s.get_api(kind="Backup").create.assert_called()
     click_mock.echo.assert_called_with('K8up Backup CRD creation done: something')
 
 
-def test_create_backup_fail(create_mock_dynamic):
-    create_mock_dynamic.side_effect = Exception(
-        "something")
+def test_create_backup_fail(k8s):
+    k8s.get_api(kind="Backup").create.side_effect = Exception("something")
     with pytest.raises(ClickException, match="CRD creation failed"):
         backup._create_backup(backup_name="something", azure_blob_name="something", namespace="insights")
-    create_mock_dynamic.assert_called()
+    k8s.get_api(kind="Backup").create.assert_called()

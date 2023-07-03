@@ -6,6 +6,7 @@ import subprocess
 from functools import lru_cache
 from typing import List
 import json
+import pyk8s
 import yaml
 
 from click import ClickException
@@ -14,7 +15,6 @@ from packaging.version import Version
 from kxicli import log
 from kxicli.common import parse_called_process_error
 from kxicli.commands.common.docker import temp_docker_config
-from kxicli.commands.common.namespace import create_namespace
 from kxicli.resources import helm_chart
 
 class RequiredHelmVersion(Version):
@@ -116,7 +116,7 @@ def upgrade_install(
 
     if namespace:
         base_command = base_command + ['--namespace', namespace]
-        create_namespace(namespace)
+        pyk8s.models.V1Namespace.ensure(namespace)
 
     try:
         log.debug(f'Upgrade install command {base_command}')

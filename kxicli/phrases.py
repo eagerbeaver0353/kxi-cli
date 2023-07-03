@@ -97,7 +97,7 @@ missing_user_argument = "'username' must be provided as a keyword argument"
 
 # Rollback
 rollback_insights = 'Rolling Insights back to version {insights_version} and revision {revision}. Operator version remaining on {operator_version}.'
-rollback_insights_operator = 'Rolling Insights back to version {insights_version} and revision {revision}. \nRolling operator back to version {operator_version} and revision {operator_revision}.'
+rollback_insights_operator = 'Rolling Insights back to version {insights_version} and revision {revision}.\nRolling operator back to version {operator_version} and revision {operator_revision}.'
 rollback_start = '\nRolling back Insights'
 
 # Helm

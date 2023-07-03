@@ -1,6 +1,8 @@
 import json
 import subprocess
+from typing import List
 import click
+import pyk8s
 import pytest
 
 from functools import partial
@@ -31,7 +33,6 @@ DEST =  HELM_RESPOSITORY_CACHE_VAL
 VERSION = '1.2.3'
 NAMESPACE = 'test-namespace'
 
-fun_install_create_namespace: str = 'kxicli.resources.helm.create_namespace'
 fun_subprocess_check_out: str = 'subprocess.check_output'
 fun_subprocess_run: str = 'subprocess.run'
 config_json_file_name: str = 'config.json'
@@ -170,7 +171,7 @@ def test_helm_install_success(mocker: MockerFixture):
     subprocess_run_helm_success_helm_install = partial(subprocess_run_helm_success_install_with_res, res=res)
 
     mocker.patch(fun_subprocess_run, subprocess_run_helm_success_helm_install)
-    mocker.patch(fun_install_create_namespace, utils.return_none)
+    mocker.patch.object(pyk8s.models.V1Namespace, "ensure", utils.return_none)
 
     actual_res = helm.upgrade_install(
         release=RELEASE,
@@ -191,7 +192,7 @@ def test_helm_install_success(mocker: MockerFixture):
 
 def test_helm_install_fail(mocker: MockerFixture):
     mocker.patch(fun_subprocess_run, subprocess_run_helm_fail)
-    mocker.patch(fun_install_create_namespace, utils.return_none)
+    mocker.patch.object(pyk8s.models.V1Namespace, "ensure", utils.return_none)
     with pytest.raises(click.ClickException):
         helm.upgrade_install(
             release=RELEASE,
@@ -212,7 +213,7 @@ def test_helm_uninstall_success(mocker: MockerFixture):
     subprocess_run_helm_success_uninstall = partial(subprocess_run_helm_success_uninstall_with_res, res=res)
 
     mocker.patch(fun_subprocess_run, subprocess_run_helm_success_uninstall)
-    mocker.patch(fun_install_create_namespace, utils.return_none)
+    mocker.patch.object(pyk8s.models.V1Namespace, "ensure", utils.return_none)
     actual_res = helm.uninstall(
         release=RELEASE,
         namespace=NAMESPACE
@@ -223,7 +224,7 @@ def test_helm_uninstall_success(mocker: MockerFixture):
 
 def test_helm_uninstall_fail(mocker: MockerFixture):
     mocker.patch(fun_subprocess_run, subprocess_run_helm_fail)
-    mocker.patch(fun_install_create_namespace, utils.return_none)
+    mocker.patch.object(pyk8s.models.V1Namespace, "ensure", utils.return_none)
     with pytest.raises(click.ClickException):
         helm.uninstall(
             release=RELEASE,
@@ -261,28 +262,27 @@ def test_history_success_json(mocker):
     mocker.patch('subprocess.run', mocked_helm_history_json)
     release = "myrelease"
     output = [{"revision": 1, "status": "deployed"}, {"revision": 2, "status": "uninstalled"}]
-    helm.history(release, 'json', None, None, 'kxi-operator') == output
+    assert helm.history(release, 'json', None, None, 'kxi-operator') == (output, output)
 
 def test_history_success(mocker):
     mocker.patch('subprocess.run', mocked_helm_history)
     release = "myrelease"
-    output = [{"revision": 1, "status": "deployed"}, {"revision": 2, "status": "uninstalled"}]
     res = helm.history(release, None, None, None, 'kxi-operator')
-    res == output
+    assert res is None
 
 def test_history_fail(mocker):
     error_msg = "command not found: helm"
     mocker.patch('subprocess.run').side_effect = subprocess.CalledProcessError(1, "helm", error_msg)
     release = "myrelease"
     output = []
-    helm.history(release, False, None, None, 'kxi-operator') == output
+    assert helm.history(release, False, None, None, 'kxi-operator') == output
 
 def test_history_fail_json(mocker):
     error_msg = "command not found: helm"
     mocker.patch('subprocess.run').side_effect = subprocess.CalledProcessError(1, "helm", error_msg)
     release = "myrelease"
     output = []
-    helm.history(release, False, None, None, 'kxi-operator') == output
+    assert helm.history(release, False, None, None, 'kxi-operator') == output
 
 def test_repo_exists(mocker):
     utils.mock_helm_repo_list(mocker, const.test_chart_repo_name, const.test_chart_repo_url)

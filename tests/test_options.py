@@ -10,107 +10,99 @@ import utils
 # Constants for common import paths
 SYS_STDIN = 'sys.stdin'
 
-test_cli_config = os.path.dirname(__file__) + '/files/test-cli-config'
-common.config.config_file = test_cli_config
-common.config.load_config("default")
 
 
-def mocked_k8s_list_empty_config():
-    return ([], {'context': ()})
+@pytest.fixture(autouse=True)
+def default_config():
+    test_cli_config = os.path.dirname(__file__) + '/files/test-cli-config'
+    common.config.config_file = test_cli_config
+    common.config.load_config("default")
+    yield
+    common.config.load_config("default")
 
 
-def mock_k8s_list_empty_config(mocker):
-    mocker.patch('kubernetes.config.list_kube_config_contexts', mocked_k8s_list_empty_config)
-
-
-def test_get_namespace(mocker):
+def test_get_namespace(mocker, k8s):
     # Result retrived from kube context
     assert options.get_namespace() == utils.namespace()
-    mocker.patch('kubernetes.config.list_kube_config_contexts', mocked_k8s_list_empty_config)
+    k8s.config.namespace = None
     assert options.get_namespace() == None
 
 
-def test_print_option_source(capsys):
-    options.print_option_source('Print option source with value', 'test_value', False, False)
-    assert capsys.readouterr().err == 'Print option source with value: test_value\n'
-
-    options.print_option_source('Print option source but hide password value', 'test_value', True, False)
-    assert capsys.readouterr().err == 'Print option source but hide password value\n'
-    
-    options.print_option_source('Print option source with non-string value', 1234, False, False)
-    assert capsys.readouterr().err == 'Print option source with non-string value: 1234\n'
-
-    options.print_option_source('Silent option source', 'test_value', False, True)
-    assert capsys.readouterr().err == ''
+@pytest.mark.parametrize("args, err", [
+    (('Print option source with value', 'test_value', False, False), 'Print option source with value: test_value\n'),
+    (('Print option source but hide password value', 'test_value', True, False), 'Print option source but hide password value\n'),
+    (('Print option source with non-string value', 1234, False, False), 'Print option source with non-string value: 1234\n'),
+    (('Silent option source', 'test_value', False, True), "")
+])
+def test_print_option_source(capsys, args, err):
+    options.print_option_source(*args)
+    assert capsys.readouterr().err == err
 
 
-def test_print_cmd_line_option(capsys):
-    options.print_cmd_line_option('Print value from command-line without default', 'a-test-value', False, None, False)
-    assert capsys.readouterr().err == 'Print value from command-line without default: a-test-value\n'
+@pytest.mark.parametrize("args, err", [
+    (('Print value from command-line without default', 'a-test-value', False, None, False), 'Print value from command-line without default: a-test-value\n'),
+    (('Print value from command-line without default, hiding password value', 'a-test-value', True, None, False), 'Print value from command-line without default, hiding password value\n'),
+    (('Print value from command-line with None default lambda', 'a-test-value', False, lambda: None, False), "Print value from command-line with None default lambda: a-test-value\n"),
+    (('Print value from command-line with None default lambda, hiding password value', 'a-test-value', True, lambda: None, False), "Print value from command-line with None default lambda, hiding password value\n"),
+    (('Hide value from command-line with default value', 'a-test-value', False, 'a-default-value', False), ""),
+    (('Hide value from command-line with default value as password', 'a-test-value', True, 'a-default-value', False), ""),
+    (('Hide value from command-line with default lambda, not as password', 'a-test-value', False, lambda: 'a-default-value', False), ""),
+    (('Hide value from command-line with default lambda as password', 'a-test-value', True, lambda: 'a-default-value', False), ""),
+    (('Hide value from command-line when silent', 'a-test-value', False, 'a-default-value', True), "")
+])
+def test_print_cmd_line_option(capsys, args, err):
+    options.print_cmd_line_option(*args)
+    assert capsys.readouterr().err == err
 
-    options.print_cmd_line_option('Print value from command-line without default, hiding password value', 'a-test-value', True, None, False)
-    assert capsys.readouterr().err == 'Print value from command-line without default, hiding password value\n'
 
-    options.print_cmd_line_option('Print value from command-line with None default lambda', 'a-test-value', False, lambda: None, False)
-    assert capsys.readouterr().err == 'Print value from command-line with None default lambda: a-test-value\n'
-
-    options.print_cmd_line_option('Print value from command-line with None default lambda, hiding password value', 'a-test-value', True, lambda: None, False)
-    assert capsys.readouterr().err == 'Print value from command-line with None default lambda, hiding password value\n'
-
-    options.print_cmd_line_option('Hide value from command-line with default value', 'a-test-value', False, 'a-default-value', False)
-    assert capsys.readouterr().err == ''
-
-    options.print_cmd_line_option('Hide value from command-line with default value as password', 'a-test-value', True, 'a-default-value', False)
-    assert capsys.readouterr().err == ''
-
-    options.print_cmd_line_option('Hide value from command-line with default lambda, not as password', 'a-test-value', False, lambda: 'a-default-value', False)
-    assert capsys.readouterr().err == ''
-
-    options.print_cmd_line_option('Hide value from command-line with default lambda as password', 'a-test-value', True, lambda: 'a-default-value', False)
-    assert capsys.readouterr().err == ''
-
-    options.print_cmd_line_option('Hide value from command-line when silent', 'a-test-value', False, 'a-default-value', True)
-    assert capsys.readouterr().err == ''
-
-def test_get_prompt_message():
+@pytest.mark.parametrize("arg", ["", "prompt message from arg"])
+def test_get_prompt_message(arg):
+    prompt_message = 'a test prompt message from option definition'
     test_option = options.Option(
         '--test-option',
         config_name = 'test.option',
-        prompt_message='a test prompt message from option definition'
+        prompt_message = prompt_message
     )
-    assert options.get_prompt_message(test_option, 'prompt message from arg') == 'prompt message from arg'
-    assert options.get_prompt_message(test_option, '') == 'a test prompt message from option definition'
+    expected = arg or prompt_message
+    assert options.get_prompt_message(test_option, arg) == expected
 
 
-def test_interactive_prompt(capsys, monkeypatch):
+@pytest.mark.parametrize("prompt, default",  [
+    ("A prompt message not as password, without default", "default-value"),
+    ("A prompt message not as password, with default", None)
+])
+def test_interactive_prompt(capsys, monkeypatch, prompt, default):
     monkeypatch.setattr(SYS_STDIN, io.StringIO('test-value'))
-    assert options.interactive_prompt('A prompt message not as password, without default', False, None) == 'test-value'
-    assert capsys.readouterr().out == 'A prompt message not as password, without default: '
+    assert options.interactive_prompt(prompt, False, default) == 'test-value'
+    out = prompt
+    if default:
+        out += f" [{default}]"
+    assert capsys.readouterr().out == f'{out}: '
 
-    monkeypatch.setattr(SYS_STDIN, io.StringIO('test-value'))
-    assert options.interactive_prompt('A prompt message not as password, with default', False, 'default-value') == 'test-value'
-    assert capsys.readouterr().out == 'A prompt message not as password, with default [default-value]: '
 
-
-def test_prompt_error_message():
-    test_option = options.Option('--test-option', config_name = 'test.option')
-    msg = options.prompt_error_message(options.Option('--test-option', config_name = 'test.option')) 
+def test_prompt_error_message_cli_config():
+    msg = options.prompt_error_message(options.Option('--test-option', config_name = 'test.option'))
     assert msg == f'Could not find expected option. Please set command line argument (\'--test-option\',) or configuration value test.option in config file {common.config.config_file}'
 
+
+def test_prompt_error_message_cli():
     msg = options.prompt_error_message(
         options.Option('--test-option')
         )
     assert msg == 'Could not find expected option. Please set command line argument (\'--test-option\',)'
 
+
+def test_prompt_error_message_config():
     msg = options.prompt_error_message(
         options.Option(config_name = 'test.option')
         )
-    
     assert msg == f'Could not find expected option. Please set configuration value test.option in config file {common.config.config_file}'
 
+
+def test_prompt_error_message():
     msg =  options.prompt_error_message(
         options.Option()
-        ) 
+        )
     assert msg == 'Could not find expected option.'
 
 
@@ -121,40 +113,44 @@ def test_options_generate_password():
     assert not test_pass == options.generate_password()
 
 
-def test_options_namespace_decorator():
+def test_options_namespace_decorator_func(k8s):
     assert options.namespace.decorator().func == click.option
+    
+
+def test_options_namespace_decorator_args(k8s):
     assert options.namespace.decorator().args == ('-n', '--namespace',)
+    
+    
+def test_options_namespace_decorator_keywords_help(k8s):
     assert options.namespace.decorator().keywords['help'] == 'Kubernetes namespace'
+    
+    
+def test_options_namespace_decorator_keywords_default(k8s):
     assert options.namespace.decorator().keywords['default']() == utils.namespace()
 
 
-def test_options_namespace_prompt_with_k8s_context(mocker):
+def test_options_namespace_prompt_with_k8s_context(k8s):
     # Result retrieved from --namespace command line option or default from kube context when provided
     assert options.namespace.prompt('test-namespace-from-command-line') == 'test-namespace-from-command-line'
     # Result retrieved from kube context
     assert options.namespace.prompt('test') == 'test'
 
 
-def test_options_namespace_prompt_non_interactrive_without_k8s_context(mocker):
+def test_options_namespace_prompt_non_interactrive_without_k8s_context(mocker, k8s):
     # When context is not set, assert that value from cli-config is used
-    mock_k8s_list_empty_config(mocker)
     mocker.patch('kxicli.common.is_interactive_session', utils.return_false)
     common.config.config['default']['namespace'] = 'test-namespace-from-config'
     assert options.namespace.prompt() == 'test-namespace-from-config'
-    # When neither context nor cli-config is set, assert that default is used
-    common.config.config['default'].pop('namespace')
-    assert options.namespace.prompt() == 'kxi'
-    common.config.load_config("default")
 
 
-def test_options_namespace_prompt_prompts_user_without_k8s_context(capsys, mocker, monkeypatch):
+def test_options_namespace_prompt_prompts_user_without_k8s_context(k8s, capsys, mocker, monkeypatch):
     # When neither context nor cli-config is set, assert user is prompted
-    mock_k8s_list_empty_config(mocker)
     common.config.config['default'].pop('namespace')
+    k8s.config.namespace = None
     mocker.patch('kxicli.common.is_interactive_session', utils.return_true)
     monkeypatch.setattr(SYS_STDIN, io.StringIO('test-namespace-from-prompt'))
     assert options.namespace.prompt() == 'test-namespace-from-prompt'
-    assert capsys.readouterr().out == '\nPlease enter a namespace to run in [kxi]: '
+    assert capsys.readouterr().out == '\nPlease enter a namespace to run in: '
 
 
 def test_options_version_decorator():
@@ -206,7 +202,6 @@ def test_options_chart_repo_username_prompt_retrieves_from_config_in_non_interac
     mocker.patch('kxicli.common.is_interactive_session', utils.return_false)
     common.config.config['default']['chart.repo.username'] = 'test-repo-user-from-config'
     assert options.chart_repo_username.prompt() == 'test-repo-user-from-config'
-    common.config.load_config("default")
 
 
 def test_options_chart_repo_username_prompts_in_interactive(capsys, mocker, monkeypatch):
@@ -254,13 +249,11 @@ def test_options_chart_repo_password_prompt(mocker):
     common.config.config['default']['chart.repo.password'] = 'test-repo-password-from-config'
     assert options.chart_repo_password.prompt() == 'test-repo-password-from-config'
 
-    common.config.load_config("default")
-
 
 def test_options_output_file_decorator():
     assert options.output_file.decorator().func == click.option
     assert options.output_file.decorator().args == ('--output-file',)
-    options.output_file.decorator().keywords['default']() == 'values.yaml'
+    assert options.output_file.decorator().keywords['default']() == 'values.yaml'
     assert options.output_file.decorator().keywords['help'] == 'Name for the generated values file'
 
 
@@ -272,7 +265,6 @@ def test_options_output_file_prompt():
     # Result retrieved from config when entry exists
     common.config.config['default']['install.outputFile'] = 'another-test-output-file-name.yaml'
     assert options.output_file.prompt() == 'another-test-output-file-name.yaml'
-    common.config.load_config("default")
 
 
 def test_options_hostname_prompt(capsys, mocker, monkeypatch):
@@ -304,7 +296,6 @@ def test_options_hostname_prompt_returns_error_in_non_interactive(mocker):
         options.hostname.prompt()
     assert isinstance(e.value, click.ClickException)
     assert f"Could not find expected option. Please set command line argument (\'--hostname\', \'--ingress-host\') or configuration value hostname in config file {common.config.config_file}" in e.value.message
-    common.config.load_config("default")
 
 
 def test_options_filepath_prompt():
@@ -316,3 +307,60 @@ def test_options_filepath_prompt():
     assert isinstance(e.value, click.ClickException)
     assert f'Could not find expected option. Please set command line argument (\'-f\', \'--filepath\') or configuration value install.filepath in config file {common.config.config_file}' in e.value.message
 
+
+@pytest.mark.parametrize("k8s_namespace", [None, "default", "current_context_namespace"])
+def test_options_namespace_prompt_cli(k8s, mocker, k8s_namespace):
+    """Result retrieved from --namespace command line option when provided."""
+    k8s.config.namespace = k8s_namespace
+    interactive_prompt = mocker.patch("kxicli.options.interactive_prompt", return_value="interactive_value")
+    is_interactive_session = mocker.patch("kxicli.common.is_interactive_session", return_value=False)
+    assert options.namespace.prompt("namespace-from-command-line") == 'namespace-from-command-line'
+    interactive_prompt.assert_not_called()
+    is_interactive_session.assert_not_called()
+
+
+@pytest.mark.parametrize("k8s_namespace", [None, "default", "current_context_namespace"])
+def test_options_namespace_prompt_config(k8s, mocker, k8s_namespace):
+    """Result retrieved from config when entry exists. Retrieved from files/test-cli-config"""
+    k8s.config.namespace = k8s_namespace
+    interactive_prompt = mocker.patch("kxicli.options.interactive_prompt", return_value="interactive_value")
+    is_interactive_session = mocker.patch("kxicli.common.is_interactive_session", return_value=False)
+    assert options.namespace.prompt() == "test"
+    interactive_prompt.assert_not_called()
+    is_interactive_session.assert_not_called()
+    
+
+def test_options_namespace_prompt_no_config(k8s, mocker):
+    """Result retrieved when no cli and no config is present, but valid corrent context."""
+    k8s.config.namespace = "current_context_namespace"
+    interactive_prompt = mocker.patch("kxicli.options.interactive_prompt", return_value="interactive_value")
+    is_interactive_session = mocker.patch("kxicli.common.is_interactive_session", return_value=False)
+    common.config.config['default'].pop('namespace')
+    assert options.namespace.prompt() == "current_context_namespace"
+    is_interactive_session.assert_not_called()
+    interactive_prompt.assert_not_called()
+    
+    
+@pytest.mark.parametrize("k8s_namespace", [None, "default"])
+def test_options_namespace_prompt_exception(k8s, mocker, k8s_namespace):
+    """Result retrieved when no cli and no config is present, and default namespace in current context."""
+    k8s.config.namespace = k8s_namespace
+    interactive_prompt = mocker.patch("kxicli.options.interactive_prompt", return_value="interactive_value")
+    is_interactive_session = mocker.patch("kxicli.common.is_interactive_session", return_value=False)
+    common.config.config['default'].pop('namespace')
+    with pytest.raises(click.ClickException, match=rf"Could not find expected option. Please set command line argument \('-n', '--namespace'\) or configuration value namespace in config file {common.config.config_file}"):
+        assert options.namespace.prompt()
+    is_interactive_session.assert_called_once()
+    interactive_prompt.assert_not_called()
+        
+        
+@pytest.mark.parametrize("k8s_namespace", [None, "default"])
+def test_options_namespace_prompt_no_config_tty(k8s, mocker, k8s_namespace):
+    """Result retrieved from input when TTY."""
+    k8s.config.namespace = k8s_namespace
+    interactive_prompt = mocker.patch("kxicli.options.interactive_prompt", return_value="interactive_value")
+    is_interactive_session = mocker.patch("kxicli.common.is_interactive_session", return_value=True)
+    common.config.config['default'].pop('namespace')
+    assert options.namespace.prompt() == "interactive_value"
+    is_interactive_session.assert_called_once()
+    interactive_prompt.assert_called_once()

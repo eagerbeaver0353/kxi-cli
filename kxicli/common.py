@@ -3,7 +3,7 @@ from __future__ import annotations
 import sys
 
 import click
-import kubernetes as k8s
+import pyk8s
 from pathlib import Path
 import requests
 import subprocess
@@ -110,7 +110,6 @@ DEFAULT_VALUES = {
     key_assembly_backup_file: 'kxi-assembly-state.yaml',
     key_release_name: 'insights',
     key_keycloak_realm: 'insights',
-    key_namespace: 'kxi',
     key_admin_username: 'user'
 }
 
@@ -189,29 +188,16 @@ def get_admin_token(hostname, username, password):
         handle_http_exception(e, 'Failed to request admin access token: ')
 
 
-def load_kube_config():
-    global CONFIG_ALREADY_LOADED        
-    if not CONFIG_ALREADY_LOADED:        
-        try:
-            k8s.config.load_config()
-        except k8s.config.ConfigException:
-            raise click.ClickException("Kubernetes cluster config not found")
-    CONFIG_ALREADY_LOADED = True
-
 def read_crd(name):
-    load_kube_config()
-    api = k8s.client.ApiextensionsV1Api()
-
     try:
-        return api.read_custom_resource_definition(name)
-    except k8s.client.rest.ApiException as exception:
-        if exception.status == 404:
-            return None
-        else:
-            raise click.ClickException(f'Exception when calling ApiextensionsV1Api->read_custom_resource_definition: {exception}')
+        return pyk8s.cl.customresourcedefinitions.get(name)
+    except Exception as exception:
+        raise click.ClickException(
+            f'Exception when while trying to find CustomResourceDefinition({name}): {exception}'
+        ) from exception
 
 def crd_exists(name):
-    return isinstance(read_crd(name), k8s.client.V1CustomResourceDefinition)
+    return isinstance(read_crd(name), pyk8s.models.V1CustomResourceDefinition)
 
 def get_existing_crds(names):
     crds = []
@@ -220,35 +206,40 @@ def get_existing_crds(names):
             crds.append(n)
     return crds
 
-def replace_crd(name, body):
+def replace_crd(name: str, body):
     click.echo(f'Replacing CRD {name}')
-    load_kube_config()
-    api = k8s.client.ApiextensionsV1Api()
+    crd = pyk8s.cl.customresourcedefinitions.get(name)
+    if crd is not None:
+        try:
+            crd.delete_()
+        except Exception as exception:
+            raise click.ClickException(
+                f"Exception when trying to delete CustomResourceDefinition({name}): {exception}"
+            ) from exception
+
+        try:
+            crd.wait_until_not_ready(delete_only=True, timeout=10)
+        except TimeoutError:
+            raise click.ClickException(f"Timed out waiting for CRD {name} to be deleted")
+        
     try:
-        api.delete_custom_resource_definition(name)
-    except k8s.client.rest.ApiException as exception:
-        if exception.status != 404:
-            raise click.ClickException(f'Exception when calling ApiextensionsV1Api->delete_custom_resource_definition: {exception}')
-    # wait for deletion to complete
-    for n in range(10):
-        if not crd_exists(name):
-            try:
-                return api.create_custom_resource_definition(body)
-            except k8s.client.rest.ApiException as exception:
-                raise click.ClickException(f'Exception when calling ApiextensionsV1Api->create_custom_resource_definition: {exception}')
-        time.sleep(1)
-    
-    raise click.ClickException(f'Timed out waiting for CRD {name} to be deleted')
+        return pyk8s.cl.customresourcedefinitions.create(body)
+    except Exception as exception:
+        raise click.ClickException(
+            f'Exception when trying to create CustomResourceDefinition({name}): {exception}'
+        ) from exception
+
+
 
 def delete_crd(name):
-    load_kube_config()
-    api = k8s.client.ApiextensionsV1Api()
-
     click.echo(f'Deleting CRD {name}')
+
     try:
-        api.delete_custom_resource_definition(name)
-    except k8s.client.rest.ApiException as exception:
-        raise click.ClickException(f'Exception when calling ApiextensionsV1Api->delete_custom_resource_definition: {exception}')
+        pyk8s.cl.customresourcedefinitions.delete(name)
+    except Exception as exception:
+        raise click.ClickException(
+            f'Exception when trying to delete CustomResourceDefinition({name}): {exception}'
+        ) from exception
 
 def extract_files_from_tar(tar: Path, files: list, max_read_size: int = 2000000):
     data = []
@@ -318,4 +309,4 @@ def handle_http_exception(e: HTTPError, prefix: str):
         res, msg = parse_http_exception(e)
         raise click.ClickException(f"{prefix} {res.status_code} {res.reason} ({msg})")
     else:
-        raise click.ClickException(e)
+        raise click.ClickException(str(e))

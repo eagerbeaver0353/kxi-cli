@@ -11,10 +11,10 @@ cmd_run = base + ["run"]
 cmd_upgrade = base + ["upgrade"]
 cmd_rollback = base + ["rollback"]
 
-def test_setup_adds_repo_if_passed(mocker):
+def test_setup_adds_repo_if_passed(mocker, k8s):
     runner = CliRunner()
     # ensure that helm repo add is mocked to track arguments for assertion
-    e2e.setup_mocks(mocker)
+    e2e.setup_mocks(mocker, k8s)
     # ensure that secret validation checks pass
     utils.mock_validate_secret(mocker)
     extra_args = [
@@ -31,9 +31,9 @@ def test_setup_adds_repo_if_passed(mocker):
     # assert that helm repo add is called with the parameters that were passed
     assert e2e.helm_add_repo_params == (c.test_chart_repo_name, c.test_chart_repo_url, c.test_user, c.test_pass)
 
-def test_tgz_only_calls_helm_upgrade(mocker):
+def test_tgz_only_calls_helm_upgrade(mocker, k8s):
     runner = CliRunner()
-    e2e.upgrades_mocks(mocker)
+    e2e.upgrades_mocks(mocker, k8s)
     # ensure that secret validation checks pass
     utils.mock_validate_secret(mocker)
     e2e.mock_set_insights_operator_and_crd_installed_state(mocker, False, False, False)
@@ -62,9 +62,9 @@ def test_tgz_only_calls_helm_upgrade(mocker):
     ])
 
 
-def test_expection_when_operator_not_in_same_dir(mocker):
+def test_expection_when_operator_not_in_same_dir(mocker, k8s):
     runner = CliRunner()
-    e2e.upgrades_mocks(mocker)
+    e2e.upgrades_mocks(mocker, k8s)
     # ensure that secret validation checks pass
     utils.mock_validate_secret(mocker)
     e2e.mock_set_insights_operator_and_crd_installed_state(mocker, False, False, False)
@@ -88,18 +88,17 @@ def test_expection_when_operator_not_in_same_dir(mocker):
     assert "Compatible version of operator not found" in res.output
 
 
-def test_tgz_only_calls_helm_rollback(mocker):
+def test_tgz_only_calls_helm_rollback(mocker, k8s):
     runner = CliRunner()
     e2e.mock_helm_list_history_same_operator(mocker)
-    e2e.upgrades_mocks(mocker)
+    e2e.upgrades_mocks(mocker, k8s)
     # ensure that secret validation checks pass
     e2e.mock_helm_list_history(mocker)
-    e2e.upgrades_mocks(mocker)
+    e2e.upgrades_mocks(mocker, k8s)
     e2e.mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
-    e2e.mock_create_namespace(mocker)
     e2e.mock_get_operator_version(mocker)
     utils.mock_validate_secret(mocker)
-    utils.mock_kube_crd_api(mocker, create=e2e.mocked_create_crd, delete=e2e.mocked_delete_crd)
+    utils.mock_kube_crd_api(k8s, create=e2e.mocked_create_crd)
     utils.mock_helm_env(mocker)
     utils.mock_helm_fetch(mocker)
     extra_args = [
@@ -115,7 +114,8 @@ def test_tgz_only_calls_helm_rollback(mocker):
     with runner.isolated_filesystem():
         res = runner.invoke(main.cli, cmd_rollback+extra_args,  input=user_input)
 
-    expected_output = f"""Rolling Insights back to version 1.2.3 and revision 1. \nRolling operator back to version 1.2.3 and revision 1.
+    expected_output = f"""Rolling Insights back to version 1.2.3 and revision 1.
+Rolling operator back to version 1.2.3 and revision 1.
 Proceed? [y/N]: y
 
 Backing up assemblies
@@ -141,23 +141,22 @@ Submitting assembly from {e2e.test_asm_backup}
 Submitting assembly basic-assembly
 Custom assembly resource basic-assembly created!
 """
-    assert res.exit_code == 0
     assert expected_output == res.output
+    assert res.exit_code == 0
 
 
 
-def test_tgz_only_calls_helm_rollback_fail(mocker):
+def test_tgz_only_calls_helm_rollback_fail(mocker, k8s):
     runner = CliRunner()
     e2e.mock_helm_list_history_same_operator(mocker)
-    e2e.upgrades_mocks(mocker)
+    e2e.upgrades_mocks(mocker, k8s)
     # ensure that secret validation checks pass
     e2e.mock_helm_list_histor_broken(mocker)
-    e2e.upgrades_mocks(mocker)
+    e2e.upgrades_mocks(mocker, k8s)
     e2e.mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
-    e2e.mock_create_namespace(mocker)
     e2e.mock_get_operator_version(mocker)
     utils.mock_validate_secret(mocker)
-    utils.mock_kube_crd_api(mocker, create=e2e.mocked_create_crd, delete=e2e.mocked_delete_crd)
+    utils.mock_kube_crd_api(k8s, create=e2e.mocked_create_crd, delete=e2e.mocked_delete_crd)
     utils.mock_helm_env(mocker)
     utils.mock_helm_fetch(mocker)
     extra_args = [
@@ -172,7 +171,7 @@ def test_tgz_only_calls_helm_rollback_fail(mocker):
     # run both 'run' and 'upgrade' and capture the helm commands they call
     with runner.isolated_filesystem():
         res = runner.invoke(main.cli, cmd_rollback+extra_args,  input=user_input)
-    expected_output = f"""Rolling Insights back to version 2.2.3 and revision 1. 
+    expected_output = f"""Rolling Insights back to version 2.2.3 and revision 1.
 Rolling operator back to version 2.2.3 and revision 1.
 Proceed? [y/N]: y
 Error: Mismatch on the operator chart version 1.2.3 and the operator revision 1 version 2.2.3\n"""

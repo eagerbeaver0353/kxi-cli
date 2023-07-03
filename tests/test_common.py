@@ -1,5 +1,7 @@
 import io
 import os
+from unittest.mock import MagicMock
+import pyk8s
 import pytest
 import yaml
 from pathlib import Path
@@ -13,7 +15,7 @@ from functools import partial
 from kxicli import common
 from kxicli import config
 from kxicli import phrases
-from utils import mock_kube_crd_api, mock_load_kube_config_raises_exception, mock_load_kube_config_incluster_raises_exception, mock_load_kube_config_incluster_success, get_crd_body, raise_not_found, raise_conflict, return_none, IPATH_CLICK_PROMPT
+from utils import mock_kube_crd_api, get_crd_body, raise_not_found, raise_conflict, return_none, IPATH_CLICK_PROMPT
 import mocks
 config.load_config('default')
 
@@ -55,104 +57,92 @@ def test_get_existing_crds_return_existing_crds_only(mocker):
     assert common.get_existing_crds(['testcrd', 'testcrd2']) == (['testcrd'])
     assert common.get_existing_crds(['testcrd', 'testcrd2', 'testcrd3']) == (['testcrd'])
 
-def test_read_crd_returns_valid_crd(mocker):
-    mock_kube_crd_api(mocker)
+def test_read_crd_returns_valid_crd(k8s):
+    mock_kube_crd_api(k8s)
     assert get_crd_body('test') == common.read_crd('test')
 
-def test_read_crd_returns_none_when_not_found(mocker):
-    mock_kube_crd_api(mocker, read=raise_not_found)
+def test_read_crd_returns_none_when_not_found(k8s):
+    mock_kube_crd_api(k8s, read=return_none)
     assert common.read_crd('test') is None
 
-def test_read_crd_logs_exception(mocker, capsys):
-    mock_kube_crd_api(mocker, read=raise_conflict)
-    with pytest.raises(Exception) as e:
+def test_read_crd_logs_exception(k8s, capsys):
+    mock_kube_crd_api(k8s, read=raise_conflict)
+    with pytest.raises(Exception, match=r"Exception when while trying to find CustomResourceDefinition\(test\)") as e:
         common.read_crd('test')
     assert isinstance(e.value, click.ClickException)
-    assert 'Exception when calling ApiextensionsV1Api->read_custom_resource_definition: (409)' in e.value.message
 
-def test_crd_exists(mocker):
-    mock_kube_crd_api(mocker)
+def test_crd_exists(k8s):
+    mock_kube_crd_api(k8s)
     assert common.crd_exists('test')
 
-    mock_kube_crd_api(mocker, read=return_none)
+    mock_kube_crd_api(k8s, read=return_none)
     assert not common.crd_exists('test')
 
 
-glob = None
-def set_glob(x):
-    global glob
-    glob = x
-
-def read_glob(x):
-    return glob
-
-def delete_glob(x):
-    global glob
-    glob = None
-
-
-def test_delete_crd(mocker):
-    set_glob('test')
-    mock_kube_crd_api(mocker, delete=delete_glob)
+def test_delete_crd(k8s):
+    mock = mock_kube_crd_api(k8s)
     common.delete_crd('test')
-    assert glob == None
+    mock.delete.assert_called_once()
 
 
-def test_delete_crd_raises_exception_on_other_delete_error(mocker):
-    mock_kube_crd_api(mocker, delete=raise_conflict)
-    with pytest.raises(Exception) as e:
+def test_delete_crd_raises_exception_on_other_delete_error(k8s):
+    mock_kube_crd_api(k8s, delete=raise_conflict)
+    with pytest.raises(Exception, match=r'Exception when trying to delete CustomResourceDefinition\(test\)'):
         common.delete_crd('test')
-    assert 'Exception when calling ApiextensionsV1Api->delete_custom_resource_definition' in e.value.message
 
 
-def test_replace_crd_calls_create_if_not_found(mocker):
-    mock_kube_crd_api(mocker, create=set_glob, read=return_none)
+def test_replace_crd_calls_create_if_not_found(k8s, mocker):
+    mock = mock_kube_crd_api(k8s, read=return_none)
 
     common.replace_crd('test', get_crd_body('test'))
-    assert glob == get_crd_body('test')
+    
+    mock.delete.assert_not_called()
+    mock.create.assert_called_once_with(get_crd_body('test'))
+    
 
-def test_replace_crd_calls_delete_and_create_if_found(mocker):
-    mock = mock_kube_crd_api(mocker, create=set_glob, read=read_glob, delete=delete_glob)
-
-    body = get_crd_body('x').to_dict()
-    common.replace_crd('x', body)
-
-    body['metadata']['resourceVersion'] = '1'
-    assert glob == body
-    assert mock.call_count == 2
-
-def test_replace_crd_calls_complete_if_crd_doesnt_exist(mocker):
-    mock = mock_kube_crd_api(mocker, create=set_glob, read=return_none,  delete=raise_not_found)
+def test_replace_crd_calls_delete_and_create_if_found(k8s, mocker):
+    mock = mock_kube_crd_api(k8s)
+    mocker.patch.object(pyk8s.models.V1CustomResourceDefinition, "wait_until_not_ready")
 
     body = get_crd_body('x').to_dict()
     common.replace_crd('x', body)
-    assert glob == body
+    
+    mock.delete.assert_called_once()
+    assert mock.delete.call_args.kwargs["name"] == "x"
+    mock.create.assert_called_once_with(body)
+    
 
-def test_replace_crd_raises_exception_on_other_delete_error(mocker):
-    mock = mock_kube_crd_api(mocker, delete=raise_conflict)
+def test_replace_crd_calls_complete_if_crd_doesnt_exist(k8s, mocker):
+    mock = mock_kube_crd_api(k8s, read=return_none, delete=raise_not_found)
+    mocker.patch.object(pyk8s.models.V1CustomResourceDefinition, "wait_until_not_ready")
 
-    with pytest.raises(Exception) as e:
+    body = get_crd_body('x').to_dict()
+    common.replace_crd('x', body)
+    
+    mock.delete.assert_not_called()
+    mock.create.assert_called_once_with(body)
+
+def test_replace_crd_raises_exception_on_other_delete_error(k8s):
+    mock = mock_kube_crd_api(k8s, delete=raise_conflict)
+
+    with pytest.raises(Exception, match=r'Exception when trying to delete CustomResourceDefinition\(test\)'):
         common.replace_crd('test', get_crd_body('test'))
-    assert mock.call_count == 1
-    assert 'Exception when calling ApiextensionsV1Api->delete_custom_resource_definition' in e.value.message
 
-def test_replace_crd_tries_again_on_crd_existing(mocker):
+def test_replace_crd_tries_again_on_crd_existing(k8s, mocker):
     # create waits 10s while waiting for delete to complete
-    mock_k8s = mock_kube_crd_api(mocker)
-    mock_time = mocker.patch('time.sleep')
+    mock_k8s = mock_kube_crd_api(k8s)
+    mocker.patch.object(pyk8s.models.V1CustomResourceDefinition, "wait_until_not_ready", 
+                        side_effect=pyk8s.exceptions.EventTimeoutError(last=None))
 
-    with pytest.raises(Exception) as e:
+    with pytest.raises(Exception, match='Timed out waiting for CRD test to be deleted'):
         common.replace_crd('test', get_crd_body('test'))
-    assert mock_k8s.call_count == 11
-    assert mock_time.call_count == 10
-    assert 'Timed out waiting for CRD test to be deleted' in e.value.message
 
-def test_replace_crd_raises_exception_on_create_error(mocker):
-    mock = mock_kube_crd_api(mocker, create=raise_conflict, read=return_none)
+def test_replace_crd_raises_exception_on_create_error(k8s, mocker):
+    mock = mock_kube_crd_api(k8s, create=raise_conflict, read=return_none)
+    mocker.patch.object(pyk8s.models.V1CustomResourceDefinition, "wait_until_not_ready")
 
-    with pytest.raises(Exception) as e:
+    with pytest.raises(Exception, match=r'Exception when trying to create CustomResourceDefinition\(test\)'):
         common.replace_crd('test', get_crd_body('test'))
-    assert 'Exception when calling ApiextensionsV1Api->create_custom_resource_definition' in e.value.message
 
 
 def test_extract_files_from_tar_throws_file_not_found():
@@ -202,40 +192,10 @@ def test_enter_password_prompts_again_if_they_dont_match(mocker, capsys):
     assert PASSWORD == res
     assert phrases.password_no_match in captured.out
 
-def test_load_kube_config_kubeconfig_success(mocker, capsys):
-    mocker.patch('kxicli.common.CONFIG_ALREADY_LOADED', False)  
-    mock_load_kube_config_incluster_raises_exception(mocker)
-    mocker.patch('kubernetes.config.load_kube_config')
-    res = common.load_kube_config()     
-    assert res is None
-
-def test_load_kube_config_incluster_success(mocker, capsys):
-    mocker.patch('kxicli.common.CONFIG_ALREADY_LOADED', False)
-    mocker.patch('kubernetes.config.load_config')
-    mock_load_kube_config_raises_exception(mocker)
-    mock_load_kube_config_incluster_success(mocker)
-    res = common.load_kube_config()
-    assert res is None
-
-def test_load_kube_config_second_run(mocker, capsys):
-    mocker.patch('kxicli.common.CONFIG_ALREADY_LOADED', True)      
-    mock_load_kube_config_incluster_raises_exception(mocker)
-    mocker.patch('kubernetes.config.load_kube_config')    
-    res = common.load_kube_config() 
-    assert res is None
-
-def test_load_kube_config_no_config(mocker, capsys):    
-    mock_load_kube_config_raises_exception(mocker)
-    mock_load_kube_config_incluster_raises_exception(mocker)
-    mocker.patch('kxicli.common.CONFIG_ALREADY_LOADED', False)    
-    with pytest.raises(Exception) as e:
-        common.load_kube_config()         
-    assert isinstance(e.value, click.ClickException)
-    assert "Kubernetes cluster config not found" in e.value.message   
 
 def test_get_access_token_raises_exception(mocker):
     mocker.patch('requests.post', partial(
-        mocks.http_response, 
+        mocks.http_response,
         status_code=404,
         content=json.dumps({'message': "Unknown", 'detail': {'message': "HTTP Error"}}).encode('utf-8')
     ))
@@ -246,7 +206,7 @@ def test_get_access_token_raises_exception(mocker):
 
 def test_get_admin_token_raises_exception(mocker):
     mocker.patch('requests.post', partial(
-        mocks.http_response, 
+        mocks.http_response,
         status_code=404,
         content=json.dumps({'message': "Unknown", 'detail': {'message': "HTTP Error"}}).encode('utf-8')
     ))
@@ -257,7 +217,7 @@ def test_get_admin_token_raises_exception(mocker):
 
 def test_get_admin_token_returns_access_token(mocker):
     mocker.patch('requests.post', partial(
-        mocks.http_response, 
+        mocks.http_response,
         status_code=200,
         content=json.dumps({'access_token':TEST_ACCESS_TOKEN}).encode('utf-8')
     ))
@@ -270,8 +230,8 @@ def mocked_json_response(**kwargs):
         'error': 'sampl_error'
     }
     return sample
-def test_parse_http_exception(mocker):
-    #mocker.patch('e.response', mocked_json_response)
+
+def test_parse_http_exception_message(mocker):
     e = HTTPError()
     e.response = requests.Response()
     e.response.status_code = 200
@@ -279,9 +239,27 @@ def test_parse_http_exception(mocker):
     res, msg = common.parse_http_exception(e)
     assert msg == "ErrorMessageError"
 
+
+def test_parse_http_exception(mocker):
     e = HTTPError()
     e.response = requests.Response()
     e.response.status_code = 200
     e.response._content=json.dumps({ 'error':'ErrorError'}).encode('utf-8')
     res, msg = common.parse_http_exception(e)
     assert msg == "ErrorError"
+    
+
+def test_handle_http_exception(mocker):
+    e = HTTPError()
+    e.response = requests.Response()
+    e.response.status_code = 200
+    e.response._content=json.dumps({ 'error':'ErrorError'}).encode('utf-8')
+    with pytest.raises(click.ClickException, match=r"prefix 200 None \(ErrorError\)"):
+        common.handle_http_exception(e, "prefix")
+
+
+def test_handle_http_exception_no_response(mocker):
+    e = HTTPError("No Response Error")
+    delattr(e, "response")
+    with pytest.raises(click.ClickException, match="No Response Error"):
+        common.handle_http_exception(e, "prefix")

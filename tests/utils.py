@@ -1,12 +1,13 @@
 import base64
 import json
 import shutil
+from typing import Callable
+from unittest.mock import MagicMock
 import yaml
 from contextlib import contextmanager
 from pathlib import Path
+import pyk8s
 from tempfile import mkdtemp
-import kubernetes as k8s
-from kxicli.resources import secret
 import subprocess
 import const
 
@@ -24,9 +25,9 @@ fake_docker_config: dict = {
     'asdf': 'asdf'
 }
 fake_docker_config_yaml: str = yaml.dump(fake_docker_config)
-fake_docker_config_secret: k8s.client.V1Secret = k8s.client.V1Secret(
+fake_docker_config_secret: pyk8s.models.V1Secret = pyk8s.models.V1Secret(
     data={
-        '.dockerconfigjson': base64.b64encode(fake_docker_config_yaml.encode('ascii'))
+        '.dockerconfigjson': base64.b64encode(fake_docker_config_yaml.encode('ascii')).decode()
     }
 )
 test_asm_file = str(Path(__file__).parent / 'files' / 'assembly-v1.yaml')
@@ -57,11 +58,14 @@ class KubeResponse():
 
 def raise_not_found(*args, **kwargs):
     """Helper function to test try/except blocks"""
-    raise k8s.client.rest.ApiException(status=404)
+    raise pyk8s.exceptions.NotFoundError(MagicMock(status=404, reason=None, headers=None, body=None))
 
 def raise_conflict(*args, **kwargs):
     """Helper function to test try/except blocks"""
-    raise k8s.client.rest.ApiException(status=409)
+    raise pyk8s.exceptions.ConflictError(MagicMock(status=409, reason=None, headers=None, body=None))
+
+def return_empty(*args, **kwargs):
+    return []
 
 def return_none(*args, **kwargs):
     return None
@@ -73,91 +77,108 @@ def return_false(*args, **kwargs):
     return False
 
 def return_V1status(*args, **kwargs):
-    return k8s.client.V1Status()
+    return pyk8s.models.V1Status()
 
 def namespace():
     # tests assume you're running with an active context that has a namespace set
+    namespace = 'test'
     try:
-        return k8s.config.list_kube_config_contexts()[1]['context']['namespace']
-    except (TypeError, k8s.config.config_exception.ConfigException):
-        return 'test'
-
-def mocked_create_namespaced_secret(namespace, body):
-    return secret.Secret(namespace, body.metadata.name, body.type, data=body.data, string_data=body.string_data).get_body()
+        return pyk8s.cl.config.namespace or namespace
+    except Exception:
+        return namespace
 
 
-def mocked_read_namespaced_secret(namespace, name):
-    return secret.Secret(namespace, name, test_secret_type, data=test_secret_data).get_body()
+def fake_secret(namespace, name, type="Opaque", keys=(), data={}):
+    return pyk8s.models.V1Secret(
+        apiVersion="v1",
+        metadata=pyk8s.models.V1ObjectMeta(namespace=namespace, name=name),
+        type=type, data=data, _required_keys=keys)
 
 
-def mocked_patch_namespaced_secret(name, namespace, body):
-    return secret.Secret(namespace, name, body.type, data=body.data).get_body()
+def mocked_create_namespaced_secret(namespace=None, body={}):
+    obj = pyk8s.models.V1Secret.parse_obj(body)
+    obj.metadata.namespace = namespace
+    return obj
+
+
+def mocked_read_namespaced_secret(namespace=None, name=""):
+    return pyk8s.models.V1Secret.parse_obj(
+        {   
+            "metadata": {"namespace": namespace, "name": name}, 
+            "data": test_secret_data})
+
+
+def mocked_patch_namespaced_secret(name, namespace=None, body=None):
+    obj = pyk8s.models.V1Secret.parse_obj(body)
+    if namespace:
+        obj.metadata.namespace = namespace
+    obj.metadata.name = name
+    return obj
 
 def mocked_create_custom_resource_definition(body):
-    data = KubeResponse(json.dumps(body))
-    return k8s.client.ApiClient().deserialize(data, 'V1CustomResourceDefinition')
+    return pyk8s.models.V1CustomResourceDefinition.parse_obj(body)
 
 def get_crd_body(name):
-    return k8s.client.V1CustomResourceDefinition(
-        metadata=k8s.client.V1ObjectMeta(
+    return pyk8s.models.V1CustomResourceDefinition(
+        metadata=pyk8s.models.V1ObjectMeta(
             name=name,
-            resource_version='1'
-        ),
-        spec={}
-        )
+            resourceVersion='1'
+        ))
 
-def mocked_read_custom_resource_definition(name):
+def mocked_read_custom_resource_definition(name=None, **kwargs):
     # resource version must be set because 'replace_crd'
     # depends on accessing it
-    return get_crd_body(name)
+    if name:
+        return get_crd_body(name)
+    else:
+        return pyk8s.resource_item.ItemList([get_crd_body("name")], metadata={})
 
 def mocked_replace_custom_resource_definition(name, body):
-    data = KubeResponse(json.dumps(body))
-    return k8s.client.ApiClient().deserialize(data, 'V1CustomResourceDefinition')
+    return pyk8s.models.V1CustomResourceDefinition.parse_obj(body)
 
-def mock_kube_secret_api(mocker, create=mocked_create_namespaced_secret, read=return_none, patch=mocked_patch_namespaced_secret):
-    mock = mocker.patch(IPATH_KUBE_COREV1API)
-    mock.return_value.create_namespaced_secret = create
-    mock.return_value.read_namespaced_secret = read
-    mock.return_value.patch_namespaced_secret = patch
+def mock_kube_secret_api(k8s: MagicMock,
+                         create: Callable = mocked_create_namespaced_secret,
+                         read: Callable = return_none,
+                         patch: Callable = mocked_patch_namespaced_secret):
+    k8s.secrets.create = create
+    if read != raise_not_found:
+        k8s.secrets.get = read
+    else:
+        k8s.secrets.get = return_none
+    k8s.secrets.read = read
+    k8s.secrets.patch = patch
 
 def mock_kube_crd_api(
-    mocker,
-    create=mocked_create_custom_resource_definition,
-    read=mocked_read_custom_resource_definition,
-    replace=mocked_replace_custom_resource_definition,
-    delete=return_V1status
+    k8s: MagicMock,
+    create: Callable = mocked_create_custom_resource_definition,
+    read: Callable = mocked_read_custom_resource_definition,
+    replace: Callable = mocked_replace_custom_resource_definition,
+    delete: Callable = return_V1status
 ):
-    mock = mocker.patch(IPATH_KUBE_APIEXTENSTIONSV1API)
-    mock.return_value.create_custom_resource_definition = create
-    mock.return_value.read_custom_resource_definition = read
-    mock.return_value.replace_custom_resource_definition = replace
-    mock.return_value.delete_custom_resource_definition = delete
-    return mock
-
-def mock_list_empty_deployment_api(namespace, **kwargs):
-    return k8s.client.V1DeploymentList(items={})
+    k8s.customresourcedefinitions.create.side_effect = create
+    k8s.customresourcedefinitions.get.side_effect = read
+    k8s.customresourcedefinitions.replace.side_effect = replace
+    k8s.customresourcedefinitions.delete.side_effect = delete
+    return k8s.customresourcedefinitions
 
 def mocked_kube_deployment_list(namespace, **kwargs):
-    return k8s.client.V1DeploymentList(
-        items=[k8s.client.V1Deployment(
-            metadata=k8s.client.V1ObjectMeta(
+    return [pyk8s.models.V1Deployment(
+            metadata=pyk8s.models.V1ObjectMeta(
                 name='kxi-operator',
                 namespace=namespace,
                 labels={"helm.sh/chart":'kxi-operator-1.2.3', "app.kubernetes.io/instance": 'test-helm-name'}
             )
         )]
-    )
 
 def mock_kube_deployment_api(
-    mocker,
-    read=mock_list_empty_deployment_api,
+    k8s: MagicMock,
+    read: Callable = return_empty,
 ):
-    mock = mocker.patch(IPATH_KUBE_APPSV1API)
-    mock.return_value.list_namespaced_deployment = read
+    k8s.deployments.get = read
+    k8s.deployments.read = read
 
 def mock_validate_secret(mocker, exists=True, is_valid=True, missing_keys=[]):
-    mock = mocker.patch.object(secret.Secret, 'validate')
+    mock = mocker.patch.object(pyk8s.models.V1Secret, 'validate_keys')
     mock.return_value = (exists, is_valid, missing_keys)
 
 def mock_helm_env(mocker):
@@ -179,30 +200,6 @@ def mock_helm_get_values(mocker, data, throw_exception=False, exception_msg='Get
         return data
     mocker.patch('kxicli.resources.helm.get_values', helm_get_values)
 
-def mock_config_exception():
-    raise k8s.config.config_exception.ConfigException('Invalid kube-config file. No configuration found.')
-
-def mock_incluster_config_exception():
-    raise k8s.config.config_exception.ConfigException('Service host/port is not set.')
-
-def mock_incluster_config_load_success():
-    return
-
-def mock_load_kube_config_raises_exception(mocker):
-    CUSTOM_OBJECT_API = 'kubernetes.config.load_kube_config'
-    mocker.patch(CUSTOM_OBJECT_API, mock_config_exception)
-
-def mock_load_kube_config_incluster_raises_exception(mocker):
-    CUSTOM_OBJECT_API = 'kubernetes.config.load_incluster_config'
-    mocker.patch(CUSTOM_OBJECT_API, mock_incluster_config_exception)
-
-def mock_load_kube_config_incluster_success(mocker):
-    CUSTOM_OBJECT_API = 'kubernetes.config.load_incluster_config'
-    mocker.patch(CUSTOM_OBJECT_API, mock_incluster_config_load_success)
-
-def mock_list_kube_config_contexts(mocker):
-    CUSTOM_OBJECT_API = 'kubernetes.config.list_kube_config_contexts'
-    mocker.patch(CUSTOM_OBJECT_API, mock_config_exception)
 
 def mock_helm_repo_list(mocker, name='kx-insights', url=const.test_chart_repo_url):
     mocker.patch('kxicli.resources.helm.repo_list', return_value=[{'name': name, 'url': url}])

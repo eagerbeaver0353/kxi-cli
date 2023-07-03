@@ -1,6 +1,5 @@
 import click
 import json
-import kubernetes as k8s
 import requests
 
 
@@ -22,7 +21,7 @@ def status(hostname, token, name):
     headers = {
         'Authorization': f'Bearer {token}'
     }
-    
+
     url = f'https://{hostname}/kxicontroller/assembly/cli/{name}'
     res = requests.get(url, headers=headers)
 
@@ -55,10 +54,10 @@ def teardown(hostname, token, name):
     headers = {
         'Authorization': f'Bearer {token}'
     }
-    
+
     url = f'https://{hostname}/kxicontroller/assembly/cli/{name}/teardown'
     res = requests.post(url, headers=headers)
-    
+
     if res.status_code == 404:
         click.echo(f'Ignoring teardown, {name} not found')
         return False
