@@ -1,7 +1,7 @@
 from kxicli import cli_group
-from kxicli.commands import client, assembly, auth, package, install, azure_idp, user, configure, backup, publish, query
+from kxicli.commands import client, assembly, auth, entitlement, package, install, azure_idp, user, configure, backup, publish, query
 
-__all__ = ["client", "assembly", "auth", "package", "install", "azure_idp", "user", "configure", "backup", "publish", "query", "cli"]
+__all__ = ["client", "assembly", "auth", "package", "install", "azure_idp", "user", "configure", "backup", "publish", "query", "cli", "entitlement"]
 
 cli = cli_group.cli
 
