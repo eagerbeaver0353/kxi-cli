@@ -55,6 +55,9 @@
     "PGDATABASE",
     "PGUSER",
     "yamlcontent",
-    "customresourcedefinitions"
+    "customresourcedefinitions",
+    "pydantic",
+    "tracebacks",
+    "excepthook"
   ]
 }
