@@ -14,9 +14,7 @@ from typing import List, Optional
 from unittest.mock import MagicMock
 import pyk8s
 import pytest
-import click
 from pytest_mock import MockerFixture
-import requests_mock
 
 import yaml, json
 from click.testing import CliRunner
@@ -278,7 +276,7 @@ def mocked_subprocess_run(
     elif res_item.cmd[0:3]+res_item.cmd[-2:] == ['helm', 'upgrade', '--install', '--namespace', test_namespace]:
         insights_installed_flag = True
         crd_exists_flag = True
-    return CompletedProcess(args=popenargs[0], returncode=0, stdout='', stderr='')
+    return CompletedProcess(args=popenargs[0], returncode=0, stdout='subprocess_stdout', stderr='subprocess_stderr')
 
 
 def mock_subprocess_run(mocker):
@@ -1293,12 +1291,13 @@ def test_list_versions_default_repo(mocker, k8s):
     with runner.isolated_filesystem():
         result = runner.invoke(main.cli, ['install', 'list-versions'])
         expected_output = f"""Listing available kdb Insights Enterprise versions in repo kx-insights
+subprocess_stdout
 """
     assert result.exit_code == 0
     assert result.output == expected_output
     check_subprocess_run_commands(
         [
-            HelmCommandRepoUpdate(repo=None),
+            HelmCommandRepoUpdate(repo='kx-insights'),
             HelmCommand(helm_cmd=['helm', 'search', 'repo', test_chart])
             ]
         )
@@ -1312,12 +1311,13 @@ def test_list_versions_custom_repo(mocker, k8s):
     with runner.isolated_filesystem():
         result = runner.invoke(main.cli, ['install', 'list-versions', '--chart-repo-name', test_chart_repo_name])
         expected_output = f"""Listing available kdb Insights Enterprise versions in repo {test_chart_repo_name}
+subprocess_stdout
 """
     assert result.exit_code == 0
     assert result.output == expected_output
     check_subprocess_run_commands(
         [
-            HelmCommandRepoUpdate(repo=None),
+            HelmCommandRepoUpdate(repo=test_chart_repo_name),
             HelmCommand(helm_cmd=['helm', 'search', 'repo', test_chart_repo_name + '/insights'])
             ]
         )
