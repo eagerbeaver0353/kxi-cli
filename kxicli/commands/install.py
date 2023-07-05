@@ -394,7 +394,8 @@ def list_versions(chart_repo_name):
     """
     List available versions of kdb Insights Enterprise
     """
-    helm.list_versions(options.chart_repo_name.prompt(chart_repo_name, silent=True))
+    versions = helm.list_versions(options.chart_repo_name.prompt(chart_repo_name, silent=True))
+    click.echo(versions.stdout)
 
 
 @install.command()

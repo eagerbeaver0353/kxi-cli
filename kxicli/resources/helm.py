@@ -176,11 +176,11 @@ def _get_helm_version() -> LocalHelmVersion:
     except subprocess.CalledProcessError as e:
         raise ClickException(str(e))
 
-def repo_update(repos: list[str] = None):
+def repo_update(repos: list[str] = None, **kwargs) -> subprocess.CompletedProcess:
     cmd = ['helm', 'repo', 'update']
     if repos is not None:
         cmd += repos
-    subprocess.run(cmd, check=True)
+    return subprocess.run(cmd, check=True, **kwargs)
 
 def get_values(release, namespace=None):
     cmd = ['helm', 'get', 'values', release]
@@ -267,7 +267,7 @@ def list_versions(chart_repo_name):
     """Call 'helm search repo' using subprocess.run"""
     log.debug('Attempting to call: helm search repo')
     try:
-        repo_update()
+        repo_update([chart_repo_name])
         click.echo(f'Listing available kdb Insights Enterprise versions in repo {chart_repo_name}')
         return search_repo(f'{chart_repo_name}/insights')
     except subprocess.CalledProcessError as e:
