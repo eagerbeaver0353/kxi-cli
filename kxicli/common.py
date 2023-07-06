@@ -284,8 +284,7 @@ def try_decode(msg: bytes | str, **decode_args):
     return msg
 
 
-def parse_called_process_error(exception: subprocess.CalledProcessError):
-    encoding = 'ascii'
+def parse_called_process_error(exception: subprocess.CalledProcessError, encoding: str = 'utf-8'):
     stdout = try_decode(exception.stdout, encoding=encoding)
     stderr = try_decode(exception.stderr, encoding=encoding)
 
