@@ -2079,7 +2079,7 @@ def test_upgrade_does_not_reapply_assemblies_when_upgrade_fails(mocker, k8s):
         test_asm_file_contents = json.loads(last_applied)
     def mocked_failed_upgrade(*args, **kwargs):
         if args[0][:2] == ['helm', 'upgrade']:
-            raise subprocess.CalledProcessError(1, args[0], stderr=b'Deployment failed')
+            raise subprocess.CalledProcessError(1, args[0], stderr=b'Deployment failed \x143\x071\x142\x067')
     mocker.patch('subprocess.run', mocked_failed_upgrade)
     runner = CliRunner()
     with runner.isolated_filesystem():
@@ -2113,7 +2113,7 @@ Waiting for assembly to be torn down
 Upgrading insights
 Installing chart kx-insights/kxi-operator version 1.2.3 with previously used values
 Error: Command "helm upgrade --install --version 1.2.3 -f - test-op-helm kx-insights/kxi-operator --namespace kxi-operator" failed with output:
-  Deployment failed
+  Deployment failed \x143\x071\x142\x067
 """
     assert result.exit_code == 1
     assert result.output == expected_output
