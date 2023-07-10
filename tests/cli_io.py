@@ -177,7 +177,7 @@ def cli_output(
 
 
 def output_secret(name, exists, is_valid, prompt, overwrite):
-    """Prints expected output for a secret based on existence and validatity"""
+    """Prints expected output for a secret based on existence and validity"""
     if not exists:
         created = phrases.secret_created.format(name=name)
         if prompt:

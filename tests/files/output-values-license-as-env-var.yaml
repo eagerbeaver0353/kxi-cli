@@ -9,11 +9,16 @@ global:
   ingress:
     host: test.kx.com
   keycloak:
+    auth:
+      existingSecret: kxi-keycloak
     guiClientSecret: aRandomPassword
     operatorClientSecret: aRandomPassword
   license:
     asFile: false
     secretName: kxi-license
+  postgresql:
+    auth:
+      existingSecret: kxi-postgresql
 keycloak:
   auth:
     existingSecret: kxi-keycloak

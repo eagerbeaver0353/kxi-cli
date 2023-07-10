@@ -10,10 +10,15 @@ global:
     certmanager: false
     host: test.kx.com
   keycloak:
+    auth:
+      existingSecret: kxi-keycloak
     guiClientSecret: aRandomPassword
     operatorClientSecret: aRandomPassword
   license:
     secretName: kxi-license
+  postgresql:
+    auth:
+      existingSecret: kxi-postgresql
 keycloak:
   auth:
     existingSecret: kxi-keycloak
