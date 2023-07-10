@@ -167,6 +167,18 @@ def setup(namespace, chart_repo_name, chart_repo_url, chart_repo_username,
     }
 
     if deploy_keycloak():
+        d1=install_file['global']['keycloak']
+        d2 = {
+        'auth': {
+            'existingSecret': keycloak_secret.metadata.name
+        },
+        }
+        install_file['global']['keycloak'] = {**d1,**d2}
+        install_file['global']['postgresql'] = {
+            'auth': {
+                'existingSecret': keycloak_postgresql_secret.metadata.name
+            },
+        }
         install_file['keycloak'] = {
             'auth': {
                 'existingSecret': keycloak_secret.metadata.name
