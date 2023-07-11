@@ -16,6 +16,7 @@ global:
   license:
     asFile: false
     secretName: kxi-license
+    type: kx
   postgresql:
     auth:
       existingSecret: kxi-postgresql

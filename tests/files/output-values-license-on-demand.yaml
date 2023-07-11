@@ -14,8 +14,8 @@ global:
     guiClientSecret: aRandomPassword
     operatorClientSecret: aRandomPassword
   license:
-    onDemand: true
     secretName: kxi-license
+    type: kc
   postgresql:
     auth:
       existingSecret: kxi-postgresql

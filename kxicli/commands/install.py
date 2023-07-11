@@ -115,7 +115,7 @@ def setup(namespace, chart_repo_name, chart_repo_url, chart_repo_username,
     check_chart_repo_params(chart_repo_name, chart_repo_url, chart_repo_username)
 
     click.secho(phrases.header_license, bold=True)
-    license_secret, license_on_demand = prompt_for_license(license_secret, license_filepath, license_as_env_var)
+    license_secret, license_type = prompt_for_license(license_secret, license_filepath, license_as_env_var)
 
     click.secho(phrases.header_image, bold=True)
     image_repo, image_pull_secret = prompt_for_image_details(image_pull_secret, image_repo, image_repo_user)
@@ -201,11 +201,11 @@ def setup(namespace, chart_repo_name, chart_repo_url, chart_repo_username,
     if use_tls_secret:
         install_file['global']['ingress']['tlsSecret'] = ingress_cert_secret_object.metadata.name
 
+    install_file['global']['license']['type'] = license_type
     if license_as_env_var:
         install_file['global']['license']['asFile'] = False
 
-    if license_on_demand:
-        install_file['global']['license']['onDemand'] = True
+    if license_type in ['k4', 'kc']:
         install_file['kxi-acc-svc'] = {'enabled': False}
 
     if os.path.exists(output_file):
@@ -572,22 +572,22 @@ def sanitize_auth_url(raw_string):
 
 def prompt_for_license(secret: pyk8s.models.V1Secret, filepath, license_as_env_var):
     """Prompt for an existing license or create on if it doesn't exist"""
-    license_on_demand = False
-
     exists, is_valid, _ = secret.validate_keys()
     if not exists:
-        secret, license_on_demand = populate_license_secret(secret, filepath=filepath, as_env=license_as_env_var)
+        secret, license_type = populate_license_secret(secret, filepath=filepath, as_env=license_as_env_var)
         secret.create_()
         click.echo(phrases.secret_created.format(name=secret.metadata.name))
     elif not is_valid:
         if click.confirm(phrases.secret_exist_invalid.format(name=secret.metadata.name)):
             click.echo(phrases.secret_overwriting.format(name=secret.metadata.name))
-            secret, license_on_demand = populate_license_secret(secret, filepath=filepath, as_env=license_as_env_var)
+            secret, license_type = populate_license_secret(secret, filepath=filepath, as_env=license_as_env_var)
             secret.patch_()
             click.echo(phrases.secret_updated.format(name=secret.metadata.name))
     else:
         click.echo(phrases.secret_use_existing.format(name=secret.metadata.name))
-    return secret, license_on_demand
+        license_type = 'kx'  # this isn't correct but is an existing issue with the onDemand handling
+
+    return secret, license_type
 
 
 def ensure_secret(secret: pyk8s.models.V1Secret, populate_function: Callable, data = None):
@@ -737,12 +737,15 @@ def check_existing_docker_config(image_repo, file_path):
 
 def populate_license_secret(secret: pyk8s.models.V1Secret, filepath = None, as_env = False):
     """Populate the data in a license secret"""
-    license_on_demand = False
-
     filepath = options.license_filepath.prompt(filepath)
 
-    if os.path.basename(filepath) == 'kc.lic':
-        license_on_demand = True
+    filename = os.path.basename(filepath)
+    if filename == 'kc.lic':
+        license_type = 'kc'
+    elif filename == 'k4.lic':
+        license_type = 'k4'
+    else:
+        license_type = 'kx'
 
     with open(filepath, 'rb') as license_file:
         encoded_license = base64.b64encode(license_file.read())
@@ -756,7 +759,7 @@ def populate_license_secret(secret: pyk8s.models.V1Secret, filepath = None, as_e
     else:
         secret.data = license_data
 
-    return secret, license_on_demand
+    return secret, license_type
 
 
 def populate_docker_config_secret(secret: pyk8s.models.V1Secret, docker_config):

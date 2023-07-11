@@ -57,6 +57,7 @@ secret_exist_invalid = 'Secret {name} already exists but is invalid. Do you want
 secret_exist = 'Secret {name} already exists. Do you want to overwrite it?'
 secret_overwriting = 'Overwriting secret {name}'
 secret_use_existing = 'Using existing valid secret {name}'
+secret_use_existing_type = 'Please provide license type for existing secret'
 secret_entry = 'Please enter the secret (input hidden)'
 secret_updated = 'Secret {name} successfully updated'
 

@@ -14,6 +14,7 @@ global:
     operatorClientSecret: aRandomPassword
   license:
     secretName: kxi-license
+    type: kx
 keycloak:
   enabled: false
 keycloak-config-cli:

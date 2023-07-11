@@ -14,7 +14,7 @@ test_key = str(Path(__file__).parent / "files" / "test-key")
 test_ingress_cert_secret = "kxi-ingress-cert"
 
 test_docker_config_json = str(Path(__file__).parent / "files" / "test-docker-config-json")
-test_lic_file = str(Path(__file__).parent / "files" / "test-license")
+test_lic_file = str(Path(__file__).parent / "files" / "kx.lic")
 
 insights_tgz = str(Path(__file__).parent / "files/helm/insights-1.5.0.tgz")
 operator_tgz = str(Path(__file__).parent / "files/helm/kxi-operator-1.5.0.tgz")
