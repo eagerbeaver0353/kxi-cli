@@ -16,6 +16,7 @@ global:
     operatorClientSecret: aRandomPassword
   license:
     secretName: kxi-license
+    type: kx
   postgresql:
     auth:
       existingSecret: kxi-postgresql
