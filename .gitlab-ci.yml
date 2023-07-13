@@ -131,6 +131,7 @@ combine-test-metrics:
       junit: report.xml
     paths:
       - coverage.xml
+      - report.xml
   needs:
     - unit-tests-3.8
     - integration-tests
@@ -147,13 +148,26 @@ unit-tests-3.10:
   extends: .unit-tests
   image: python:3.10
 
-pytest-kpis:
+pytest-kpis-coverage:
   stage: visualisation
   needs:
     - combine-test-metrics
   variables:
     ARTIFACT_PATH: "$CI_PROJECT_DIR/coverage.xml"
-  extends: .extract-pytest-kpis
+    FORMAT: python
+  extends: .process-coverage
+  rules:
+    - !reference [.default-rules, rules]
+  allow_failure: true
+
+pytest-kpis-results:
+  stage: visualisation
+  needs:
+    - combine-test-metrics
+  variables:
+    ARTIFACT_PATH: "$CI_PROJECT_DIR/report.xml"
+    FORMAT: python_junit
+  extends: .process-results
   rules:
     - !reference [.default-rules, rules]
   allow_failure: true

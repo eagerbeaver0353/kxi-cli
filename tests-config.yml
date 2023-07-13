@@ -1,0 +1,6 @@
+repo: kxi-cli
+tests:
+  - path: ./tests
+    definition: pytest
+    level: UNIT
+    tags: ["TICKET"]
