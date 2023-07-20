@@ -45,7 +45,7 @@ def sample_actor():
     return Actor(
         id="3a536641-0492-4c44-997b-e3259847239b",
         name="quants",
-        subGroups=None
+        path="/quants"
     )
 
 

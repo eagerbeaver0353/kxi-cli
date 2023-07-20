@@ -28,7 +28,7 @@ class Entitlement(BaseModel, extra="allow"):
     entity: str
     entityType: EntityType
     owner: UUID
-    groups: Optional[List[UUID]]  # This must be optional while KXI-28638 is open
+    groups: List[UUID]
 
 
 class Actor(BaseModel, extra="allow"):
@@ -36,7 +36,7 @@ class Actor(BaseModel, extra="allow"):
 
     id: UUID
     name: str
-    subGroups: Optional[List[Actor]]
+    path: str
 
 
 class EntitlementService(ApiClient):
