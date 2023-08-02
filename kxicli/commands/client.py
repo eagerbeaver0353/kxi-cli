@@ -93,7 +93,7 @@ def info(hostname, uid):
         common.handle_http_exception(e, "Failed to get client info: ")
 
 
-@client.command('list')
+@client.command('list', hidden=True, deprecated=True)
 @arg.hostname()
 @click.option('--realm', default=lambda: common.get_default_val('realm'), help=common.get_help_text('realm'))
 @click.option('--username', required=True, help='Keycloak admin username')
