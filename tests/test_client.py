@@ -61,7 +61,7 @@ def test_client_list(mocker):
     ))
     result = TEST_CLI.invoke(main.cli, ['client', 'list', '--hostname', 'test-host', '--realm', 'test-realm', '--username', 'user1', '--password', 'pass'])
     assert result.exit_code == 0
-    assert result.output == 'Using hostname from command line option: test-host\n{\n  "message": "abc",\n  "detail": {\n    "message": "another"\n  }\n}\n'
+    assert result.output == 'DeprecationWarning: The command \'list\' is deprecated.\nUsing hostname from command line option: test-host\n{\n  "message": "abc",\n  "detail": {\n    "message": "another"\n  }\n}\n'
 
 def test_client_enrol_exception(mocker):
     mocker.patch('kxicli.common.get_access_token', return_none)
@@ -106,4 +106,4 @@ def test_client_list_exception(mocker):
     ))
     result = TEST_CLI.invoke(main.cli, ['client', 'list', '--hostname', 'test-host', '--realm', 'test-realm', '--username', 'user1', '--password', 'pass'])
     assert result.exit_code == 1
-    assert result.output == 'Using hostname from command line option: test-host\nError: Failed to list clients:  404 None (<Response [404]>)\n'
+    assert result.output == 'DeprecationWarning: The command \'list\' is deprecated.\nUsing hostname from command line option: test-host\nError: Failed to list clients:  404 None (<Response [404]>)\n'
