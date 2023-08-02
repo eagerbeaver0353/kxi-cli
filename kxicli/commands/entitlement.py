@@ -8,9 +8,9 @@ import uuid
 from pydantic.json import pydantic_encoder
 from typing import List
 
+from kxi.entitlement import EntitlementService, EntityType
 from kxicli import options, common, log
 from kxicli.commands.common import arg
-from kxicli.resources.entitlement import EntitlementService, EntityType
 from kxicli.cli_group import ProfileAwareGroup, cli
 
 api_client_params = arg.combine_decorators(

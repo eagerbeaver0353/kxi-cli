@@ -6,7 +6,7 @@ from click import ClickException
 from click.testing import CliRunner
 
 from kxicli import main, common
-from kxicli.resources.entitlement import Entitlement, Actor
+from kxi.entitlement import Entitlement, Actor
 from kxicli.commands.entitlement import _parse_groups
 
 import mocks
@@ -153,14 +153,13 @@ def test_entitlement_create(rest_api_mock, sample_entity):
 
     assert result.exit_code == 0
     rest_api_mock.post.assert_called_once()
+    expected = Entitlement(id=sample_entity.id, entity=sample_entity.entity,
+                           entityType=sample_entity.entityType,
+                           groups=[]).json(exclude_defaults=True)
     assert rest_api_mock.post.call_args[0] == (
         "https://test.kx.com/entitlements/v1/entities",
-        None,
-        {
-            "id": str(sample_entity.id),
-            "entity": sample_entity.entity,
-            "entityType": sample_entity.entityType
-        }
+        expected,
+        None
     )
 
 
@@ -180,15 +179,14 @@ def test_entitlement_create_with_owner(rest_api_mock, sample_entity):
 
     assert result.exit_code == 0
     rest_api_mock.post.assert_called_once()
+    expected = Entitlement(id=sample_entity.id, entity=sample_entity.entity,
+                           entityType=sample_entity.entityType,
+                           owner=sample_entity.owner,
+                           groups=[]).json(exclude_defaults=True)
     assert rest_api_mock.post.call_args[0] == (
         "https://test.kx.com/entitlements/v1/entities",
-        None,
-        {
-            "id": str(sample_entity.id),
-            "entity": sample_entity.entity,
-            "entityType": sample_entity.entityType,
-            "owner": str(sample_entity.owner),
-        }
+        expected,
+        None
     )
 
 
@@ -209,19 +207,14 @@ def test_entitlement_create_with_owner_and_groups(rest_api_mock, sample_entity):
 
     assert result.exit_code == 0
     rest_api_mock.post.assert_called_once()
+    expected = Entitlement(id=sample_entity.id, entity=sample_entity.entity,
+                           entityType=sample_entity.entityType,
+                           owner=sample_entity.owner,
+                           groups=sample_entity.groups).json(exclude_defaults=True)
     assert rest_api_mock.post.call_args[0] == (
         "https://test.kx.com/entitlements/v1/entities",
-        None,
-        {
-            "id": str(sample_entity.id),
-            "entity": sample_entity.entity,
-            "entityType": sample_entity.entityType,
-            "owner": str(sample_entity.owner),
-            "groups": [
-                str(sample_entity.groups[0]),
-                str(sample_entity.groups[1]),
-            ]
-        }
+        expected,
+        None
     )
 
 
@@ -239,56 +232,61 @@ def test_entitlement_update_with_name(rest_api_mock, sample_entity):
 
     assert result.exit_code == 0
     rest_api_mock.patch.assert_called_once()
-    assert rest_api_mock.patch.call_args[0] == (f"https://test.kx.com/entitlements/v1/entities/{sample_entity.id}",)
-    assert rest_api_mock.patch.call_args[1]['json'] == {
-            "entity": "new name"
-        }
+    expected = Entitlement(id=sample_entity.id, entity="new name", groups=[]
+                           ).json(
+        exclude_defaults=True, exclude={"id"})
+    assert rest_api_mock.patch.call_args[0][0] == f"https://test.kx.com/entitlements/v1/entities/{sample_entity.id}"
+    assert rest_api_mock.patch.call_args[0][1] == expected
 
 
 def test_entitlement_update_with_owner(rest_api_mock, sample_entity):
     rest_api_mock.patch.return_value = mocks.http_response("", status_code=200)
-
+    owner = uuid.UUID(int=123)
     result = TEST_CLI.invoke(main.cli,
                              [
                                 "entitlement",
                                 "update",
                                 str(sample_entity.id),
-                                "--owner", str(uuid.UUID(int=123))
+                                "--owner", str(owner)
                              ]
                              )
 
     assert result.exit_code == 0
     rest_api_mock.patch.assert_called_once()
-    assert rest_api_mock.patch.call_args[0] == (f"https://test.kx.com/entitlements/v1/entities/{sample_entity.id}",)
-    assert rest_api_mock.patch.call_args[1]['json'] == {
-            "owner": str(uuid.UUID(int=123))
-        }
+    expected = Entitlement(id=sample_entity.id, owner=owner, groups=[]
+                           ).json(
+        exclude_defaults=True, exclude={"id"})
+    assert rest_api_mock.patch.call_args[0][0] == f"https://test.kx.com/entitlements/v1/entities/{sample_entity.id}"
+    assert rest_api_mock.patch.call_args[0][1] == expected
 
 
 def test_entitlement_update_with_groups(rest_api_mock, sample_entity):
     rest_api_mock.patch.return_value = mocks.http_response("", status_code=200)
+    g1 = uuid.UUID(int=123)
+    g2 = sample_entity.groups[0]
 
     result = TEST_CLI.invoke(main.cli,
                              [
                                 "entitlement",
                                 "update",
                                 str(sample_entity.id),
-                                "--groups", f"{str(uuid.UUID(int=123))},{str(sample_entity.groups[0])}"
+                                "--groups", f"{str(g1)},{str(g2)}"
                              ]
                              )
 
     assert result.exit_code == 0
     rest_api_mock.patch.assert_called_once()
-    assert rest_api_mock.patch.call_args[0] == (f"https://test.kx.com/entitlements/v1/entities/{sample_entity.id}",)
-    assert rest_api_mock.patch.call_args[1]['json'] == {
-            "groups": [
-                str(uuid.UUID(int=123)),
-                str(sample_entity.groups[0])
-            ]
-        }
+    expected = Entitlement(id=sample_entity.id, groups=[g1, g2]
+                           ).json(
+        exclude_defaults=True, exclude={"id"})
+    assert rest_api_mock.patch.call_args[0][0] == f"https://test.kx.com/entitlements/v1/entities/{sample_entity.id}"
+    assert rest_api_mock.patch.call_args[0][1] == expected
 
 
 def test_entitlement_add_groups_with_dup(rest_api_mock, sample_entity):
+    g1 = uuid.UUID(int=123)
+    g2 = sample_entity.groups[0]
+    g3 = sample_entity.groups[1]
     r = sample_entity.json().encode("utf-8")
     rest_api_mock.get.return_value = mocks.http_response("", status_code=200, content=r)
     rest_api_mock.patch.return_value = mocks.http_response("", status_code=200)
@@ -298,7 +296,7 @@ def test_entitlement_add_groups_with_dup(rest_api_mock, sample_entity):
                                 "entitlement",
                                 "add-groups",
                                 str(sample_entity.id),
-                                f"{str(sample_entity.groups[0])},{str(uuid.UUID(int=123))}"
+                                f"{str(g1)},{str(g2)}"
                              ]
                              )
 
@@ -306,22 +304,21 @@ def test_entitlement_add_groups_with_dup(rest_api_mock, sample_entity):
 
     # validate the entity was fetched
     rest_api_mock.get.assert_called_once()
-    assert rest_api_mock.get.call_args[0] == (f"https://test.kx.com/entitlements/v1/entities/{sample_entity.id}",)
+    assert rest_api_mock.get.call_args[0][0] == f"https://test.kx.com/entitlements/v1/entities/{sample_entity.id}"
 
     # validate the patch request had the correct groups
     rest_api_mock.patch.assert_called_once()
-    assert rest_api_mock.patch.call_args[0] == (f"https://test.kx.com/entitlements/v1/entities/{sample_entity.id}",)
-    assert rest_api_mock.patch.call_args[1]["json"] == {
-            "groups": [
-                str(sample_entity.groups[0]),
-                str(sample_entity.groups[1]),
-                str(uuid.UUID(int=123))
-            ]
-        }
+    expected = Entitlement(id=sample_entity.id, groups=[g2, g3, g1]
+                           ).json(
+        exclude_defaults=True, exclude={"id"})
+    assert rest_api_mock.patch.call_args[0][0] == f"https://test.kx.com/entitlements/v1/entities/{sample_entity.id}"
+    assert rest_api_mock.patch.call_args[0][1] == expected
 
 
 def test_entitlement_rm_groups_with_extra(rest_api_mock, sample_entity):
     r = sample_entity.json().encode("utf-8")
+    g1 = sample_entity.groups[0]
+    g2 = uuid.UUID(int=123)
     rest_api_mock.get.return_value = mocks.http_response("", status_code=200, content=r)
     rest_api_mock.patch.return_value = mocks.http_response("", status_code=200)
 
@@ -330,7 +327,7 @@ def test_entitlement_rm_groups_with_extra(rest_api_mock, sample_entity):
                                 "entitlement",
                                 "rm-groups",
                                 str(sample_entity.id),
-                                f"{str(sample_entity.groups[0])},{str(uuid.UUID(int=123))}"
+                                f"{str(g1)},{str(g2)}"
                              ]
                              )
 
@@ -342,9 +339,8 @@ def test_entitlement_rm_groups_with_extra(rest_api_mock, sample_entity):
 
     # validate the patch request had the correct groups
     rest_api_mock.patch.assert_called_once()
-    assert rest_api_mock.patch.call_args[0] == (f"https://test.kx.com/entitlements/v1/entities/{sample_entity.id}",)
-    assert rest_api_mock.patch.call_args[1]["json"] == {
-            "groups": [
-                str(sample_entity.groups[1])
-            ]
-        }
+    expected = Entitlement(id=sample_entity.id, groups=[sample_entity.groups[1]]
+                           ).json(
+        exclude_defaults=True, exclude={"id"})
+    assert rest_api_mock.patch.call_args[0][0] == f"https://test.kx.com/entitlements/v1/entities/{sample_entity.id}"
+    assert rest_api_mock.patch.call_args[0][1] == expected
