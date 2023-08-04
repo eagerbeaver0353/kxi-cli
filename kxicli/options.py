@@ -73,7 +73,7 @@ def generate_password():
 
 
 class Option():
-    def __init__(self, *click_option_args , config_name=None, fallback=None, force=False, password=False, 
+    def __init__(self, *click_option_args , config_name=None, fallback=None, force=False, password=False,
                  prompt_message='', default_before_user_input=False, **click_option_kwargs):
         self._click_option_args = click_option_args
         self._click_option_kwargs = click_option_kwargs
@@ -119,7 +119,7 @@ class Option():
 
     def prompt(self, cmd_line_value=None, **kwargs):
         """Get config value from various sources.
-        
+
         Priority:
             - CLI
             - CONFIG file
@@ -477,6 +477,7 @@ use_kubeconfig = Option (
 
 import_users = Option (
     '--import-users',
+    help = 'Enables/disables the import of users at deployment time',
     default = None,
     type = bool
 )
