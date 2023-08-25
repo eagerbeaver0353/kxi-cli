@@ -12,12 +12,11 @@ from kxi.entitlement import EntitlementService, EntityType
 from kxicli import options, common, log
 from kxicli.commands.common import arg
 from kxicli.cli_group import ProfileAwareGroup, cli
+from kxicli.resources.auth import AuthCache
 
 api_client_params = arg.combine_decorators(
     arg.hostname(),
     arg.realm(),
-    arg.client_id(),
-    arg.client_secret(),
     arg.timeout()
 )
 
@@ -80,17 +79,14 @@ def entitlement():
 def list(
     hostname,
     realm,
-    client_id,
-    client_secret,
     timeout
 ):
     """List entitlements"""
     e = EntitlementService(
         host=_ensure_host(hostname),
         realm=realm,
-        client_id=client_id,
-        client_secret=client_secret,
-        timeout=timeout
+        timeout=timeout,
+        cache=AuthCache
     )
 
     click.echo(json.dumps(e.list(), default=pydantic_encoder))
@@ -101,8 +97,6 @@ def list(
 def actors(
     hostname,
     realm,
-    client_id,
-    client_secret,
     timeout
 ):
     """List actors
@@ -112,9 +106,8 @@ def actors(
     e = EntitlementService(
         host=_ensure_host(hostname),
         realm=realm,
-        client_id=client_id,
-        client_secret=client_secret,
-        timeout=timeout
+        timeout=timeout,
+        cache=AuthCache
     )
 
     click.echo(json.dumps(e.actors(), default=pydantic_encoder))
@@ -135,8 +128,6 @@ def create(
     groups,
     hostname,
     realm,
-    client_id,
-    client_secret,
     timeout
 ):
     """Create an entitlement
@@ -152,9 +143,8 @@ def create(
     e = EntitlementService(
         host=_ensure_host(hostname),
         realm=realm,
-        client_id=client_id,
-        client_secret=client_secret,
-        timeout=timeout
+        timeout=timeout,
+        cache=AuthCache
     )
 
     click.echo(e.create(id, name, type, owner, _parse_groups(groups)))
@@ -173,8 +163,6 @@ def update(
     groups,
     hostname,
     realm,
-    client_id,
-    client_secret,
     timeout
 ):
     """Update an entitlement
@@ -184,9 +172,8 @@ def update(
     e = EntitlementService(
         host=_ensure_host(hostname),
         realm=realm,
-        client_id=client_id,
-        client_secret=client_secret,
-        timeout=timeout
+        timeout=timeout,
+        cache=AuthCache
     )
 
     click.echo(e.update(id, name, owner=owner, groups=_parse_groups(groups)))
@@ -200,8 +187,6 @@ def delete(
     id,
     hostname,
     realm,
-    client_id,
-    client_secret,
     timeout,
     force
 ):
@@ -213,9 +198,8 @@ def delete(
     e = EntitlementService(
         host=_ensure_host(hostname),
         realm=realm,
-        client_id=client_id,
-        client_secret=client_secret,
-        timeout=timeout
+        timeout=timeout,
+        cache=AuthCache
     )
 
     if click.confirm('Are you sure you want to delete this entitlement?') or force:
@@ -229,17 +213,14 @@ def get(
     id,
     hostname,
     realm,
-    client_id,
-    client_secret,
     timeout
 ):
     """Get an entitlement"""
     e = EntitlementService(
         host=_ensure_host(hostname),
         realm=realm,
-        client_id=client_id,
-        client_secret=client_secret,
-        timeout=timeout
+        timeout=timeout,
+        cache=AuthCache
     )
 
     click.echo(json.dumps(e.get(id), default=pydantic_encoder))
@@ -254,8 +235,6 @@ def add_groups(
     groups,
     hostname,
     realm,
-    client_id,
-    client_secret,
     timeout
 ):
     """Add groups to an entitlement
@@ -266,9 +245,8 @@ def add_groups(
     e = EntitlementService(
         host=_ensure_host(hostname),
         realm=realm,
-        client_id=client_id,
-        client_secret=client_secret,
-        timeout=timeout
+        timeout=timeout,
+        cache=AuthCache
     )
 
     # get entity
@@ -295,21 +273,18 @@ def rm_groups(
     groups,
     hostname,
     realm,
-    client_id,
-    client_secret,
     timeout
 ):
     """Remove groups from an entitlement
 
-    ID is the id of the the entity to add the groups to.
+    ID is the id of the the entity to remove the groups from.
     GROUPS is a comma separated list of group IDs to remove.
     """
     e = EntitlementService(
         host=_ensure_host(hostname),
         realm=realm,
-        client_id=client_id,
-        client_secret=client_secret,
-        timeout=timeout
+        timeout=timeout,
+        cache=AuthCache
     )
 
     # get entity
