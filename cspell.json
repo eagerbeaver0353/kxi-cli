@@ -58,6 +58,7 @@
     "customresourcedefinitions",
     "pydantic",
     "tracebacks",
-    "excepthook"
+    "excepthook",
+    "Reauthenticating"
   ]
 }

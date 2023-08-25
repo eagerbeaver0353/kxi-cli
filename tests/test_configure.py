@@ -48,6 +48,8 @@ hostname = https://test.kx.com
 namespace = test
 client.id = client
 client.secret = secret
+auth.serviceaccount.id = test_id
+auth.serviceaccount.secret = test_client_id
 test-name = test-value
 
 """
@@ -61,6 +63,8 @@ hostname = https://test.kx.com
 namespace = test
 client.id = client
 client.secret = secret
+auth.serviceaccount.id = test_id
+auth.serviceaccount.secret = test_client_id
 
 [test-profile]
 test-name = test-value
@@ -76,6 +80,8 @@ hostname = https://test.kx.com
 namespace = test
 client.id = client
 client.secret = secret
+auth.serviceaccount.id = test_id
+auth.serviceaccount.secret = test_client_id
 test-name = test-value
 
 """
@@ -89,6 +95,8 @@ hostname = https://test.kx.com
 namespace = test
 client.id = client
 client.secret = test-value
+auth.serviceaccount.id = test_id
+auth.serviceaccount.secret = test_client_id
 
 """
     run_config_test(func=config.update_config, profile='default', name='client.secret', value='test-value', expected_result=expected_result)
@@ -101,6 +109,8 @@ hostname = https://test.kx.com
 namespace = test
 client.id = client
 client.secret = secret
+auth.serviceaccount.id = test_id
+auth.serviceaccount.secret = test_client_id
 
 """
     run_config_test(func=config.update_config, profile='default', name='client.secret', value='secret', expected_result=expected_result)
@@ -116,9 +126,9 @@ def test_configure_output_is_correct():
                 'enterprise\n'
                 'https://test.kx.com\n'
                 'test\n'
-                'client\n'
-                'secret\n'
-                'secret\n'
+                'test_id\n'
+                'test_client_id\n'
+                'test_client_id\n'
             )
 
             result = runner.invoke(main.cli, ['configure'], input=user_input)
@@ -127,8 +137,8 @@ def test_configure_output_is_correct():
                 'Profile type (enterprise, microservices) [enterprise]: enterprise\n'
                 'Hostname [https://test.kx.com]: https://test.kx.com\n'
                 'Namespace [test]: test\n'
-                'Client ID [client]: client\n'
-                f'Client Secret (input hidden): \n{phrases.password_reenter}: \n'
+                'Service account ID [test_id]: test_id\n'
+                f'Service account Secret (input hidden): \n{phrases.password_reenter}: \n'
                 'CLI successfully configured, configuration stored in ' + config.config_file + '\n'
         )
 
@@ -141,6 +151,8 @@ hostname = https://test.kx.com
 namespace = test
 client.id = client
 client.secret = secret
+auth.serviceaccount.id = test_id
+auth.serviceaccount.secret = test_client_id
 
 """
     config.config_file = str(Path(__file__).parent / 'files' / 'test-cli-config')
@@ -148,7 +160,7 @@ client.secret = secret
 
 
 def test_microservices_configure_output_is_correct():
-    config.config_file = str(Path(__file__).parent / 'files' / 'test-cli-config-microservices')    
+    config.config_file = str(Path(__file__).parent / 'files' / 'test-cli-config-microservices')
     with temp_config_file(file_name='test-cli-config-microservices') as config_file_name:
         shutil.copyfile(config.config_file, config_file_name)
         config.config_file = config_file_name
@@ -166,7 +178,7 @@ def test_microservices_configure_output_is_correct():
                 'Profile type (enterprise, microservices) [microservices]: microservices\n'
                 'Hostname [https://test.kx.com]: https://test.kx.com\n'
                 'TP Port [5010]: 5010\n'
-                'CLI successfully configured, configuration stored in ' + config.config_file + '\n'                
+                'CLI successfully configured, configuration stored in ' + config.config_file + '\n'
         )
 
         assert result.exit_code == 0

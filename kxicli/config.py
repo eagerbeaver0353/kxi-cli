@@ -41,7 +41,7 @@ def append_config(profile, name, value):
 
 def update_config(profile, name, value):
     """Set the configuration for a specific profile if it has changed"""
-    
+
     if not config.has_option(profile, name) or config.has_option(profile, name) and config.get(profile, name) != value:
         append_config(profile, name, value)
 
@@ -58,32 +58,32 @@ def set_config(profile):
         'Profile type',
         type=click.Choice([DeploymentType.ENTERPRISE.value, DeploymentType.MICROSERVICES.value]),
         default=config.get(profile, 'usage', fallback=DeploymentType.ENTERPRISE))
-    
+
     config[profile]['hostname'] = click.prompt(
         'Hostname',
         type=str,
         default=config.get(profile, 'hostname', fallback=''))
-    
+
     if config[profile]['usage'] == DeploymentType.ENTERPRISE:
         config[profile]['namespace'] = click.prompt(
             'Namespace',
             type=str,
             default=config.get(profile, 'namespace', fallback=''))
 
-        key = 'client.id'
+        key = 'auth.serviceaccount.id'
         config[profile][key] = click.prompt(
-            'Client ID',
+            'Service account ID',
             type=str,
             default=config.get(profile, key, fallback=''))
 
         if len(config[profile][key]) > 0:
-            config[profile]['client.secret'] = common.enter_password('Client Secret (input hidden)')
+            config[profile]['auth.serviceaccount.secret'] = common.enter_password('Service account Secret (input hidden)')
 
     elif config[profile]['usage'] == DeploymentType.MICROSERVICES:
         config[profile]['tp_port'] = click.prompt(
             'TP Port',
             type=str,
             default=config.get(profile, 'tp_port', fallback=''))
-        
+
     with open(config_file, 'w+') as f:
         config.write(f)

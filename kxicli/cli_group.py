@@ -7,6 +7,7 @@ from click_aliases import ClickAliasedGroup
 from kxi import DeploymentType
 from kxicli import config, common
 from kxicli import log
+from kxicli.resources.auth import AuthCache
 
 PYTHON_VERSION = f'{sys.version_info.major}.{sys.version_info.minor}'
 PKG_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -78,3 +79,4 @@ def cli(ctx, debug, profile):
         config.set_config(profile)
 
     ctx.obj["kxi_cli_profile"] = profile
+    ctx.obj["kxi_auth_class"] = AuthCache

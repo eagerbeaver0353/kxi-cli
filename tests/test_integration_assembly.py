@@ -1,15 +1,22 @@
 from __future__ import annotations
+import os
 from pathlib import Path
 import json
 from typing import Optional
+from unittest.mock import MagicMock
+import click
 from click.testing import CliRunner
+import requests
+from kxicli.resources.auth import AuthCache
+from kxi.auth import Authorizer
 import pytest
 from kxicli import main, common
 import time
-from utils import get_assembly_name, test_asm_file2
+from kxicli.resources import auth
+from utils import get_assembly_name, return_none, test_asm_file2
 
 ASM_NAME = get_assembly_name(test_asm_file2)
-
+ASM_NAME2 = 'test_asm2'
 @pytest.fixture
 def use_default_config():
     common.config.config_file = str(Path.home() / '.insights' / 'cli-config')
@@ -18,12 +25,18 @@ def use_default_config():
 @pytest.fixture
 def setup_clean_slate():
     runner = CliRunner()
+    result = runner.invoke(main.cli, ["auth", "login", "--serviceaccount"])
     result = runner.invoke(main.cli, ["assembly", "list"])
     assert ASM_NAME not in result.output
+
+
+def mock_client_response(*args, **kwargs):
+    return {'message': "abc", 'detail': {'message': "another"}}
 
 @pytest.mark.integration
 def test_basic_assembly(setup_clean_slate, use_default_config, k8s):
     runner = CliRunner()
+    result = runner.invoke(main.cli, ["auth", "login", "--serviceaccount"])
     result = runner.invoke(main.cli, ["assembly", "list"])
 
     # Check embedded assemblies in the list
@@ -42,7 +55,10 @@ def test_basic_assembly(setup_clean_slate, use_default_config, k8s):
     # Statuscheck
     result = runner.invoke(main.cli, ["assembly", "status", "--name", ASM_NAME])
     assert result.exit_code == 0
-    res = json.loads(result.output)
+    json_start = result.output.index('{')
+    json_str = result.output[json_start:]
+    res = json.loads(json_str)
+
     assert True ==  res['running']
 
     # Teardown assembly

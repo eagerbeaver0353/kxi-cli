@@ -16,15 +16,18 @@ from click_aliases import ClickAliasedGroup
 
 from kxicli import common
 from kxicli import log
-from kxicli.commands import assembly_kxicontroller
 from kxicli.commands.common import arg
 from kxicli.common import get_default_val as default_val
 from kxicli.common import get_help_text as help_text
 from kxicli.cli_group import ProfileAwareGroup, cli
 from kxicli import options
 from kxicli.options import namespace as options_namespace, assembly_backup_filepath, assembly_filepath, \
-     hostname as options_hostname, client_id as options_client_id, \
-     client_secret as options_client_secret, realm as options_realm
+     hostname as options_hostname, \
+     realm as options_realm
+from kxicli.resources import auth
+
+from kxicli.resources.auth import AuthCache, TokenType
+from kxi.controller.assembly import AssemblyApi as Assembly
 
 API_GROUP = 'insights.kx.com'
 API_VERSION = 'v1'
@@ -70,7 +73,7 @@ def _assembly_status_k8s(namespace, name):
 
 
 
-def _assembly_status(namespace=None, name=None, hostname=None, client_id=None, client_secret=None, realm=None, use_kubeconfig=False, print_status=False):
+def _assembly_status(namespace=None, name=None, hostname=None, realm=None, use_kubeconfig=False, print_status=False):
     """Get status of assembly"""
 
     assembly_ready = False
@@ -82,8 +85,8 @@ def _assembly_status(namespace=None, name=None, hostname=None, client_id=None, c
         if len(assembly_status) and 'AssemblyReady' in assembly_status:
             assembly_ready = assembly_status['AssemblyReady']['status'] == 'True'
     else:
-        hostname, token = get_kxic_options(hostname, client_id, client_secret, realm)
-        assembly_status = assembly_kxicontroller.status(hostname, token, name)
+        assembly = Assembly(hostname, realm=realm, cache=AuthCache)
+        assembly_status = assembly.status(name=name)
         if len(assembly_status) and 'ready' in assembly_status:
             assembly_ready = assembly_status['ready']
 
@@ -96,15 +99,16 @@ def _assembly_status(namespace=None, name=None, hostname=None, client_id=None, c
     return assembly_ready
 
 
-def _list_assemblies(hostname=None, client_id=None, client_secret=None, realm=None, namespace=None, use_kubeconfig=False):
+def _list_assemblies(hostname=None, realm=None, namespace=None, use_kubeconfig=False):
     """List assemblies"""
+
     if use_kubeconfig:
         namespace = options_namespace.prompt(namespace)
         res = get_assemblies_list(namespace)
         asm_list = format_assemblies_list_k8s(res)
     else:
-        hostname, token = get_kxic_options(hostname, client_id, client_secret, realm)
-        res = assembly_kxicontroller.list(hostname, token)
+        assembly = Assembly(hostname, realm=realm, cache=AuthCache)
+        res = assembly.list()
         asm_list = _format_assemblies_list_kxic(res)
 
     print_2d_list(asm_list[0], asm_list[1])
@@ -206,12 +210,11 @@ def _read_assembly_file(filepath):
     return body
 
 
-def create_assemblies_from_file(filepath, hostname=None, client_id=None, client_secret=None, realm=None, namespace=None, use_kubeconfig=False, wait=None):
+def create_assemblies_from_file(filepath, hostname=None, realm=None, namespace=None, use_kubeconfig=False, wait=None):
     """Apply assemblies from file"""
     if not filepath:
         click.echo('No assemblies to restore')
         return []
-
     asm_list = _read_assembly_file(filepath)
 
     click.echo(f'Submitting assembly from {filepath}')
@@ -219,15 +222,15 @@ def create_assemblies_from_file(filepath, hostname=None, client_id=None, client_
     if 'items' in asm_list:
         for asm in asm_list['items']:
             click.echo(f"Submitting assembly {asm['metadata']['name']}")
-            try_append(created, hostname, client_id, client_secret, realm, namespace, asm, use_kubeconfig, wait)
+            try_append(created, hostname, realm, namespace, asm, use_kubeconfig, wait)
     else:
-        try_append(created, hostname, client_id, client_secret, realm, namespace, asm_list, use_kubeconfig, wait)
+        try_append(created, hostname, realm, namespace, asm_list, use_kubeconfig, wait)
 
     return created
 
-def try_append(created = None, hostname=None, client_id=None, client_secret=None, realm=None, namespace=None, asm=None, use_kubeconfig=False, wait=None):
+def try_append(created = None, hostname=None, realm=None, namespace=None, asm=None, use_kubeconfig=False, wait=None):
     try:
-        created.append(_create_assembly(hostname, client_id, client_secret, realm, namespace, asm, use_kubeconfig, wait))
+        created.append(_create_assembly(hostname, realm, namespace, asm, use_kubeconfig, wait))
     except requests.exceptions.HTTPError as e:
         res = json.loads(e.response.text)
         click.echo(f"Error: {res['message']}. {res['detail']['message']}")
@@ -254,7 +257,7 @@ def _create_assembly_k8s(namespace, body):
     return asm.create_(namespace=namespace)
 
 
-def _create_assembly(hostname, client_id, client_secret, realm, namespace, body, use_kubeconfig, wait=None):
+def _create_assembly(hostname, realm, namespace, body, use_kubeconfig, wait=None):
     """Create an assembly"""
 
     if 'resourceVersion' in body['metadata']:
@@ -265,8 +268,8 @@ def _create_assembly(hostname, client_id, client_secret, realm, namespace, body,
         namespace = options_namespace.prompt(namespace)
         _create_assembly_k8s(namespace, body)
     else:
-        hostname, token = get_kxic_options(hostname, client_id, client_secret, realm)
-        assembly_kxicontroller.deploy(hostname, token, body)
+        assembly = Assembly(hostname, realm=realm, cache=AuthCache)
+        assembly.deploy(body)
 
     if wait:
         with click.progressbar(range(10), label='Waiting for assembly to enter "Ready" state') as bar:
@@ -274,8 +277,6 @@ def _create_assembly(hostname, client_id, client_secret, realm, namespace, body,
                 if _assembly_status(
                     hostname=hostname,
                     name=body['metadata']['name'],
-                    client_id=client_id,
-                    client_secret=client_secret,
                     realm=realm,
                     namespace=namespace,
                     use_kubeconfig=use_kubeconfig
@@ -299,7 +300,7 @@ def _delete_assembly_k8s_api(namespace, name):
     return True
 
 
-def _delete_assembly(namespace=None, name=None, wait=None, force=False, hostname=None, client_id=None, client_secret=None, realm=None, use_kubeconfig=False):
+def _delete_assembly(namespace=None, name=None, wait=None, force=False, hostname=None, realm=None, use_kubeconfig=False):
     """Deletes an assembly given its name"""
     click.echo(f'Tearing down assembly {name}')
 
@@ -311,18 +312,18 @@ def _delete_assembly(namespace=None, name=None, wait=None, force=False, hostname
         namespace = options_namespace.prompt(namespace)
         asm_delete_success = _delete_assembly_k8s_api(namespace, name)
     else:
-        hostname, token = get_kxic_options(hostname, client_id, client_secret, realm)
-        asm_delete_success = assembly_kxicontroller.teardown(hostname, token, name)
+        assembly = Assembly(hostname, realm=realm, cache=AuthCache)
+        asm_delete_success = assembly.teardown(name=name)
 
     if not asm_delete_success:
         return False
 
     if wait:
-        return wait_for_assembly_teardown(namespace, name, hostname, client_id, client_secret, realm, use_kubeconfig)
+        return wait_for_assembly_teardown(namespace, name, hostname, realm, use_kubeconfig)
 
     return True
 
-def wait_for_assembly_teardown(namespace, name, hostname, client_id, client_secret, realm, use_kubeconfig):
+def wait_for_assembly_teardown(namespace, name, hostname, realm, use_kubeconfig):
     asm_running = True
     with click.progressbar(range(10), label='Waiting for assembly to be torn down') as bar:
         for n in bar:
@@ -330,10 +331,8 @@ def wait_for_assembly_teardown(namespace, name, hostname, client_id, client_secr
                 _assembly_status(namespace,
                     name,
                     hostname,
-                    client_id,
-                    client_secret,
                     realm,
-                    use_kubeconfig
+                    use_kubeconfig,
                 )
             except click.ClickException as exception:
                 if exception.message == f'Assembly {name} not found':
@@ -381,14 +380,11 @@ def backup(namespace, filepath, force):
 @arg.use_kubeconfig()
 def deploy(hostname, client_id, client_secret, realm, namespace, filepath, use_kubeconfig, wait):
     """Create an assembly given an assembly file"""
-
     filepath = assembly_filepath.prompt(filepath)
-
+    host = options.get_hostname()
     create_assemblies_from_file(
         filepath,
-        hostname=hostname,
-        client_id=client_id,
-        client_secret=client_secret,
+        hostname=host,
         realm=realm,
         namespace=namespace,
         use_kubeconfig=use_kubeconfig,
@@ -407,17 +403,17 @@ def deploy(hostname, client_id, client_secret, realm, namespace, filepath, use_k
 @arg.use_kubeconfig()
 def status(namespace, name, wait, hostname, client_id, client_secret, realm, use_kubeconfig):
     """Print status of the assembly"""
-
+    host = options.get_hostname()
     namespace = options_namespace.prompt(namespace)
 
     if wait:
         with click.progressbar(range(10), label='Waiting for assembly to enter "Ready" state') as bar:
             for n in bar:
-                if _assembly_status(namespace, name, hostname, client_id, client_secret, realm, use_kubeconfig, print_status=True):
+                if _assembly_status(namespace, name, host, realm, use_kubeconfig, print_status=True):
                     break
                 time.sleep((2 ** n) + (random.randint(0, 1000) / 1000))
     else:
-        _assembly_status(namespace, name, hostname, client_id, client_secret, realm, use_kubeconfig, print_status=True)
+        _assembly_status(namespace, name, host, realm, use_kubeconfig, print_status=True)
 
 
 @assembly.command()
@@ -427,10 +423,11 @@ def status(namespace, name, wait, hostname, client_id, client_secret, realm, use
 @arg.realm()
 @arg.namespace()
 @arg.use_kubeconfig()
-def list(hostname, client_id, client_secret, realm, namespace, use_kubeconfig):
+def list(hostname, realm, client_id, client_secret, namespace, use_kubeconfig):
     """List assemblies"""
 
-    if _list_assemblies(hostname, client_id, client_secret, realm, namespace, use_kubeconfig):
+    host = options.get_hostname()
+    if _list_assemblies(host, realm, namespace, use_kubeconfig):
         sys.exit(0)
     else:
         sys.exit(1)
@@ -448,8 +445,8 @@ def list(hostname, client_id, client_secret, realm, namespace, use_kubeconfig):
 @arg.use_kubeconfig()
 def teardown(namespace, name, wait, force, hostname, client_id, client_secret, realm, use_kubeconfig):
     """Tears down an assembly given its name"""
-
-    _delete_assembly(namespace, name, wait, force, hostname, client_id, client_secret, realm, use_kubeconfig)
+    host = options.get_hostname()
+    _delete_assembly(namespace, name, wait, force, host, realm, use_kubeconfig)
 
 
 def get_preferred_api_version(group_name):
@@ -457,12 +454,3 @@ def get_preferred_api_version(group_name):
         return pyk8s.cl.assemblies.api_version
     except Exception:
         raise click.ClickException(f'Could not find preferred API version for group {group_name}')
-
-
-def get_kxic_options(hostname, client_id, client_secret, realm):
-    hostname = common.sanitize_hostname(options.hostname.prompt(hostname, silent=True))
-    client_id = options_client_id.prompt(client_id)
-    client_secret = options_client_secret.prompt(client_secret)
-    realm = options_realm.prompt(realm)
-    token = common.get_access_token(hostname, client_id, client_secret, realm)
-    return hostname, token

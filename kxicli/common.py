@@ -5,15 +5,17 @@ import sys
 import click
 import pyk8s
 from pathlib import Path
-import requests
 import subprocess
 import tarfile
-import time
 from requests.exceptions import HTTPError
 
 from kxicli import config
 from kxicli import log
 from kxicli import phrases
+
+token_cache_path = Path.home() / '.insights'
+token_cache_dir = str(token_cache_path)
+token_cache_file = str(token_cache_path / 'credentials')
 
 key_install_outputFile = 'install.outputFile'
 key_chart_repo_name = 'chart.repo.name'
@@ -52,6 +54,10 @@ key_operator_version = 'operator.version'
 key_client_id = 'client.id'
 key_client_secret = 'client.secret'
 key_admin_username = 'admin.username'
+key_serviceaccount_id = 'auth.serviceaccount.id'
+key_serviceaccount_secret = 'auth.serviceaccount.secret'
+key_cache_file = 'cache.file'
+key_auth_client = 'auth.client'
 
 # Help text dictionary for commands
 HELP_TEXT = {
@@ -59,6 +65,8 @@ HELP_TEXT = {
     key_namespace: 'Kubernetes namespace',
     key_client_id: 'Client ID to request an access token with',
     key_client_secret: 'Client secret to request an access token with',
+    key_serviceaccount_id: 'Service account ID to request an access token with',
+    key_serviceaccount_secret: 'Service account secret to request an access token with',
     key_chart_repo_name: 'Name for chart repository',
     key_chart_repo_url: 'Repository URL to pull charts from',
     key_chart_repo_username: 'Username for the chart repository',
@@ -110,7 +118,9 @@ DEFAULT_VALUES = {
     key_assembly_backup_file: 'kxi-assembly-state.yaml',
     key_release_name: 'insights',
     key_keycloak_realm: 'insights',
-    key_admin_username: 'user'
+    key_admin_username: 'user',
+    key_cache_file: token_cache_file,
+    key_auth_client: 'insights-app'
 }
 
 # Flag to indicate if k8s.config.load_config has already been called
@@ -141,51 +151,6 @@ def sanitize_hostname(raw_string):
 
 def is_interactive_session():
     return sys.stdout.isatty() and '--force' not in sys.argv
-
-def get_access_token(hostname, client_id, client_secret, realm):
-    """Get Keycloak client access token"""
-    log.debug('Requesting access token')
-    hostname = sanitize_hostname(hostname)
-    url = f'https://{hostname}/auth/realms/{realm}/protocol/openid-connect/token'
-    headers = {
-        'Content-Type': 'application/x-www-form-urlencoded'
-    }
-    payload = {
-        'grant_type': 'client_credentials',
-        'client_id': client_id,
-        'client_secret': client_secret
-    }
-
-    try:
-        r = requests.post(url, headers=headers, data=payload)
-        r.raise_for_status()
-        return r.json()['access_token']
-    except HTTPError as e:
-        handle_http_exception(e, "Failed to request access token: ")
-
-
-def get_admin_token(hostname, username, password):
-    """Get Keycloak Admin API token from hostname"""
-    log.debug('Requesting admin access token')
-    hostname = sanitize_hostname(hostname)
-    url = f'https://{hostname}/auth/realms/master/protocol/openid-connect/token'
-    headers = {
-        'Content-Type': 'application/x-www-form-urlencoded'
-    }
-
-    payload = {
-        'grant_type': 'password',
-        'username': username,
-        'password': password,
-        'client_id': 'admin-cli'
-    }
-
-    try:
-        r = requests.post(url, headers=headers, data=payload)
-        r.raise_for_status()
-        return r.json()['access_token']
-    except HTTPError as e:
-        handle_http_exception(e, 'Failed to request admin access token: ')
 
 
 def read_crd(name):
@@ -302,6 +267,7 @@ def parse_http_exception(e: HTTPError):
     else:
         msg = res
     return res, msg
+
 
 def handle_http_exception(e: HTTPError, prefix: str):
     if hasattr(e, "response"):

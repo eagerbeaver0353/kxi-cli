@@ -1,11 +1,18 @@
+from functools import partial
+import json
 import os
+import time
+from unittest.mock import MagicMock
 import pytest
 import uuid
 
 from click import ClickException
 from click.testing import CliRunner
-
+from utils import return_none
+from kxicli.resources.auth import AuthCache
+from kxi.auth import Authorizer
 from kxicli import main, common
+from kxicli.resources import auth
 from kxi.entitlement import Entitlement, Actor
 from kxicli.commands.entitlement import _parse_groups
 
@@ -59,8 +66,28 @@ def test__parse_groups_raises_invalid_uuid():
     with pytest.raises(ClickException, match="123 is not a valid UUID"):
         _parse_groups("123")
 
+current_time = int(time.time())
+expires_at = current_time + 3600 
+TEST_SERVICE_ACCOUNT_TOKEN = {
+    "access_token": "abc1234",
+    "token_type": "Bearer",
+    "expires_in": 3600,
+    "refresh_token": "abc1234",
+    "created_at": 1652741000,
+    "expires_at": expires_at
+}
 
-def test_entitlement_list(rest_api_mock, sample_entity):
+@pytest.fixture
+def mock_auth_functions(mocker):
+    mocker.patch.object(Authorizer, 'fetch_token', return_value=MagicMock(access_token=TEST_SERVICE_ACCOUNT_TOKEN))
+    mocker.patch.object(Authorizer, 'token', return_value=TEST_SERVICE_ACCOUNT_TOKEN)
+    mocker.patch.object(Authorizer, 'check_cached_token', return_value=TEST_SERVICE_ACCOUNT_TOKEN)
+    
+    mocker.patch('kxicli.resources.auth.check_cached_token_active', return_none)
+    mocker.patch('kxicli.resources.auth.get_serviceaccount_token', return_none)
+    os.environ["INSIGHTS_CLIENT_ID"] = "test-client"
+    
+def test_entitlement_list(rest_api_mock, sample_entity, mock_auth_functions):
     r = f"[{sample_entity.json()}]".encode("utf-8")
     rest_api_mock.get.return_value = mocks.http_response("", status_code=200, content=r)
 
@@ -72,7 +99,7 @@ def test_entitlement_list(rest_api_mock, sample_entity):
     assert rest_api_mock.get.call_args[0] == ("https://test.kx.com/entitlements/v1/entities",)
 
 
-def test_entitlement_list_with_users(rest_api_mock, sample_entity_with_users):
+def test_entitlement_list_with_users(rest_api_mock, sample_entity_with_users, mock_auth_functions):
     r = f"[{sample_entity_with_users.json()}]".encode("utf-8")
     rest_api_mock.get.return_value = mocks.http_response("", status_code=200, content=r)
 
@@ -84,7 +111,7 @@ def test_entitlement_list_with_users(rest_api_mock, sample_entity_with_users):
     assert rest_api_mock.get.call_args[0] == ("https://test.kx.com/entitlements/v1/entities",)
 
 
-def test_entitlement_get(rest_api_mock, sample_entity):
+def test_entitlement_get(rest_api_mock, sample_entity, mock_auth_functions):
     r = sample_entity.json().encode("utf-8")
     rest_api_mock.get.return_value = mocks.http_response("", status_code=200, content=r)
 
@@ -95,7 +122,7 @@ def test_entitlement_get(rest_api_mock, sample_entity):
     assert rest_api_mock.get.call_args[0] == (f"https://test.kx.com/entitlements/v1/entities/{sample_entity.id}",)
 
 
-def test_entitlement_delete_with_force(rest_api_mock, sample_entity):
+def test_entitlement_delete_with_force(rest_api_mock, sample_entity, mock_auth_functions):
     rest_api_mock.delete.return_value = mocks.http_response("", status_code=200)
 
     result = TEST_CLI.invoke(main.cli, ["entitlement", "delete", str(sample_entity.id), "--force"])
@@ -105,7 +132,7 @@ def test_entitlement_delete_with_force(rest_api_mock, sample_entity):
     assert rest_api_mock.delete.call_args[0] == (f"https://test.kx.com/entitlements/v1/entities/{sample_entity.id}",)
 
 
-def test_entitlement_delete_with_positive_confirmation(rest_api_mock, sample_entity):
+def test_entitlement_delete_with_positive_confirmation(rest_api_mock, sample_entity, mock_auth_functions):
     rest_api_mock.delete.return_value = mocks.http_response("", status_code=200)
 
     result = TEST_CLI.invoke(main.cli, ["entitlement", "delete", str(sample_entity.id)], input="y")
@@ -116,7 +143,7 @@ def test_entitlement_delete_with_positive_confirmation(rest_api_mock, sample_ent
     assert rest_api_mock.delete.call_args[0] == (f"https://test.kx.com/entitlements/v1/entities/{sample_entity.id}",)
 
 
-def test_entitlement_delete_with_negative_confirmation(rest_api_mock, sample_entity):
+def test_entitlement_delete_with_negative_confirmation(rest_api_mock, sample_entity, mock_auth_functions):
     rest_api_mock.delete.return_value = mocks.http_response("", status_code=200)
 
     result = TEST_CLI.invoke(main.cli, ["entitlement", "delete", str(sample_entity.id)], input="n")
@@ -126,7 +153,7 @@ def test_entitlement_delete_with_negative_confirmation(rest_api_mock, sample_ent
     assert not rest_api_mock.delete.called
 
 
-def test_entitlement_actors(rest_api_mock, sample_actor):
+def test_entitlement_actors(rest_api_mock, sample_actor, mock_auth_functions):
     r = f"[{sample_actor.json()}]".encode("utf-8")
     rest_api_mock.get.return_value = mocks.http_response("", status_code=200, content=r)
 
@@ -138,7 +165,7 @@ def test_entitlement_actors(rest_api_mock, sample_actor):
     assert rest_api_mock.get.call_args[0] == ("https://test.kx.com/entitlements/v1/actors",)
 
 
-def test_entitlement_create(rest_api_mock, sample_entity):
+def test_entitlement_create(rest_api_mock, sample_entity, mock_auth_functions):
     rest_api_mock.post.return_value = mocks.http_response("", status_code=200)
 
     result = TEST_CLI.invoke(main.cli,
@@ -163,7 +190,7 @@ def test_entitlement_create(rest_api_mock, sample_entity):
     )
 
 
-def test_entitlement_create_with_owner(rest_api_mock, sample_entity):
+def test_entitlement_create_with_owner(rest_api_mock, sample_entity, mock_auth_functions):
     rest_api_mock.post.return_value = mocks.http_response("", status_code=200)
 
     result = TEST_CLI.invoke(main.cli,
@@ -190,7 +217,7 @@ def test_entitlement_create_with_owner(rest_api_mock, sample_entity):
     )
 
 
-def test_entitlement_create_with_owner_and_groups(rest_api_mock, sample_entity):
+def test_entitlement_create_with_owner_and_groups(rest_api_mock, sample_entity, mock_auth_functions):
     rest_api_mock.post.return_value = mocks.http_response("", status_code=200)
 
     result = TEST_CLI.invoke(main.cli,
@@ -218,7 +245,7 @@ def test_entitlement_create_with_owner_and_groups(rest_api_mock, sample_entity):
     )
 
 
-def test_entitlement_update_with_name(rest_api_mock, sample_entity):
+def test_entitlement_update_with_name(rest_api_mock, sample_entity, mock_auth_functions):
     rest_api_mock.patch.return_value = mocks.http_response("", status_code=200)
 
     result = TEST_CLI.invoke(main.cli,
@@ -239,7 +266,7 @@ def test_entitlement_update_with_name(rest_api_mock, sample_entity):
     assert rest_api_mock.patch.call_args[0][1] == expected
 
 
-def test_entitlement_update_with_owner(rest_api_mock, sample_entity):
+def test_entitlement_update_with_owner(rest_api_mock, sample_entity, mock_auth_functions):
     rest_api_mock.patch.return_value = mocks.http_response("", status_code=200)
     owner = uuid.UUID(int=123)
     result = TEST_CLI.invoke(main.cli,
@@ -260,7 +287,7 @@ def test_entitlement_update_with_owner(rest_api_mock, sample_entity):
     assert rest_api_mock.patch.call_args[0][1] == expected
 
 
-def test_entitlement_update_with_groups(rest_api_mock, sample_entity):
+def test_entitlement_update_with_groups(rest_api_mock, sample_entity, mock_auth_functions):
     rest_api_mock.patch.return_value = mocks.http_response("", status_code=200)
     g1 = uuid.UUID(int=123)
     g2 = sample_entity.groups[0]
@@ -283,7 +310,7 @@ def test_entitlement_update_with_groups(rest_api_mock, sample_entity):
     assert rest_api_mock.patch.call_args[0][1] == expected
 
 
-def test_entitlement_add_groups_with_dup(rest_api_mock, sample_entity):
+def test_entitlement_add_groups_with_dup(rest_api_mock, sample_entity, mock_auth_functions):
     g1 = uuid.UUID(int=123)
     g2 = sample_entity.groups[0]
     g3 = sample_entity.groups[1]
@@ -315,7 +342,7 @@ def test_entitlement_add_groups_with_dup(rest_api_mock, sample_entity):
     assert rest_api_mock.patch.call_args[0][1] == expected
 
 
-def test_entitlement_rm_groups_with_extra(rest_api_mock, sample_entity):
+def test_entitlement_rm_groups_with_extra(rest_api_mock, sample_entity, mock_auth_functions):
     r = sample_entity.json().encode("utf-8")
     g1 = sample_entity.groups[0]
     g2 = uuid.UUID(int=123)
