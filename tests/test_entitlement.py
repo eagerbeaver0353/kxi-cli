@@ -86,6 +86,7 @@ def mock_auth_functions(mocker):
     mocker.patch('kxicli.resources.auth.check_cached_token_active', return_none)
     mocker.patch('kxicli.resources.auth.get_serviceaccount_token', return_none)
     os.environ["INSIGHTS_CLIENT_ID"] = "test-client"
+    os.environ["INSIGHTS_CLIENT_SECRET"] = ""
     
 def test_entitlement_list(rest_api_mock, sample_entity, mock_auth_functions):
     r = f"[{sample_entity.json()}]".encode("utf-8")
