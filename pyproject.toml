@@ -26,7 +26,7 @@ dependencies = [
     "dataclasses_json>=0.5.7",
     "semver>=2.13.0",
     "urllib3<2.0.0",
-    "kxi>=1.8.0-rc.2"
+    "kxi>=1.8.0-rc.10"
     ]
 
 

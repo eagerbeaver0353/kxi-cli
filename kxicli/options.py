@@ -1,8 +1,10 @@
+import os
 import click
 import secrets
 import string
 import pyk8s
 import kxicli.common
+from pathlib import Path
 
 from functools import partial
 from kxicli import config
@@ -20,7 +22,8 @@ from kxicli.common import key_install_outputFile, key_chart_repo_name, \
     key_client_cert_secret, key_gui_client_secret, key_operator_client_secret, \
     key_install_filepath, key_assembly_backup_file, \
     key_namespace, key_hostname, key_version, key_operator_version, \
-    key_client_id, key_client_secret, key_admin_username
+    key_client_id, key_client_secret, key_admin_username, key_serviceaccount_id, key_serviceaccount_secret, \
+    key_cache_file, key_auth_client
 from kxicli.common import enter_password
 
 
@@ -74,12 +77,13 @@ def generate_password():
 
 class Option():
     def __init__(self, *click_option_args , config_name=None, fallback=None, force=False, password=False,
-                 prompt_message='', default_before_user_input=False, **click_option_kwargs):
+                 prompt_message='', default_before_user_input=False, envvar = None, **click_option_kwargs):
         self._click_option_args = click_option_args
         self._click_option_kwargs = click_option_kwargs
         self._config_name = config_name
         self._fallback = fallback
         self._force = force
+        self._envvar = envvar
         self._password = password
         self._prompt_message = prompt_message
         self._default_before_user_input = default_before_user_input
@@ -103,6 +107,10 @@ class Option():
     @property
     def force(self):
         return self._force
+
+    @property
+    def envvar(self):
+        return self._envvar
 
     @property
     def password(self):
@@ -174,6 +182,9 @@ class Option():
         if self.force:
             self.click_option_kwargs['default'] = lambda: default_val(self.config_name)
 
+        if self.envvar is not None and self.envvar in os.environ:
+            self.click_option_kwargs['default'] = os.environ[self.envvar]
+
         if not click_option_args:
             click_option_args = self.click_option_args
 
@@ -183,6 +194,11 @@ class Option():
             **self.click_option_kwargs
         )
 
+    def retrieve_value(self):
+        if self.envvar is not None and self.envvar in os.environ:
+            return os.environ[self.envvar]
+        else:
+            return default_val(self.config_name)
 
 
 def get_namespace():
@@ -450,7 +466,9 @@ client_id = Option (
     help = help_text(key_client_id),
     default = lambda: default_val(key_client_id),
     prompt_message = 'Please enter a client id to connect with',
+    hidden=True
 )
+
 
 client_secret = Option (
     '--client-secret',
@@ -458,6 +476,26 @@ client_secret = Option (
     help = help_text(key_client_secret),
     default = lambda: default_val(key_client_secret),
     prompt_message = 'Please enter a client secret to connect with',
+    password = True,
+    hidden=True
+)
+
+serviceaccount_id = Option (
+    '--serviceaccount-id',
+    config_name = key_serviceaccount_id,
+    help = help_text(key_serviceaccount_id),
+    envvar='KXI_SERVICEACCOUNT_ID',
+    default = lambda: default_val(key_serviceaccount_id),
+    prompt_message = 'Please enter a service account id to connect with',
+)
+
+serviceaccount_secret = Option (
+    '--serviceaccount-secret',
+    config_name = key_serviceaccount_secret,
+    help = help_text(key_serviceaccount_secret),
+    envvar='KXI_SERVICEACCOUNT_SECRET',
+    default=lambda: default_val(key_serviceaccount_secret),
+    prompt_message = 'Please enter a service account secret to connect with (input hidden)',
     password = True
 )
 
@@ -529,3 +567,59 @@ operator_chart = Option(
     default=f"{default_val(key_chart_repo_name)}/kxi-operator",
     help = 'Filename of kxi-operator chart',
 )
+
+serviceaccount = Option(
+    '--serviceaccount',
+    is_flag=True,
+    help='Use service account login flow',
+)
+
+cache_file = Option(
+    config_name = key_cache_file,
+    default = lambda: default_val(key_cache_file),
+    help='Location to cache the auth token'
+)
+
+auth_client = Option(
+    config_name = key_auth_client,
+    default = lambda: default_val(key_auth_client),
+    help='Client to authenticate a user with'
+)
+
+def get_serviceaccount_id():
+    ctx = click.get_current_context()
+
+    service_id = ctx.params.get('serviceaccount_id')
+
+    if service_id is None:
+        service_id = serviceaccount_id.retrieve_value()
+
+    if service_id is None:
+        service_id = serviceaccount_id.prompt(ctx.params.get('client_id'))
+
+    return service_id
+
+def get_serviceaccount_secret():
+    ctx = click.get_current_context()
+
+    secret = ctx.params.get('serviceaccount_secret')
+
+    if secret is None:
+        secret = serviceaccount_secret.retrieve_value()
+
+    if secret is None:
+        secret = serviceaccount_secret.prompt(ctx.params.get('client_secret'))
+
+    return secret
+
+def get_hostname():
+    ctx = click.get_current_context()
+    host = ctx.params.get('hostname')
+
+    if host is None:
+        host = default_val('hostname')
+
+    if host is None:
+            host = hostname.prompt(ctx.params.get('hostname'))
+
+    return host

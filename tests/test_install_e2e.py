@@ -346,7 +346,7 @@ def mock_delete_assembly(mocker, k8s):
     k8s.assemblies.read.side_effect = utils.raise_not_found
 
 
-def mock_create_assembly(hostname, client_id, client_secret, realm, namespace, body, use_kubeconfig, wait=None):
+def mock_create_assembly(hostname, realm, namespace, body, *args):
     asm_name = body['metadata']['name']
     print(f'Custom assembly resource {asm_name} created!')
     running_assembly[asm_name] = True
@@ -622,6 +622,8 @@ hostname = https://test.kx.com
 namespace = test
 client.id = client
 client.secret = secret
+auth.serviceaccount.id = test_id
+auth.serviceaccount.secret = test_client_id
 guiClientSecret = aRandomPassword
 operatorClientSecret = aRandomPassword
 

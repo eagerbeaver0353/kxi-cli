@@ -91,6 +91,10 @@ client_id = options.client_id.decorator()
 
 client_secret = options.client_secret.decorator()
 
+serviceaccount_id = options.serviceaccount_id.decorator()
+
+serviceaccount_secret = options.serviceaccount_secret.decorator()
+
 realm = options.realm.decorator()
 
 use_kubeconfig = options.use_kubeconfig.decorator()
@@ -110,6 +114,8 @@ operator_revision = options.operator_revision.decorator()
 operator_history = options.operator_history.decorator()
 
 operator_chart = options.operator_chart.decorator()
+
+serviceaccount = options.serviceaccount.decorator()
 
 chart = partial(
     click.argument, 'chart', default=f"{default_val(key_chart_repo_name)}/insights"

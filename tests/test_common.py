@@ -10,21 +10,17 @@ import time
 from requests.exceptions import HTTPError
 import requests
 import json
-from functools import partial
 
 from kxicli import common
 from kxicli import config
 from kxicli import phrases
 from utils import mock_kube_crd_api, get_crd_body, raise_not_found, raise_conflict, return_none, IPATH_CLICK_PROMPT
-import mocks
+
 config.load_config('default')
 
 test_kube_config = os.path.dirname(__file__) + '/files/test-kube-config'
 
 PASSWORD = 's3cr3t'
-TEST_ACCESS_TOKEN = 'abc1234'
-
-
 PASSWORD_LIST = [
     'test',
     'Test',
@@ -191,39 +187,6 @@ def test_enter_password_prompts_again_if_they_dont_match(mocker, capsys):
     # the captured output should show that the passwords didn't match
     assert PASSWORD == res
     assert phrases.password_no_match in captured.out
-
-
-def test_get_access_token_raises_exception(mocker):
-    mocker.patch('requests.post', partial(
-        mocks.http_response,
-        status_code=404,
-        content=json.dumps({'message': "Unknown", 'detail': {'message': "HTTP Error"}}).encode('utf-8')
-    ))
-    with pytest.raises(Exception) as e:
-        common.get_access_token(hostname='test.kx.com', client_id='1234', client_secret='super-secret', realm='test')
-    assert isinstance(e.value, click.ClickException)
-    assert e.value.message == 'Failed to request access token:  404 None (<Response [404]>)'
-
-def test_get_admin_token_raises_exception(mocker):
-    mocker.patch('requests.post', partial(
-        mocks.http_response,
-        status_code=404,
-        content=json.dumps({'message': "Unknown", 'detail': {'message': "HTTP Error"}}).encode('utf-8')
-    ))
-    with pytest.raises(Exception) as e:
-        common.get_admin_token(hostname='test.kx.com', username='username', password='password')
-    assert isinstance(e.value, click.ClickException)
-    assert e.value.message == 'Failed to request admin access token:  404 None (<Response [404]>)'
-
-def test_get_admin_token_returns_access_token(mocker):
-    mocker.patch('requests.post', partial(
-        mocks.http_response,
-        status_code=200,
-        content=json.dumps({'access_token':TEST_ACCESS_TOKEN}).encode('utf-8')
-    ))
-    r = common.get_admin_token(hostname='test.kx.com', username='username', password='password')
-    assert isinstance(r, str)
-    assert r == TEST_ACCESS_TOKEN
 
 def mocked_json_response(**kwargs):
     sample = {

@@ -6,6 +6,7 @@ from kxicli import options
 from kxicli import common
 from kxicli import phrases
 import utils
+from unittest.mock import patch
 
 # Constants for common import paths
 SYS_STDIN = 'sys.stdin'
@@ -134,6 +135,24 @@ def test_options_namespace_prompt_with_k8s_context(k8s):
     assert options.namespace.prompt('test-namespace-from-command-line') == 'test-namespace-from-command-line'
     # Result retrieved from kube context
     assert options.namespace.prompt('test') == 'test'
+
+@patch.dict(os.environ, {'KXI_SERVICEACCOUNT_ID': 'env_value'})
+def test_retrieve_value_with_envvar(k8s):
+    res = options.serviceaccount_id.retrieve_value()
+    assert res == 'env_value'
+
+@patch.dict(os.environ, {'KXI_SERVICEACCOUNT_ID': 'env_value'})
+def test_retrieve_value_with_envvar_decorator(k8s):
+    assert options.serviceaccount_id.decorator().keywords  == {'help': 'Service account ID to request an access token with', 'default': 'env_value'}
+
+def test_retrieve_value_with_force_decorator(k8s):
+    # Create an instance of Option
+    tester = options.Option(
+    config_name = 'test',
+    force = True,
+    default = 'default',
+    )
+    assert len(tester.decorator().keywords) == 1
 
 
 def test_options_namespace_prompt_non_interactrive_without_k8s_context(mocker, k8s):
@@ -364,3 +383,15 @@ def test_options_namespace_prompt_no_config_tty(k8s, mocker, k8s_namespace):
     assert options.namespace.prompt() == "interactive_value"
     is_interactive_session.assert_called_once()
     interactive_prompt.assert_called_once()
+
+def mock_prompt(client_id):
+    return f'mock_{client_id}'
+
+def get_test_context(params):
+    return click.Context(click.Command('cmd'), obj=params)
+
+
+def test_options_chart_repo_name_decorator():
+    assert options.chart_repo_name.decorator().func == click.option
+    assert options.chart_repo_name.decorator().args == ('--chart-repo-name',)
+    assert options.chart_repo_name.decorator().keywords == {'help': 'Name for chart repository'}
