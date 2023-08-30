@@ -5,7 +5,7 @@ default:
   interruptible: true
 
 include:
-  - template: Security/Secret-Detection.gitlab-ci.yml  
+  - template: Security/Secret-Detection.gitlab-ci.yml
   - project: 'kxdev/shared-tools/ci-templates'
     ref: main
     file:
@@ -13,7 +13,7 @@ include:
       - 'security/security.yaml'
       - 'deploy/record-results.yml'
       - "insights/data-science/common.yaml"
-      - "release/promote-release-version.yaml"      
+      - "release/promote-release-version.yaml"
 
 stages:
   - build
@@ -26,16 +26,10 @@ stages:
   - release
 
 variables:
-  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
-  KX_PIP_EXTRA_INSTALL_URL: "https://${INT_NEXUS_USER_RO}:${INT_NEXUS_PASS_RO}@${INSIGHTS_DEV_NEXUS_URL_NOPREFIX}/repository/kxi/simple"
+  PIP_EXTRA_INDEX_URLS: "https://__token__:$CI_DEVOPS_TOKEN@gitlab.com/api/v4/projects/35913526/packages/pypi/simple"
   PIP_ROOT_USER_ACTION: ignore
   PIP_DISABLE_PIP_VERSION_CHECK: 1
   PYTHONUNBUFFERED: 1
-
-cache:
-  paths:
-    - .cache/pip
-  key: "$CI_JOB_NAME"
 
 .default-rules:
   rules:
@@ -52,10 +46,11 @@ cache:
 build:wheel:
   stage: build
   image: python:3
+  needs: []
   rules:
     - !reference [ .default-rules, rules ]
   before_script:
-    - python3 -m pip config set install.extra-index-url "${KX_PIP_EXTRA_INSTALL_URL}"
+    - !reference [.setup-global-pip-config, before_script]
     - python3 -m pip install --upgrade build
   script:
     - SETUPTOOLS_SCM_DEBUG=1 python3 -m build
@@ -66,10 +61,13 @@ build:wheel:
 .unit-tests:
   stage: test
   image: python:3
+  needs: []
   rules:
     - !reference [ .default-rules, rules ]
   before_script:
-    - python3 -m pip config set install.extra-index-url "${KX_PIP_EXTRA_INSTALL_URL}"
+    - !reference [.setup-global-pip-config, before_script]
+    - python3 -m pip install --upgrade build
+    - SETUPTOOLS_SCM_DEBUG=1 python3 -m build
     - pip install .[dev]
     - pip install dist/*.whl
     - export KUBECONFIG=$(pwd)/tests/files/test-kube-config
@@ -84,12 +82,15 @@ build:wheel:
 
 integration-tests:
   stage: test
+  needs: []
   rules:
     - !reference [ .default-rules, rules ]
   image:
     name: python:3.10
   before_script:
-    - python3 -m pip config set install.extra-index-url "${KX_PIP_EXTRA_INSTALL_URL}"
+    - !reference [.setup-global-pip-config, before_script]
+    - python3 -m pip install --upgrade build
+    - SETUPTOOLS_SCM_DEBUG=1 python3 -m build
     - pip install .[dev]
     - pip install dist/*.whl
     - mkdir -p /root/.insights
@@ -112,7 +113,7 @@ combine-test-metrics:
   image:
     name: python:3.10
   before_script:
-    - python3 -m pip config set install.extra-index-url "${KX_PIP_EXTRA_INSTALL_URL}"
+    - !reference [.setup-global-pip-config, before_script]
     - pip install .[dev]
     - pip install junitparser
   script:
@@ -175,6 +176,9 @@ pytest-kpis-results:
 send-report-to-insights:
   stage: report-results
   extends: .record-results
+  needs:
+    - pytest-kpis-results
+    - pytest-kpis-coverage
   rules:
     - !reference [.default-rules, rules]
   allow_failure: true
@@ -211,6 +215,7 @@ publish package external kxi-pypi-public:
 pages:merge-request:
   image: python:3.8
   stage: docs
+  needs: []
   variables:
     PREVIEW_ROOT: "https://kxdev.gitlab.io/-/kxinsights/kxi-cli"
   environment:
@@ -218,7 +223,7 @@ pages:merge-request:
     url: "$PREVIEW_ROOT/-/jobs/$CI_JOB_ID/artifacts/public/cli/index.html"
     auto_stop_in: 3 days
   before_script:
-    - python3 -m pip config set install.extra-index-url "${KX_PIP_EXTRA_INSTALL_URL}"
+    - !reference [.setup-global-pip-config, before_script]
     - pip install .[doc]
   script:
     - mkdocs build --strict
@@ -239,7 +244,7 @@ pages:
     name: main
     url: "$PREVIEW_ROOT/-/jobs/$CI_JOB_ID/artifacts/public/cli/index.html"
   before_script:
-    - python3 -m pip config set install.extra-index-url "${KX_PIP_EXTRA_INSTALL_URL}"
+    - !reference [.setup-global-pip-config, before_script]
     - pip install .[doc]
   script:
     - mkdocs build --strict
@@ -263,6 +268,7 @@ spell-check:
   stage: test
   extends:
     - .cspell
+  needs: []
   rules:
     - !reference [ .default-rules, rules ]
   script:
@@ -277,6 +283,7 @@ update-release-version:
 
 secret_detection:
   stage: security
+  needs: []
   variables:
     SECRET_DETECTION_HISTORIC_SCAN: "true"
   artifacts:
@@ -286,42 +293,30 @@ secret_detection:
       secret_detection: gl-secret-detection-report.json
 
 snyk-sca-test:
-  extends: .snyk-scan-base
   stage: security
-  image: snyk/snyk:python-3.9
+  extends:
+    - .snyk-dep-scan
+  needs: []
   script:
     - |
-      # Snyk does not support pyproject.toml, this is the workaround they recommend
-      # https://hynek.me/til/pip-tools-and-pyproject-toml/
-
-      python -m pip config set install.extra-index-url "${KX_PIP_EXTRA_INSTALL_URL}"
-      pip install pip-tools
-      python -m piptools compile --extra dev -o requirements.txt pyproject.toml
-      cat requirements.txt
-      pip install -r requirements.txt
-    - |
-      # print all
-      snyk test --file=requirements.txt || true
-      
-      # only fail CI on high or critical
-      snyk test --file=requirements.txt --severity-threshold=high
+      #!/bin/bash
+      set -xe
+      DEBUG=*snyk* snyk test --file=requirements.txt --command=python3 \
+        --severity-threshold=high \
+        --policy-path=${CI_PROJECT_DIR}/.snyk
   rules:
     - !reference [ .default-rules, rules ]
 
 snyk-sca-monitor:
-  extends: .snyk-scan-base
   stage: security
-  image: snyk/snyk:python-3.9
-  variables:
-    KX_PIP_EXTRA_INSTALL_URL: "https://${INT_NEXUS_USER_RO}:${INT_NEXUS_PASS_RO}@${INSIGHTS_DEV_NEXUS_URL_NOPREFIX}/repository/kxi/simple"  
+  extends:
+    - .snyk-dep-scan
+  needs: []
   script:
     - |
-      python -m pip config set install.extra-index-url "${KX_PIP_EXTRA_INSTALL_URL}"
-      pip install pip-tools
-      python -m piptools compile --extra dev -o requirements.txt pyproject.toml
-      cat requirements.txt
-      pip install -r requirements.txt
-    - |
-      snyk monitor --file=requirements.txt --command=python --project-name=${CI_PROJECT_NAME} --target-reference=${CI_COMMIT_REF_NAME}
+      #!/bin/bash
+      set -xe
+      snyk monitor --file=requirements.txt --command=python3 \
+        --project-name=${CI_PROJECT_NAME} --target-reference=${CI_COMMIT_REF_NAME}
   rules:
     - !reference [ .protected-branches-rules, rules ]
