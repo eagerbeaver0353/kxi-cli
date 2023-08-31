@@ -87,36 +87,14 @@ def test_delete_crd_raises_exception_on_other_delete_error(k8s):
         common.delete_crd('test')
 
 
-def test_replace_crd_calls_create_if_not_found(k8s, mocker):
+def test_replace_crd_calls_delete_and_create(k8s, mocker):
     mock = mock_kube_crd_api(k8s, read=return_none)
 
     common.replace_crd('test', get_crd_body('test'))
-    
-    mock.delete.assert_not_called()
+
+    mock.delete.assert_called_once_with('test', wait=True, grace_period_seconds=0, force=True)
     mock.create.assert_called_once_with(get_crd_body('test'))
-    
 
-def test_replace_crd_calls_delete_and_create_if_found(k8s, mocker):
-    mock = mock_kube_crd_api(k8s)
-    mocker.patch.object(pyk8s.models.V1CustomResourceDefinition, "wait_until_not_ready")
-
-    body = get_crd_body('x').to_dict()
-    common.replace_crd('x', body)
-    
-    mock.delete.assert_called_once()
-    assert mock.delete.call_args.kwargs["name"] == "x"
-    mock.create.assert_called_once_with(body)
-    
-
-def test_replace_crd_calls_complete_if_crd_doesnt_exist(k8s, mocker):
-    mock = mock_kube_crd_api(k8s, read=return_none, delete=raise_not_found)
-    mocker.patch.object(pyk8s.models.V1CustomResourceDefinition, "wait_until_not_ready")
-
-    body = get_crd_body('x').to_dict()
-    common.replace_crd('x', body)
-    
-    mock.delete.assert_not_called()
-    mock.create.assert_called_once_with(body)
 
 def test_replace_crd_raises_exception_on_other_delete_error(k8s):
     mock = mock_kube_crd_api(k8s, delete=raise_conflict)
@@ -124,18 +102,27 @@ def test_replace_crd_raises_exception_on_other_delete_error(k8s):
     with pytest.raises(Exception, match=r'Exception when trying to delete CustomResourceDefinition\(test\)'):
         common.replace_crd('test', get_crd_body('test'))
 
+def test_replace_crd_raises_not_found(k8s, mocker):
+    mock = mock_kube_crd_api(k8s, delete=raise_conflict)
+    mocker.patch.object(pyk8s.cl.customresourcedefinitions, "delete",
+                        side_effect=raise_not_found)
+
+    common.replace_crd('test', get_crd_body('test'))
+    mock.delete.assert_called_once_with('test', wait=True, grace_period_seconds=0, force=True)
+    mock.create.assert_called_once_with(get_crd_body('test'))
+
 def test_replace_crd_tries_again_on_crd_existing(k8s, mocker):
     # create waits 10s while waiting for delete to complete
     mock_k8s = mock_kube_crd_api(k8s)
-    mocker.patch.object(pyk8s.models.V1CustomResourceDefinition, "wait_until_not_ready", 
+    mocker.patch.object(pyk8s.cl.customresourcedefinitions, "delete",
                         side_effect=pyk8s.exceptions.EventTimeoutError(last=None))
 
-    with pytest.raises(Exception, match='Timed out waiting for CRD test to be deleted'):
+    with pytest.raises(Exception, match=r'Exception when trying to delete CustomResourceDefinition\(test\)'):
         common.replace_crd('test', get_crd_body('test'))
 
 def test_replace_crd_raises_exception_on_create_error(k8s, mocker):
     mock = mock_kube_crd_api(k8s, create=raise_conflict, read=return_none)
-    mocker.patch.object(pyk8s.models.V1CustomResourceDefinition, "wait_until_not_ready")
+    mocker.patch.object(pyk8s.cl.customresourcedefinitions, "delete")
 
     with pytest.raises(Exception, match=r'Exception when trying to create CustomResourceDefinition\(test\)'):
         common.replace_crd('test', get_crd_body('test'))
@@ -210,7 +197,7 @@ def test_parse_http_exception(mocker):
     e.response._content=json.dumps({ 'error':'ErrorError'}).encode('utf-8')
     res, msg = common.parse_http_exception(e)
     assert msg == "ErrorError"
-    
+
 
 def test_handle_http_exception(mocker):
     e = HTTPError()

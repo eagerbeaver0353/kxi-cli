@@ -173,20 +173,15 @@ def get_existing_crds(names):
 
 def replace_crd(name: str, body):
     click.echo(f'Replacing CRD {name}')
-    crd = pyk8s.cl.customresourcedefinitions.get(name)
-    if crd is not None:
-        try:
-            crd.delete_()
-        except Exception as exception:
-            raise click.ClickException(
-                f"Exception when trying to delete CustomResourceDefinition({name}): {exception}"
-            ) from exception
+    try:
+        pyk8s.cl.customresourcedefinitions.delete(name, wait=True, grace_period_seconds=0, force=True)
+    except pyk8s.exceptions.NotFoundError:
+        pass
+    except Exception as exception:
+        raise click.ClickException(
+            f"Exception when trying to delete CustomResourceDefinition({name}): {exception}"
+        ) from exception
 
-        try:
-            crd.wait_until_not_ready(delete_only=True, timeout=10)
-        except TimeoutError:
-            raise click.ClickException(f"Timed out waiting for CRD {name} to be deleted")
-        
     try:
         return pyk8s.cl.customresourcedefinitions.create(body)
     except Exception as exception:
