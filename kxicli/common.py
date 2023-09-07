@@ -55,7 +55,7 @@ key_admin_username = 'admin.username'
 
 # Help text dictionary for commands
 HELP_TEXT = {
-    key_hostname: 'Hostname of Insights deployment',
+    key_hostname: 'Hostname of kdb Insights deployment',
     key_namespace: 'Kubernetes namespace',
     key_client_id: 'Client ID to request an access token with',
     key_client_secret: 'Client secret to request an access token with',

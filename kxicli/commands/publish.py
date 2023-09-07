@@ -37,7 +37,7 @@ The following use cases are supported:
             Example: type_map={"time": "TIMEDELTA", "realTime": "DATETIME"}
 """)
 def publish(hostname, port, data, table, file_format, type_map):
-    """Publish files through the TP port with QIPC"""
+    """Publish files through the TP port with QIPC to the kdb Insights Database microservice"""
     
     hostname = options.hostname.prompt(hostname, silent=True)
     host = urlparse(hostname).hostname or hostname
