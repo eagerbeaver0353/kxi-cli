@@ -66,7 +66,7 @@ class ProfileAwareGroup(ClickAliasedGroup):
 @click.option('--profile', default='default', help='Name of configuration profile to use.')
 @click.pass_context
 def cli(ctx, debug, profile):
-    """kdb Insights Enterprise CLI"""
+    """kdb Insights CLI"""
     ctx.obj = ctx.obj or {}
     if debug:
         ctx.obj["debug"] = True
