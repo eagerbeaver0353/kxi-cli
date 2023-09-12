@@ -920,6 +920,25 @@ def test_cli_assembly_teardown_with_force_and_wait_k8s_api(k8s, mocker):
 Waiting for assembly to be torn down
 """
 
+def test_cli_assembly_teardown_with_force_and_wait_k8s_api_no_hostname_configured(k8s, mocker):
+    # mock Kubernetes delete API to do nothing and the get api to raise a not found exception
+    # i.e that the deleted assembly no longer exists
+    k8s.assemblies.delete.return_value = {}
+    k8s.assemblies.read.side_effect = raise_not_found
+    mocker.patch(PREFERRED_VERSION_FUNC, return_value=PREFERRED_VERSION)
+    # remove hostname from config
+    common.config.config_file = os.path.dirname(__file__) + '/files/test-cli-config-nohostset'
+    common.config.load_config("default")
+    result = TEST_CLI.invoke(main.cli, ['assembly', 'teardown', '--name', ASM_NAME, '--force', '--wait', '--use-kubeconfig'])
+
+    common.config.config_file = os.path.dirname(__file__) + '/files/test-cli-config'
+    common.config.load_config("default")
+    # restore default hostname to config (required for other tests)
+    assert result.exit_code == 0
+    assert result.output == f"""Tearing down assembly {ASM_NAME}
+Waiting for assembly to be torn down
+"""
+
 
 def test_cli_assembly_list_if_assembly_deployed(mocker, k8s, mock_auth_functions):
     # mock the requests API return TEST_ASSEMBLY
