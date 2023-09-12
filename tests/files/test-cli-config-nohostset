@@ -1,0 +1,7 @@
+[default]
+usage = enterprise
+namespace = test
+client.id = client
+client.secret = secret
+auth.serviceaccount.id = test_id
+auth.serviceaccount.secret = test_client_id

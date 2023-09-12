@@ -615,11 +615,15 @@ def get_serviceaccount_secret():
 def get_hostname():
     ctx = click.get_current_context()
     host = ctx.params.get('hostname')
+    kube_config = ctx.params.get('use_kubeconfig')
 
     if host is None:
         host = default_val('hostname')
 
+    if host is None and kube_config is not None:
+        return None
+
     if host is None:
-            host = hostname.prompt(ctx.params.get('hostname'))
+        host = hostname.prompt(ctx.params.get('hostname'))
 
     return host
