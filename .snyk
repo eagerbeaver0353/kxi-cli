@@ -1,0 +1,5 @@
+ignore:
+  SNYK-PYTHON-MSAL-5904284:
+    - '*':
+        reason: Needed library to have an Identity provider configured in AzureAD ticket KXI-31573
+        expires: 2023-10-20T9:00:0.000Z

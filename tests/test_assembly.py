@@ -319,7 +319,7 @@ def test_format_assembly_status_with_message_and_reason():
 def test_status_with_true_status(mocker, mock_auth_functions):
     with requests_mock.Mocker() as m, get_test_context():
         mock_get_serviceaccount_token(mocker)
-        m.get(f'https://test.kx.com/kxicontroller/assembly/cli/{ASM_NAME}', text=json.dumps(build_assembly_object_kxic(ASM_NAME)))
+        m.get(f'https://test.kx.com/kxicontroller/assembly/cli/{ASM_NAME}', text=json.dumps(build_assembly_object_kxic(ASM_NAME)), headers={"content-type": "application/json"})
         assert assembly._assembly_status(hostname='https://test.kx.com',
             realm='insights',
             name=ASM_NAME,
@@ -338,7 +338,7 @@ def test_status_with_false_status(mocker, mock_auth_functions):
 
     with requests_mock.Mocker() as m, get_test_context():
         mock_get_serviceaccount_token(mocker)
-        m.get(f'https://test.kx.com/kxicontroller/assembly/cli/{ASM_NAME}', text=json.dumps(asm))
+        m.get(f'https://test.kx.com/kxicontroller/assembly/cli/{ASM_NAME}', text=json.dumps(asm), headers={"content-type": "application/json"})
         assert assembly._assembly_status(hostname='https://test.kx.com',
             realm='insights',
             name=ASM_NAME,
@@ -751,7 +751,7 @@ def test_cli_assembly_status_with_false_status(mocker, k8s, mock_auth_functions)
     # mock the kxic API function to return asm above
     with requests_mock.Mocker() as m:
         mock_get_serviceaccount_token(mocker)
-        m.get(f'https://test.kx.com/kxicontroller/assembly/cli/{ASM_NAME}', text=json.dumps(asm))
+        m.get(f'https://test.kx.com/kxicontroller/assembly/cli/{ASM_NAME}', text=json.dumps(asm), headers={"content-type": "application/json"})
         result = TEST_CLI.invoke(main.cli, ['assembly', 'status', '--name', ASM_NAME])
 
     assert result.exit_code == 0
@@ -800,7 +800,7 @@ def test_cli_assembly_status_with_wait_for_ready(mocker, k8s, mock_auth_function
 """
     with requests_mock.Mocker() as m:
         mock_get_serviceaccount_token(mocker)
-        m.get(f'https://test.kx.com/kxicontroller/assembly/cli/{ASM_NAME}', text=json.dumps(build_assembly_object_kxic(ASM_NAME)))
+        m.get(f'https://test.kx.com/kxicontroller/assembly/cli/{ASM_NAME}', text=json.dumps(build_assembly_object_kxic(ASM_NAME)), headers={"content-type": "application/json"})
         result = TEST_CLI.invoke(main.cli, ['assembly', 'status', '--name', ASM_NAME, '--wait-for-ready'])
 
     assert result.exit_code == 0
