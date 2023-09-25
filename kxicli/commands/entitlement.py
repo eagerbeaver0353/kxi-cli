@@ -202,7 +202,7 @@ def delete(
         cache=AuthCache
     )
 
-    if click.confirm('Are you sure you want to delete this entitlement?') or force:
+    if force or click.confirm('Are you sure you want to delete this entitlement?') :
         click.echo(json.dumps(e.delete(id), default=pydantic_encoder))
 
 

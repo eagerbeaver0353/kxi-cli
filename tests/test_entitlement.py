@@ -153,6 +153,17 @@ def test_entitlement_delete_with_negative_confirmation(rest_api_mock, sample_ent
     assert "Are you sure you want to delete this entitlement?" in result.output
     assert not rest_api_mock.delete.called
 
+def test_entitlement_delete_with_force_no_prompt(rest_api_mock, sample_entity, mock_auth_functions):
+    rest_api_mock.delete.return_value = mocks.http_response("", status_code=200)
+
+
+    result = TEST_CLI.invoke(main.cli, ["entitlement", "delete", str(sample_entity.id), "--force"])
+
+    assert result.exit_code == 0
+    # delete should be called and there should be no Y/N prompt for deletion
+    assert result.output == '{}\n'
+    assert rest_api_mock.delete.called
+
 
 def test_entitlement_actors(rest_api_mock, sample_actor, mock_auth_functions):
     r = f"[{sample_actor.json()}]".encode("utf-8")
