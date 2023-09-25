@@ -1502,8 +1502,6 @@ def test_delete_when_insights_and_operator_not_installed(mocker, k8s):
         result = runner.invoke(main.cli, ['install', 'delete','--uninstall-operator'])
         expected_output = f"""
 kdb Insights Enterprise installation not found
-
-kdb Insights Enterprise kxi-operator not found
 """
     assert result.exit_code == 0
     assert result.output == expected_output
@@ -1513,7 +1511,7 @@ kdb Insights Enterprise kxi-operator not found
 
 def test_delete_error_deleting_crds(mocker, k8s):
     mock_subprocess_run(mocker)
-    mock_set_insights_operator_and_crd_installed_state(mocker, False, False, True)
+    mock_set_insights_operator_and_crd_installed_state(mocker, True, False, True)
     utils.mock_kube_crd_api(k8s, delete=utils.raise_not_found)
     mocker.patch(LIST_CLUSTER_ASSEMBLIES_FUNC)
 
@@ -1521,7 +1519,7 @@ def test_delete_error_deleting_crds(mocker, k8s):
     with runner.isolated_filesystem():
         result = runner.invoke(main.cli, ['install', 'delete','--uninstall-operator'])
         expected_output = f"""
-kdb Insights Enterprise installation not found
+kdb Insights Enterprise is deployed. Do you want to uninstall? [y/N]: 
 Deleting CRD assemblies.insights.kx.com
 error=Exception when trying to delete CustomResourceDefinition(assemblies.insights.kx.com): 404
 Reason: None
