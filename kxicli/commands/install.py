@@ -1149,6 +1149,7 @@ def delete_release_operator_and_crds(release, namespace, force, uninstall_operat
 
     if not insights_installed(release, namespace):
         click.echo('\nkdb Insights Enterprise installation not found')
+        return
     elif force or click.confirm('\nkdb Insights Enterprise is deployed. Do you want to uninstall?'):
         assembly.backup_assemblies(namespace, assembly_backup_filepath, force)
         assembly.delete_running_assemblies(namespace, True, True)
