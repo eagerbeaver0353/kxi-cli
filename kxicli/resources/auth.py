@@ -17,7 +17,9 @@ from pathlib import Path
 
 from kxicli import options
 from kxi.util import AutoNameEnum
-from kxi.auth import Authorizer, DefaultDataStore, GrantType
+from kxi.auth import Authorizer, GrantType
+from kxi.auth import CredentialStore
+
 from kxicli import log
 from kxicli.common import sanitize_hostname, handle_http_exception, get_default_val, \
     key_hostname, key_keycloak_realm
@@ -26,7 +28,7 @@ from kxicli.options import get_serviceaccount_secret, get_serviceaccount_id
 token_cache_path = Path.home() / '.insights'
 token_cache_dir = str(token_cache_path)
 token_cache_file = str(token_cache_path / 'credentials')
-
+token_cache_format = "toml"
 
 class TokenType(AutoNameEnum):
     """kdb Insights token type.
@@ -49,9 +51,19 @@ def get_serviceaccount_token(hostname, realm, token_type):
     """Get Keycloak client access token"""
     log.debug('Requesting access token')
     hostname = sanitize_hostname(hostname)
-    auth = Authorizer(host=hostname, realm=realm, grant_type= token_type, cache=AuthCache)
+    
+    store = CredentialStore(name = options.get_profile() ,file_path= token_cache_file, 
+                            file_format= token_cache_format)
+
+    auth = Authorizer(host=hostname, realm=realm,grant_type=token_type,
+                    client_id=options.get_serviceaccount_id(),
+                    client_secret = options.get_serviceaccount_secret(), 
+                    cache=store
+                    )
+
     auth.for_client(hostname, client_id=auth.client_id,
-                    client_secret=auth.client_secret,realm=realm,timeout=None)
+                    client_secret=auth.client_secret,realm=realm,timeout=None,
+                    cache=store)
     return auth.token
 
 
@@ -81,7 +93,12 @@ def get_admin_token(hostname, username, password):
 
 def user_login(hostname, realm, redirect_host, redirect_port) -> str:
     log.debug('Requesting user access token')
-    auth = Authorizer(host=hostname, realm=realm, cache=AuthCache)
+    store = CredentialStore(name = options.get_profile() ,file_path= token_cache_file, 
+                            file_format= token_cache_format)
+
+    auth = Authorizer(host=hostname, realm=realm,grant_type=TokenType.USER,
+                    client_id=options.auth_client.retrieve_value(),cache=store
+                    )
     token = auth.fetch_user_token(redirect_host=redirect_host,
                                   redirect_port=redirect_port
                                   )
@@ -108,21 +125,10 @@ def write_to_cache(
     token_type: TokenType,
     cache_file: str = token_cache_file
 ):
-    profile, config = load_file(cache_file)
-    token = json.dumps(oauth_token_data)
-    config[profile]['token'] = token
-    config[profile]['type'] = token_type.value
-    with open(cache_file, 'w+') as f:
-        config.write(f)
-
-
-def read_from_cache(
-    cache_file: str = token_cache_file
-) -> Tuple[str, TokenType | None]:
-    profile, config = load_file(cache_file)
-    token = config[profile].get('token', None)
-    token_type = config[profile].get('type')
-    return token, TokenType(token_type) if token_type is not None else None
+    store = CredentialStore(name = options.get_profile() ,file_path= cache_file, 
+                    file_format= token_cache_format)
+    store.set(grant_type=token_type)
+    store.set_token(oauth_token_data)
 
 
 def cleanup_cache():
@@ -154,15 +160,22 @@ def retrieve_token(hostname: str,
 
 
 def check_cached_token_active(cache_file: str = token_cache_file) -> Tuple[str, TokenType, bool]:
-    token, token_type = read_from_cache(cache_file)
-    if token is None or len(token) == 0:
-        return token, token_type, False
-    decoded_token = json.loads(token)
-    if 'refresh_token' in decoded_token:
-        refresh_token_expires_at = decoded_token['expires_at'] + (decoded_token['refresh_expires_in'] - decoded_token['expires_in'])
+    store = CredentialStore(name = options.get_profile() ,file_path= cache_file, 
+                        file_format= token_cache_format)
+    token_dict = store.get_token()
+
+    if token_dict is None:
+        return None, None, False
+
+    if 'refresh_token' in token_dict:
+        refresh_token_expires_at = token_dict['expires_at'] + \
+            (token_dict['refresh_expires_in'] - token_dict['expires_in'])
+        token_type = TokenType.USER
     else:
-        refresh_token_expires_at = decoded_token['expires_at']
-    return decoded_token, token_type, int(refresh_token_expires_at) > time.time()
+        refresh_token_expires_at = token_dict['expires_at']
+        token_type = TokenType.SERVICEACCOUNT
+
+    return token_dict, token_type,  int(refresh_token_expires_at) > time.time()
 
 def get_token(hostname: str = get_default_val(key_hostname),
     realm: str = get_default_val(key_keycloak_realm),
@@ -208,80 +221,3 @@ def determine_token_type(
 
     # if there's no existing token and no service account credentials, prompt to auth (kxi auth login)
     return TokenType.USER
-
-
-
-class AuthCache(DefaultDataStore):
-
-    @staticmethod
-    def cache_file():
-        return options.cache_file.retrieve_value()
-
-    @staticmethod
-    def auth_client():
-        return options.auth_client.retrieve_value()
-
-    @classmethod
-    def load_client_id(cls, host: furl) -> Optional[str]:
-        """Get a stored serviceaccount_id."""
-        if cls.load_grant_type(None) == TokenType.USER:
-            return cls.auth_client()
-        else:
-            return get_serviceaccount_id()
-
-    @classmethod
-    def load_client_secret(cls, host: furl) -> Optional[str]:
-        """Get a stored serviceaccount_secret."""
-        return get_serviceaccount_secret()
-
-    @classmethod
-    def load_token_dict(cls, host: furl, username: str) -> Optional[dict]:
-        """Get a stored token_dict."""
-        return cls.check_cached_token()
-
-    @classmethod
-    def save_token_dict(cls, value: Optional[dict], host: furl, username: str) -> None:
-        """Save the token_dict."""
-        cls._save_token(value)
-        return cls.set("token_dict", value, host, username=username)
-
-    @classmethod
-    def load_grant_type(cls, host: furl) -> Optional[GrantType]:
-        """Get a stored grant_type."""
-        return cls._grant_type()
-
-    @classmethod
-    def _grant_type(cls):
-        cache_file = cls.cache_file()
-        _ , grant_type = read_from_cache(cache_file)
-        ctx = click.get_current_context()
-        redirect_host = ctx.params.get('redirect_host')
-        serviceaccount = ctx.params.get('serviceaccount')
-        if grant_type is None:
-            grant_type = TokenType.SERVICEACCOUNT if serviceaccount else TokenType.USER
-
-        if serviceaccount == True:
-            grant_type = TokenType.SERVICEACCOUNT
-        elif redirect_host is not None and serviceaccount == False:
-            grant_type = TokenType.USER
-
-        return grant_type
-
-    @classmethod
-    def _save_token(cls, token: dict, *args, **kwargs):
-        # run the logic to save in ~/.insights/credentials
-        cache_file = cls.cache_file()
-        token_type = cls.load_grant_type(None)
-        if cache_file is None:
-            cache_file = token_cache_file
-
-        write_to_cache(token, token_type, cache_file)
-
-    @classmethod
-    def check_cached_token(cls):
-        token, _, active = check_cached_token_active(cls.cache_file())
-        if active:
-            return token
-        else:
-            click.echo('\nAuthenticating with kdb Insights Enterprise\n')
-            return None

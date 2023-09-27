@@ -59,6 +59,7 @@
     "pydantic",
     "tracebacks",
     "excepthook",
-    "Reauthenticating"
+    "Reauthenticating",
+    "credentialstore"
   ]
 }

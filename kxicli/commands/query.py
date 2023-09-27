@@ -6,9 +6,10 @@ from kxi import DeploymentType
 from kxicli import common, options
 from kxicli.commands.common import arg
 from kxicli.cli_group import cli
-from kxicli.resources.auth import AuthCache, TokenType
+from kxicli.resources.auth import TokenType
 from kxi.rest import ApiClient
 from kxicli.resources import auth as auth_lib
+from kxi.auth import CredentialStore
 
 @cli.command(usage=[DeploymentType.MICROSERVICES, DeploymentType.ENTERPRISE])
 @arg.hostname()
@@ -34,7 +35,8 @@ from kxicli.resources import auth as auth_lib
 def query(hostname, usage, client_id, client_secret, sql, output_format, output_file, realm):
     """Execute a SQL query and print results to console/file"""
     hostname = options.hostname.prompt(hostname, silent=True)
-    conn = Query(hostname, usage=usage.upper(), realm=realm, cache=AuthCache)
+    conn = get_query_object(hostname, realm, usage.upper())
+
     df = conn.sql(sql).pd()
     
     target = sys.stdout
@@ -49,3 +51,18 @@ def query(hostname, usage, client_id, client_secret, sql, output_format, output_
         df.to_json(target, orient="records", lines=True)
     else:
         df.to_string(target, index=False)
+
+def get_query_object(hostname, realm, usage):
+
+    store = CredentialStore(name = options.get_profile(), file_path= common.token_cache_file, 
+                            file_format= common.token_cache_format)
+
+    grant_type = store.get('grant_type', default=TokenType.SERVICEACCOUNT)
+    client_id = options.get_serviceaccount_id()
+    
+    if grant_type == TokenType.USER:
+        client_id = store.get('client_id')
+        
+    return Query(hostname, usage=usage, realm=realm, 
+                    client_id=client_id, grant_type=grant_type,
+                    client_secret = options.get_serviceaccount_secret(), cache=store)

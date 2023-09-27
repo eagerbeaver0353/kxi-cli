@@ -12,7 +12,8 @@ from kxi.entitlement import EntitlementService, EntityType
 from kxicli import options, common, log
 from kxicli.commands.common import arg
 from kxicli.cli_group import ProfileAwareGroup, cli
-from kxicli.resources.auth import AuthCache
+from kxi.auth import CredentialStore
+from kxicli.resources.auth import TokenType
 
 api_client_params = arg.combine_decorators(
     arg.hostname(),
@@ -82,12 +83,7 @@ def list(
     timeout
 ):
     """List entitlements"""
-    e = EntitlementService(
-        host=_ensure_host(hostname),
-        realm=realm,
-        timeout=timeout,
-        cache=AuthCache
-    )
+    e = get_credentialstore_object(hostname , realm , timeout)
 
     click.echo(json.dumps(e.list(), default=pydantic_encoder))
 
@@ -103,12 +99,7 @@ def actors(
 
     Actors are the list of groups that can be assigned to an entity.
     """
-    e = EntitlementService(
-        host=_ensure_host(hostname),
-        realm=realm,
-        timeout=timeout,
-        cache=AuthCache
-    )
+    e = get_credentialstore_object(hostname , realm , timeout)
 
     click.echo(json.dumps(e.actors(), default=pydantic_encoder))
 
@@ -140,12 +131,7 @@ def create(
 
     --owner and --groups are optional, if not provided these will be defaulted to 00000000-0000-0000-0000-000000000000 and [] respectively.
     """
-    e = EntitlementService(
-        host=_ensure_host(hostname),
-        realm=realm,
-        timeout=timeout,
-        cache=AuthCache
-    )
+    e = get_credentialstore_object(hostname , realm , timeout)
 
     click.echo(e.create(id, name, type, owner, _parse_groups(groups)))
 
@@ -169,12 +155,7 @@ def update(
 
     This updates the name, owner and groups of an entitlement based on the options passed.
     """
-    e = EntitlementService(
-        host=_ensure_host(hostname),
-        realm=realm,
-        timeout=timeout,
-        cache=AuthCache
-    )
+    e = get_credentialstore_object(hostname , realm , timeout)
 
     click.echo(e.update(id, name, owner=owner, groups=_parse_groups(groups)))
 
@@ -195,12 +176,7 @@ def delete(
     This deletes an entitlement pending user confirmation.
     Use --force to skip user confirmation.
     """
-    e = EntitlementService(
-        host=_ensure_host(hostname),
-        realm=realm,
-        timeout=timeout,
-        cache=AuthCache
-    )
+    e = get_credentialstore_object(hostname , realm , timeout)
 
     if force or click.confirm('Are you sure you want to delete this entitlement?') :
         click.echo(json.dumps(e.delete(id), default=pydantic_encoder))
@@ -216,12 +192,7 @@ def get(
     timeout
 ):
     """Get an entitlement"""
-    e = EntitlementService(
-        host=_ensure_host(hostname),
-        realm=realm,
-        timeout=timeout,
-        cache=AuthCache
-    )
+    e = get_credentialstore_object(hostname , realm , timeout)
 
     click.echo(json.dumps(e.get(id), default=pydantic_encoder))
 
@@ -242,12 +213,7 @@ def add_groups(
     ID is the id of the the entity to add the groups to.
     GROUPS is a comma separated list of group IDs to add.
     """
-    e = EntitlementService(
-        host=_ensure_host(hostname),
-        realm=realm,
-        timeout=timeout,
-        cache=AuthCache
-    )
+    e = get_credentialstore_object(hostname , realm , timeout)
 
     # get entity
     entity = e.get(id)
@@ -280,12 +246,7 @@ def rm_groups(
     ID is the id of the the entity to remove the groups from.
     GROUPS is a comma separated list of group IDs to remove.
     """
-    e = EntitlementService(
-        host=_ensure_host(hostname),
-        realm=realm,
-        timeout=timeout,
-        cache=AuthCache
-    )
+    e = get_credentialstore_object(hostname , realm , timeout)
 
     # get entity
     entity = e.get(id)
@@ -297,3 +258,23 @@ def rm_groups(
 
     # update entity
     click.echo(json.dumps(e.update(id, groups=new_groups), default=pydantic_encoder))
+
+def get_credentialstore_object(hostname, realm, timeout):
+    store = CredentialStore(name = options.get_profile(), file_path= common.token_cache_file, 
+                            file_format= common.token_cache_format)
+    
+    grant_type = store.get('grant_type', default=TokenType.SERVICEACCOUNT)
+    client_id = options.get_serviceaccount_id()
+    
+    if grant_type == TokenType.USER:
+        client_id = store.get('client_id')
+
+    return EntitlementService(
+        host=_ensure_host(hostname),
+        realm=realm,
+        timeout=timeout,
+        client_id=client_id, 
+        grant_type=grant_type,
+        client_secret = options.get_serviceaccount_secret(), 
+        cache=store
+    )

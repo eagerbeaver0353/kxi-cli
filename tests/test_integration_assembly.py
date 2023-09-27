@@ -7,7 +7,6 @@ from unittest.mock import MagicMock
 import click
 from click.testing import CliRunner
 import requests
-from kxicli.resources.auth import AuthCache
 from kxi.auth import Authorizer
 import pytest
 from kxicli import main, common

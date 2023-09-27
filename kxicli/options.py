@@ -627,3 +627,9 @@ def get_hostname():
         host = hostname.prompt(ctx.params.get('hostname'))
 
     return host
+
+def get_profile():
+    ctx = click.get_current_context()
+    profile = ctx.find_root().obj.get('kxi_cli_profile', 'default')
+
+    return profile

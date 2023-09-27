@@ -1,4 +1,6 @@
+import os
 import time
+import click
 import pytest
 import datetime
 import pandas as pd
@@ -11,7 +13,9 @@ from kxi.auth import Authorizer
 from utils import return_none
 from kxicli.commands.query import query
 from click.testing import CliRunner
-from kxicli.resources.auth import AuthCache
+from kxicli import common
+from kxi.auth import CredentialStore
+from kxicli.resources.auth import TokenType
 
 
 @pytest.fixture()
@@ -23,6 +27,10 @@ def query_mock(mocker: MockerFixture):
 def table_pd_mock(mocker: MockerFixture):
     return mocker.patch("kxicli.commands.query.Query.Table.pd")
 
+test_cli_config = os.path.dirname(__file__) + '/files/test-cli-config'
+
+common.config.config_file = os.path.dirname(__file__) + '/files/test-cli-config'
+common.config.load_config("default")
 
 # Constants
 HOSTNAME = "http://hostname:8082"
@@ -32,8 +40,8 @@ USER = "user"
 PASSWORD = "password"
 SQL = "select * from trade"
 OUTPUT_FORMAT = "tabular"
-CLIENT_ID = "client_id"
-CLIENT_SECRET = "client_secret"
+CLIENT_ID = "test_id"
+CLIENT_SECRET = "test_client_id"
 
 TEST_FILE_SCHEME = [
     {"name": "time", "type": "timedelta"},
@@ -57,7 +65,7 @@ TEST_SERVICE_ACCOUNT_TOKEN = {
 def mock_auth_functions(mocker):
     mocker.patch.object(Authorizer, 'fetch_token', return_value=MagicMock(access_token=TEST_SERVICE_ACCOUNT_TOKEN))
     mocker.patch.object(Authorizer, 'token', return_value=TEST_SERVICE_ACCOUNT_TOKEN)
-    mocker.patch.object(Authorizer, 'check_cached_token', return_value=TEST_SERVICE_ACCOUNT_TOKEN)
+    mocker.patch.object(Authorizer, '_check_cached_token', return_value=TEST_SERVICE_ACCOUNT_TOKEN)
     
     mocker.patch('kxicli.resources.auth.get_serviceaccount_token', return_none)
     
@@ -85,58 +93,69 @@ def generate_test_data(number_of_rows, cols):
 TEST_CLI = CliRunner()
 test_data = generate_test_data(10, TEST_FILE_SCHEME)
 
+def get_test_context():
+    return click.Context(click.Command('cmd'), obj={'profile': 'default'})
 
 def test_query_calls_kxi_query(query_mock, mock_auth_functions):
     query_sql_mock = query_mock.sql.return_value
-
-    result = TEST_CLI.invoke(main.cli, ['query',
-                             '--hostname', HOSTNAME,
-                             '--usage', USAGE_MICROSERVICES,
-                             '--sql', SQL,
-                             '--output-format', OUTPUT_FORMAT
-    ])
+    ctx = get_test_context()
+    with ctx:
+        result = TEST_CLI.invoke(main.cli, ['query',
+                                '--hostname', HOSTNAME,
+                                '--usage', USAGE_MICROSERVICES,
+                                '--sql', SQL,
+                                '--output-format', OUTPUT_FORMAT
+        ])
 
     assert result.exit_code == 0
     query_mock.assert_has_calls([
-        call( HOSTNAME, usage=USAGE_MICROSERVICES.upper(), realm='insights', cache=AuthCache),
+        call( HOSTNAME, usage=USAGE_MICROSERVICES.upper(), realm='insights',
+             cache = query_mock.call_args[1]['cache'], client_id = CLIENT_ID,
+             client_secret = CLIENT_SECRET, grant_type = TokenType.SERVICEACCOUNT),
         call().sql(SQL)
     ])
     
 def test_query_calls_kxi_query_enterprise(query_mock, mock_auth_functions):
     query_sql_mock = query_mock.sql.return_value
-
-    result = TEST_CLI.invoke(main.cli, ['query',
-                             '--hostname', HOSTNAME,
-                             '--usage', DeploymentType.ENTERPRISE,
-                             '--sql', SQL,
-                             '--output-format', OUTPUT_FORMAT,
-                             '--client-id', CLIENT_ID,
-                             '--client-secret', CLIENT_SECRET
-    ])
+    ctx = get_test_context()
+    with ctx:
+        result = TEST_CLI.invoke(main.cli, ['query',
+                                '--hostname', HOSTNAME,
+                                '--usage', DeploymentType.ENTERPRISE,
+                                '--sql', SQL,
+                                '--output-format', OUTPUT_FORMAT,
+                                '--client-id', CLIENT_ID,
+                                '--client-secret', CLIENT_SECRET
+        ])
 
     assert result.exit_code == 0
 
     query_mock.assert_has_calls([
-        call( HOSTNAME, usage='ENTERPRISE', realm='insights', cache=AuthCache),
+        call( HOSTNAME, usage='ENTERPRISE', realm='insights',
+             cache = query_mock.call_args[1]['cache'], client_id = CLIENT_ID,
+             client_secret = CLIENT_SECRET, grant_type = TokenType.SERVICEACCOUNT),
         call().sql(SQL)
     ])    
 
 def test_query_results_tabular(query_mock, table_pd_mock):    
     query_mock.return_value.sql.return_value.pd.return_value = test_data
-    
-    result = TEST_CLI.invoke(main.cli, ['query',
-                             '--hostname', HOSTNAME,
-                             '--usage', USAGE_MICROSERVICES,
-                             '--sql', SQL,
-                             '--output-format', "tabular",
-                             '--client-id', CLIENT_ID,
-                             '--client-secret', CLIENT_SECRET
-    ])
+    ctx = get_test_context()
+    with ctx:
+        result = TEST_CLI.invoke(main.cli, ['query',
+                                '--hostname', HOSTNAME,
+                                '--usage', USAGE_MICROSERVICES,
+                                '--sql', SQL,
+                                '--output-format', "tabular",
+                                '--client-id', CLIENT_ID,
+                                '--client-secret', CLIENT_SECRET
+        ])
 
     assert result.exit_code == 0
 
     query_mock.assert_has_calls([
-        call( HOSTNAME, usage=USAGE_MICROSERVICES.upper(), realm='insights', cache=AuthCache),
+        call( HOSTNAME, usage=USAGE_MICROSERVICES.upper(), realm='insights',
+             cache = query_mock.call_args[1]['cache'], client_id = CLIENT_ID,
+             client_secret = CLIENT_SECRET, grant_type = TokenType.SERVICEACCOUNT),
         call().sql(SQL)
     ])
     
@@ -145,20 +164,23 @@ def test_query_results_tabular(query_mock, table_pd_mock):
 def test_query_results_csv(query_mock, table_pd_mock, mock_auth_functions):
     test_data = generate_test_data(1, TEST_FILE_SCHEME)
     query_mock.return_value.sql.return_value.pd.return_value = test_data
-    
-    result = TEST_CLI.invoke(main.cli, ['query',
-                             '--hostname', HOSTNAME,
-                             '--usage', USAGE_MICROSERVICES,
-                             '--sql', SQL,
-                             '--output-format', "csv",
-                             '--client-id', CLIENT_ID,
-                             '--client-secret', CLIENT_SECRET
-    ])
+    ctx = get_test_context()
+    with ctx:
+        result = TEST_CLI.invoke(main.cli, ['query',
+                                '--hostname', HOSTNAME,
+                                '--usage', USAGE_MICROSERVICES,
+                                '--sql', SQL,
+                                '--output-format', "csv",
+                                '--client-id', CLIENT_ID,
+                                '--client-secret', CLIENT_SECRET
+        ])
 
     assert result.exit_code == 0
 
     query_mock.assert_has_calls([
-        call( HOSTNAME, usage=USAGE_MICROSERVICES.upper(), realm='insights', cache=AuthCache),
+        call( HOSTNAME, usage=USAGE_MICROSERVICES.upper(), realm='insights',
+             cache = query_mock.call_args[1]['cache'], client_id = CLIENT_ID,
+             client_secret = CLIENT_SECRET, grant_type = TokenType.SERVICEACCOUNT),
         call().sql(SQL)
     ])
     
@@ -167,20 +189,23 @@ def test_query_results_csv(query_mock, table_pd_mock, mock_auth_functions):
 def test_query_results_json(query_mock, table_pd_mock, mock_auth_functions):
     test_data = generate_test_data(1, TEST_FILE_SCHEME)
     query_mock.return_value.sql.return_value.pd.return_value = test_data
-    
-    result = TEST_CLI.invoke(main.cli, ['query',
-                             '--hostname', HOSTNAME,
-                             '--usage', USAGE_MICROSERVICES,
-                             '--sql', SQL,
-                             '--output-format', "json",
-                             '--client-id', CLIENT_ID,
-                             '--client-secret', CLIENT_SECRET
-    ])
+    ctx = get_test_context()
+    with ctx:
+        result = TEST_CLI.invoke(main.cli, ['query',
+                                '--hostname', HOSTNAME,
+                                '--usage', USAGE_MICROSERVICES,
+                                '--sql', SQL,
+                                '--output-format', "json",
+                                '--client-id', CLIENT_ID,
+                                '--client-secret', CLIENT_SECRET
+        ])
 
     assert result.exit_code == 0
 
     query_mock.assert_has_calls([
-        call( HOSTNAME, usage=USAGE_MICROSERVICES.upper(), realm='insights', cache=AuthCache),
+        call( HOSTNAME, usage=USAGE_MICROSERVICES.upper(), realm='insights',
+             cache = query_mock.call_args[1]['cache'], client_id = CLIENT_ID,
+             client_secret = CLIENT_SECRET, grant_type = TokenType.SERVICEACCOUNT),
         call().sql(SQL)
     ])
     
@@ -189,20 +214,23 @@ def test_query_results_json(query_mock, table_pd_mock, mock_auth_functions):
 def test_query_results_json_records(query_mock, table_pd_mock, mock_auth_functions):
     test_data = generate_test_data(1, TEST_FILE_SCHEME)
     query_mock.return_value.sql.return_value.pd.return_value = test_data
-    
-    result = TEST_CLI.invoke(main.cli, ['query',
-                             '--hostname', HOSTNAME,
-                             '--usage', USAGE_MICROSERVICES,
-                             '--sql', SQL,
-                             '--output-format', "json_records",
-                             '--client-id', CLIENT_ID,
-                             '--client-secret', CLIENT_SECRET
-    ])
+    ctx = get_test_context()
+    with ctx:
+        result = TEST_CLI.invoke(main.cli, ['query',
+                                '--hostname', HOSTNAME,
+                                '--usage', USAGE_MICROSERVICES,
+                                '--sql', SQL,
+                                '--output-format', "json_records",
+                                '--client-id', CLIENT_ID,
+                                '--client-secret', CLIENT_SECRET
+        ])
 
     assert result.exit_code == 0
 
     query_mock.assert_has_calls([
-        call( HOSTNAME, usage=USAGE_MICROSERVICES.upper(), realm='insights', cache=AuthCache),
+        call( HOSTNAME, usage=USAGE_MICROSERVICES.upper(), realm='insights',
+             cache = query_mock.call_args[1]['cache'], client_id = CLIENT_ID,
+             client_secret = CLIENT_SECRET, grant_type = TokenType.SERVICEACCOUNT),
         call().sql(SQL)
     ])
     

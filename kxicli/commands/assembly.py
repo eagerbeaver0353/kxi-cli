@@ -26,7 +26,8 @@ from kxicli.options import namespace as options_namespace, assembly_backup_filep
      realm as options_realm
 from kxicli.resources import auth
 
-from kxicli.resources.auth import AuthCache, TokenType
+from kxicli.resources.auth import TokenType
+from kxi.auth import CredentialStore
 from kxi.controller.assembly import AssemblyApi as Assembly
 
 API_GROUP = 'insights.kx.com'
@@ -85,7 +86,7 @@ def _assembly_status(namespace=None, name=None, hostname=None, realm=None, use_k
         if len(assembly_status) and 'AssemblyReady' in assembly_status:
             assembly_ready = assembly_status['AssemblyReady']['status'] == 'True'
     else:
-        assembly = Assembly(hostname, realm=realm, cache=AuthCache)
+        assembly = get_assembly_object(hostname, realm=realm)
         assembly_status = assembly.status(name=name)
         if len(assembly_status) and 'ready' in assembly_status:
             assembly_ready = assembly_status['ready']
@@ -107,7 +108,7 @@ def _list_assemblies(hostname=None, realm=None, namespace=None, use_kubeconfig=F
         res = get_assemblies_list(namespace)
         asm_list = format_assemblies_list_k8s(res)
     else:
-        assembly = Assembly(hostname, realm=realm, cache=AuthCache)
+        assembly = get_assembly_object(hostname, realm=realm)
         res = assembly.list()
         asm_list = _format_assemblies_list_kxic(res)
 
@@ -268,7 +269,7 @@ def _create_assembly(hostname, realm, namespace, body, use_kubeconfig, wait=None
         namespace = options_namespace.prompt(namespace)
         _create_assembly_k8s(namespace, body)
     else:
-        assembly = Assembly(hostname, realm=realm, cache=AuthCache)
+        assembly = get_assembly_object(hostname, realm=realm)
         assembly.deploy(body)
 
     if wait:
@@ -307,12 +308,11 @@ def _delete_assembly(namespace=None, name=None, wait=None, force=False, hostname
     if not force and not click.confirm(f'Are you sure you want to teardown {name}'):
         click.echo(f'Not tearing down assembly {name}')
         return False
-
     if use_kubeconfig:
         namespace = options_namespace.prompt(namespace)
         asm_delete_success = _delete_assembly_k8s_api(namespace, name)
     else:
-        assembly = Assembly(hostname, realm=realm, cache=AuthCache)
+        assembly = get_assembly_object(hostname, realm=realm)
         asm_delete_success = assembly.teardown(name=name)
 
     if not asm_delete_success:
@@ -425,7 +425,6 @@ def status(namespace, name, wait, hostname, client_id, client_secret, realm, use
 @arg.use_kubeconfig()
 def list(hostname, realm, client_id, client_secret, namespace, use_kubeconfig):
     """List assemblies"""
-
     host = options.get_hostname()
     if _list_assemblies(host, realm, namespace, use_kubeconfig):
         sys.exit(0)
@@ -454,3 +453,18 @@ def get_preferred_api_version(group_name):
         return pyk8s.cl.assemblies.api_version
     except Exception:
         raise click.ClickException(f'Could not find preferred API version for group {group_name}')
+
+
+
+def get_assembly_object(hostname, realm):
+    store = CredentialStore(name = options.get_profile(), file_path= common.token_cache_file, 
+                            file_format= common.token_cache_format)
+
+    grant_type = store.get('grant_type', default=TokenType.SERVICEACCOUNT)
+    client_id = options.get_serviceaccount_id()
+    
+    if grant_type == TokenType.USER:
+        client_id = store.get('client_id')
+
+    return  Assembly(hostname, realm=realm, client_id=client_id, grant_type=grant_type,
+                        client_secret = options.get_serviceaccount_secret(), cache=store)

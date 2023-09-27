@@ -1,6 +1,6 @@
 [default]
 hostname = https://insights-main.aws-stable.kxi-dev.kx.com
 realm = insights
-client.id = test-publisher
-client.secret = special-secret
+auth.serviceaccount.id = test-publisher
+auth.serviceaccount.secret = special-secret
 admin.username = user
