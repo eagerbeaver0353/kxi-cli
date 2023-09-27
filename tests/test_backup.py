@@ -85,6 +85,81 @@ def test_init(mocker: MockerFixture, k8s: MagicMock):
     assert result.exit_code == 0
 
 
+def test_set_backup(mocker: MockerFixture, k8s: MagicMock):
+    # Given an RWO and an RWM pvc
+    rwo = pyk8s.models.V1PersistentVolumeClaim.parse_obj({
+                'apiVersion': 'v1',
+                'kind': 'PersistentVolumeClaim',
+                'metadata': {
+                    'name': 'weatherdb-hdb',
+                    'namespace': 'test-namespace',
+                },
+                'spec': {
+                    'accessModes': [
+                        'ReadWriteOnce'
+                        ]
+                },
+                'status': {
+                    'accessModes': [
+                        'ReadWriteOnce'
+                        ]
+                }
+            })
+
+    rwm = pyk8s.models.V1PersistentVolumeClaim.parse_obj({
+                'apiVersion': 'v1',
+                'kind': 'PersistentVolumeClaim',
+                'metadata': {
+                    'name': 'weatherdb-hdb',
+                    'namespace': 'test-namespace',
+                },
+                'spec': {
+                    'accessModes': [
+                        'ReadWriteMany'
+                        ]
+                },
+                'status': {
+                    'accessModes': [
+                        'ReadWriteMany'
+                        ]
+                }
+            })
+
+    # When K8s returns an rwo and an rwm volume
+    k8s.persistentvolumeclaims.get.return_value = [
+        rwo, rwm
+    ]
+    
+    # Given the K8s API accepts the patch
+    pyk8s.cl.get_api().patch.side_effect = lambda *args, **kwargs: kwargs["body"]
+    
+    runner = CliRunner()
+    result = runner.invoke(
+        typing.cast(BaseCommand, main.cli),
+        args=[
+            'backup',
+            'set-backup',
+            '--backup-name', 'test_backup_name',
+            '--azure-blob-name', 'test_blob_name'
+        ],
+        env=default_env
+    )
+    
+    # THEN Assert patch was only called once
+    pyk8s.cl.get_api().patch.assert_called_once()
+    
+    # The RWO volume is patched to have this annotation
+    assert rwo.metadata.annotations["k8up.io/backup"] == "false"
+    pyk8s.cl.get_api().patch.assert_called_once_with(name="weatherdb-hdb", body=rwo)
+    
+    # Then the RWM volume is not patched
+    assert len(rwm.metadata.annotations) == 0
+    
+    # And the Backup CRD was called
+    pyk8s.cl.get_api(kind="Backup").create.assert_called_once()
+    
+    assert result.exit_code == 0
+
 class MockHTTPResponse(HTTPResponse):
     def __init__(
             self, body, headers=None, status=0, version=0, reason=None, strict=0, preload_content=True,
