@@ -59,6 +59,8 @@
     "pydantic",
     "tracebacks",
     "excepthook",
+    "pvcs",
+    "persistentvolumeclaims",
     "Reauthenticating",
     "credentialstore"
   ]

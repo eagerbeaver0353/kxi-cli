@@ -134,6 +134,8 @@ def set_backup(backup_name, azure_blob_name, namespace):
 
     click.secho('Configure and start a backup', bold=True)
 
+    _annotate_rwo_pvcs(namespace)
+
     _create_backup(backup_name, azure_blob_name, namespace)
 
 
@@ -175,6 +177,15 @@ def _create_backup(backup_name, azure_blob_name, namespace):
             f'K8up Backup CRD creation done: {crd_creation_response.metadata.name}')
     except Exception as e:
         raise ClickException(f'CRD creation failed: {e}\n')
+    
+    
+def _annotate_rwo_pvcs(namespace):
+    click.echo("Annotating RWO PVCs")
+    pvcs = [pvc for pvc in pyk8s.cl.persistentvolumeclaims.get(namespace=namespace) if "ReadWriteOnce" in pvc.status.accessModes]
+    for pvc in pvcs:
+        pvc.metadata.annotations["k8up.io/backup"] = "false"
+        pvc.patch_()
+    click.echo("RWO PVC annotation done")
 
 
 def _snapshot_pod_creation(azure_blob_name, namespace):
