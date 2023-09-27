@@ -11,8 +11,9 @@ from kxicli import options
 from kxicli.commands.common import arg
 from kxicli.cli_group import cli, ProfileAwareGroup
 from kxicli.resources import auth
-from kxicli.resources.auth import AuthCache, TokenType
+from kxicli.resources.auth import TokenType
 from kxi.client_controller import ClientController, Client
+from kxi.auth import CredentialStore
 from kxicli.resources import auth as auth_lib
 
 @cli.group(cls=ProfileAwareGroup)
@@ -30,8 +31,8 @@ def client():
 def enrol(hostname, name, insert_topic, client_id, client_secret, realm):
     """Enrol a client in the system"""
     host = options.get_hostname()
-    client = Client(name = name)
-    client_controller = ClientController(host, realm=realm, cache=AuthCache)
+    client = Client(name = name)    
+    client_controller = get_clientcontroller_object(host, realm)
     res = client_controller.enrol(client)
     click.echo(json.dumps(res, indent=2))
 
@@ -44,9 +45,9 @@ def enrol(hostname, name, insert_topic, client_id, client_secret, realm):
 def remove(hostname, name, client_id, client_secret, realm):
     """Remove a client from the system"""
     host = options.get_hostname()
-
     client = Client(name = name)
-    client_controller = ClientController(host, realm=realm, cache=AuthCache)
+
+    client_controller = get_clientcontroller_object(host, realm)
     res = client_controller.leave(client)
     click.echo(json.dumps(res, indent=2))
 
@@ -60,7 +61,6 @@ def info(hostname, uid):
    
     try:
         r = requests.get(url)
-        r.raise_for_status()
         click.echo(json.dumps(r.json(), indent=2))
     except HTTPError as e:
         common.handle_http_exception(e, "Failed to get client info: ")
@@ -86,3 +86,17 @@ def list_clients(hostname, realm, username, password):
         click.echo(json.dumps(r.json(), indent=2))
     except HTTPError as e:
         common.handle_http_exception(e, "Failed to list clients: ")
+
+def get_clientcontroller_object(host, realm):
+    store = CredentialStore(name = options.get_profile(), file_path= common.token_cache_file, 
+                            file_format= common.token_cache_format)
+
+    grant_type = store.get('grant_type', default=TokenType.SERVICEACCOUNT)
+    client_id = options.get_serviceaccount_id()
+    
+    if grant_type == TokenType.USER:
+        client_id = store.get('client_id')
+
+    return ClientController(host, realm=realm,
+                    client_id=client_id, grant_type=grant_type, 
+                    client_secret = options.get_serviceaccount_secret(), cache=store)

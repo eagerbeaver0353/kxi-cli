@@ -10,7 +10,6 @@ from kxicli import main
 from kxicli import common
 from kxi.util import AutoNameEnum
 from kxicli.commands import client
-from kxicli.resources.auth import AuthCache
 from kxi.auth import Authorizer
 from utils import return_none
 import utils
@@ -47,7 +46,7 @@ def mock_client_response(*args, **kwargs):
 def mock_auth_functions(mocker):
     mocker.patch.object(Authorizer, 'fetch_token', return_value=MagicMock(access_token=TEST_SERVICE_ACCOUNT_TOKEN))
     mocker.patch.object(Authorizer, 'token', return_value=TEST_SERVICE_ACCOUNT_TOKEN)
-    mocker.patch.object(Authorizer, 'check_cached_token', return_value=TEST_SERVICE_ACCOUNT_TOKEN)
+    mocker.patch.object(Authorizer, '_check_cached_token', return_value=TEST_SERVICE_ACCOUNT_TOKEN)
     
     mocker.patch('kxicli.resources.auth.check_cached_token_active', return_none)
     mocker.patch('kxicli.resources.auth.get_serviceaccount_token', return_none)

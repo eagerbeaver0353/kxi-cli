@@ -239,7 +239,6 @@ def run(ctx, namespace, chart_repo_name, chart_repo_url, chart_repo_username,
           ingress_cert_secret, ingress_cert, ingress_key,
           output_file, filepath, release, version, operator_version, force, import_users, chart):
     """Install kdb Insights Enterprise with a values file"""
-
     # Run setup prompts if necessary
     if filepath is None:
         click.echo(phrases.header_run)

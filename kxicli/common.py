@@ -16,6 +16,7 @@ from kxicli import phrases
 token_cache_path = Path.home() / '.insights'
 token_cache_dir = str(token_cache_path)
 token_cache_file = str(token_cache_path / 'credentials')
+token_cache_format = "toml"
 
 key_install_outputFile = 'install.outputFile'
 key_chart_repo_name = 'chart.repo.name'

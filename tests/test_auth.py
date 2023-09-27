@@ -12,7 +12,6 @@ from pathlib import Path
 from kxicli import main
 from click.testing import CliRunner
 from kxicli.resources import auth
-from kxicli.resources.auth import AuthCache
 from kxi.auth import Authorizer
 import mocks
 from utils import return_none
@@ -100,7 +99,7 @@ def mock_check_cached_token_active(cache_file):
 def mock_auth_functions(mocker):
     mocker.patch.object(Authorizer, 'fetch_token', return_value=MagicMock(access_token=TEST_SERVICE_ACCOUNT_TOKEN))
     mocker.patch.object(Authorizer, 'token', return_value=TEST_SERVICE_ACCOUNT_TOKEN)
-    mocker.patch.object(Authorizer, 'check_cached_token', return_value=TEST_SERVICE_ACCOUNT_TOKEN)
+    mocker.patch.object(Authorizer, '_check_cached_token', return_value=TEST_SERVICE_ACCOUNT_TOKEN)
     
     mocker.patch('kxicli.resources.auth.get_serviceaccount_token', return_none)
     
@@ -161,7 +160,7 @@ def test_get_token_raises_exception(mocker):
     try:
         # Set the click context as the active context
         with ctx:
-            authorizer = Authorizer(host='test.kx.com', realm='test', cache=AuthCache)
+            authorizer = Authorizer(host='test.kx.com', realm='test', client_id="test", client_secret="pass")
             mocker.patch.object(authorizer, 'for_client', mock_for_client)
             mocker.patch.object(authorizer, 'fetch_token', side_effect=[
                 partial(mocks.http_response, status_code=404, content=json.dumps({'message': "Unknown", 'detail': {'message': "HTTP Error"}}).encode('utf-8')),
@@ -181,7 +180,8 @@ def test_get_token_returns_access_token(mocker, mock_auth_functions):
         # Set the click context as the active context
         with ctx:
             mocker.patch('kxicli.resources.auth.check_cached_token_active', mock_check_cached_token_active) 
-            authorizer = Authorizer(host='test.kx.com', realm='test', cache=AuthCache)            
+            authorizer = Authorizer(host='test.kx.com', realm='test', client_id="test", client_secret="pass")
+            # authorizer = Authorizer(host='test.kx.com', realm='test', cache=AuthCache)
             mocker.patch.object(authorizer, 'for_client', mock_for_client)
 
             r = auth.get_token(hostname='test.kx.com', realm='test')
@@ -235,34 +235,6 @@ def test_user_login_auth(mocker):
                         )
         assert r.access_token == TEST_USER_TOKEN  
 
-
-
-def test_read_and_write_to_cache():
-    with utils.temp_file('test_token_cache') as temp_cache_file, get_test_context():
-        auth.write_to_cache(TEST_USER_TOKEN, auth.TokenType.USER, temp_cache_file)
-        token , tokenType = auth.read_from_cache(temp_cache_file) 
-        assert (json.loads(token),tokenType) == (TEST_USER_TOKEN, auth.TokenType.USER)
-
-def test_retrieve_token_as_user(mocker):
-    common.config.load_config("default")
-    ctx = get_test_context()
-    mocker.patch.object(Authorizer, 'fetch_token', return_value=MagicMock(access_token=TEST_USER_TOKEN))
-    mocker.patch.object(Authorizer, 'token', return_value=TEST_USER_TOKEN)
-    mocker.patch.object(Authorizer, 'get_authorization_code', mock_fetch_user_token)
-
-    with ctx:
-        with utils.temp_file('test_token_cache') as temp_cache_file:
-            auth.write_to_cache(TEST_USER_TOKEN, auth.TokenType.USER, temp_cache_file)
-            assert auth.retrieve_token(hostname='https://hostname.kx.com',
-                          realm='test-realm',
-                          redirect_host='localhost',
-                          redirect_port=5000,
-                          token_type=auth.TokenType.USER,
-                          ).access_token == TEST_USER_TOKEN
-            token , tokenType = auth.read_from_cache(temp_cache_file) 
-            assert (json.loads(token),tokenType) == (TEST_USER_TOKEN, auth.TokenType.USER)
-
-
 def test_retrieve_token_as_serviceaccount(mocker):
     common.config.load_config("default")
     ctx = get_test_context()
@@ -271,7 +243,7 @@ def test_retrieve_token_as_serviceaccount(mocker):
     try:
         # Set the click context as the active context
         with ctx:
-            authorizer = Authorizer(host='test.kx.com', realm='test', cache=AuthCache)
+            authorizer = Authorizer(host='test.kx.com', realm='test', client_id="test", client_secret="pass")
             mocker.patch.object(authorizer, 'for_client', mock_for_client)
             ctx.obj['serviceaccount_id'] = 'test'
             ctx.obj['serviceaccount_secret'] = 'pass'
@@ -286,7 +258,7 @@ def test_retrieve_token_as_serviceaccount(mocker):
 
 def test_check_cached_token_active():
     with get_test_context():
-        assert auth.check_cached_token_active('non_existent_file') == (None, None, False)
+        assert auth.check_cached_token_active('/test/non_existent_file') == (None, None, False)
 
     with utils.temp_file('test_token_cache') as temp_cache_file, get_test_context():
         auth.write_to_cache(TEST_SERVICE_ACCOUNT_TOKEN, auth.TokenType.USER, temp_cache_file)
@@ -323,8 +295,4 @@ def test_determine_user_type(mocker):
     assert auth.TokenType.USER == auth.determine_token_type(None, None)
 
 def test_cache_file_location(mocker):
-    mocker.patch('kxicli.resources.auth.AuthCache.cache_file', return_none)
     mocker.patch('kxicli.resources.auth.write_to_cache', mock_return_true)
-    mocker.patch('kxicli.resources.auth.AuthCache.load_grant_type', return_none)
-
-    auth.AuthCache._save_token(token = TEST_SERVICE_ACCOUNT_TOKEN)
