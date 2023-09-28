@@ -6,12 +6,12 @@ default:
 
 include:
   - template: Security/Secret-Detection.gitlab-ci.yml
-  - project: 'kxdev/shared-tools/ci-templates'
+  - project: "kxdev/shared-tools/ci-templates"
     ref: main
     file:
-      - 'insights/test.yaml'
-      - 'security/security.yaml'
-      - 'deploy/record-results.yml'
+      - "insights/test.yaml"
+      - "security/security.yaml"
+      - "deploy/record-results.yml"
       - "insights/data-science/common.yaml"
       - "release/promote-release-version.yaml"
 
@@ -38,6 +38,10 @@ variables:
     - if: $CI_COMMIT_BRANCH && $CI_COMMIT_REF_PROTECTED == "true"
     - if: $CI_MERGE_REQUEST_IID
 
+.release-only-rules:
+  rules:
+    - if: $CI_COMMIT_TAG
+
 # main + release/*
 .protected-branches-rules:
   rules:
@@ -48,7 +52,7 @@ build:wheel:
   image: python:3
   needs: []
   rules:
-    - !reference [ .default-rules, rules ]
+    - !reference [.default-rules, rules]
   before_script:
     - !reference [.setup-global-pip-config, before_script]
     - python3 -m pip install --upgrade build
@@ -63,7 +67,7 @@ build:wheel:
   image: python:3
   needs: []
   rules:
-    - !reference [ .default-rules, rules ]
+    - !reference [.default-rules, rules]
   before_script:
     - !reference [.setup-global-pip-config, before_script]
     - python3 -m pip install --upgrade build
@@ -84,7 +88,7 @@ integration-tests:
   stage: test
   needs: []
   rules:
-    - !reference [ .default-rules, rules ]
+    - !reference [.default-rules, rules]
   image:
     name: python:3.10
   before_script:
@@ -109,7 +113,7 @@ integration-tests:
 combine-test-metrics:
   stage: visualisation
   rules:
-    - !reference [ .default-rules, rules ]
+    - !reference [.default-rules, rules]
   image:
     name: python:3.10
   before_script:
@@ -262,7 +266,7 @@ sonarqube-check:
     - unit-tests-3.8
     - integration-tests
   rules:
-    - !reference [ .default-rules, rules ]
+    - !reference [.default-rules, rules]
 
 spell-check:
   stage: test
@@ -270,7 +274,7 @@ spell-check:
     - .cspell
   needs: []
   rules:
-    - !reference [ .default-rules, rules ]
+    - !reference [.default-rules, rules]
   script:
     - cspell "kxicli/**/*.py"
 
@@ -305,7 +309,7 @@ snyk-sca-test:
         --severity-threshold=high \
         --policy-path=${CI_PROJECT_DIR}/.snyk
   rules:
-    - !reference [ .default-rules, rules ]
+    - !reference [.default-rules, rules]
 
 snyk-sca-monitor:
   stage: security
@@ -319,4 +323,5 @@ snyk-sca-monitor:
       snyk monitor --file=requirements.txt --command=python3 \
         --project-name=${CI_PROJECT_NAME} --target-reference=${CI_COMMIT_REF_NAME}
   rules:
-    - !reference [ .protected-branches-rules, rules ]
+    - !reference [.protected-branches-rules, rules]
+    - !reference [.release-only-rules, rules]
