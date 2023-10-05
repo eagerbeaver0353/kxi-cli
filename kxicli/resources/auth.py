@@ -57,8 +57,8 @@ def get_serviceaccount_token(hostname, realm, token_type):
 
     auth = Authorizer(host=hostname, realm=realm,grant_type=token_type,
                     client_id=options.get_serviceaccount_id(),
-                    client_secret = options.get_serviceaccount_secret(), 
-                    cache=store
+                    client_secret = options.get_serviceaccount_secret(),
+                    force_code = False, cache=store
                     )
 
     auth.for_client(hostname, client_id=auth.client_id,
@@ -91,14 +91,14 @@ def get_admin_token(hostname, username, password):
         handle_http_exception(e, 'Failed to request admin access token: ')
 
 
-def user_login(hostname, realm, redirect_host, redirect_port) -> str:
+def user_login(hostname, realm, redirect_host, redirect_port, force_code) -> str:
     log.debug('Requesting user access token')
     store = CredentialStore(name = options.get_profile() ,file_path= token_cache_file, 
                             file_format= token_cache_format)
 
-    auth = Authorizer(host=hostname, realm=realm,grant_type=TokenType.USER,
-                    client_id=options.auth_client.retrieve_value(),cache=store
-                    )
+    auth = Authorizer(host=hostname, realm=realm,grant_type=TokenType.USER, 
+                      client_id=options.auth_client.retrieve_value(),
+                      cache=store, force_code=force_code)
     token = auth.fetch_user_token(redirect_host=redirect_host,
                                   redirect_port=redirect_port
                                   )
@@ -131,29 +131,17 @@ def write_to_cache(
     store.set_token(oauth_token_data)
 
 
-def cleanup_cache():
-    """Remove cached token"""
-    cache_file = options.cache_file.retrieve_value()
-    profile, config = load_file(cache_file)
-
-    # Check if the specified profile exists in the credentials file
-    if profile in config:
-        config.remove_section(profile)
-        with open(cache_file, 'w') as f:
-            config.write(f)
-
-
 def retrieve_token(hostname: str,
     realm: str,
     redirect_host: str,
     redirect_port: int,
     token_type: TokenType,
+    force_code: bool,
 ) -> str:
-    cleanup_cache()
     if token_type == TokenType.SERVICEACCOUNT:
         token = get_serviceaccount_token(hostname, realm, token_type)
     else:
-        token = user_login(hostname, realm, redirect_host, redirect_port)
+        token = user_login(hostname, realm, redirect_host, redirect_port, force_code)
     
     click.echo('\nSuccessfully authenticated with kdb Insights Enterprise\n')
     return token
@@ -181,6 +169,7 @@ def get_token(hostname: str = get_default_val(key_hostname),
     realm: str = get_default_val(key_keycloak_realm),
     redirect_host: str = 'localhost',
     redirect_port: int = 4200,
+    force_code: bool = False,
 ) -> str:
     """
     Get a token from the cache if it's active and request one if not
@@ -204,7 +193,8 @@ def get_token(hostname: str = get_default_val(key_hostname),
                      realm,
                      redirect_host,
                      redirect_port,
-                     token_type
+                     token_type,
+                     force_code
                      )
 
 

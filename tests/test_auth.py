@@ -231,7 +231,8 @@ def test_user_login_auth(mocker):
         r = auth.user_login('https://hostname.kx.com',
                         'test-realm',
                         'localhost',
-                        5000
+                        5000,
+                        force_code=False
                         )
         assert r.access_token == TEST_USER_TOKEN  
 
@@ -250,7 +251,8 @@ def test_retrieve_token_as_serviceaccount(mocker):
             r = auth.retrieve_token(hostname='test.kx.com', realm='test',                               
                                     redirect_host='localhost',
                                     redirect_port=5000,
-                                    token_type=auth.TokenType.SERVICEACCOUNT)
+                                    token_type=auth.TokenType.SERVICEACCOUNT,
+                                    force_code=False)
             assert r.return_value == TEST_SERVICE_ACCOUNT_TOKEN
     finally:
         assert True

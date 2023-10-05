@@ -21,12 +21,13 @@ def auth():
 @click.option('--redirect-port', default=4200, help='Port to serve token request after login')
 @arg.serviceaccount_id()
 @arg.serviceaccount_secret()
+@arg.force_code()
 def get_access_token(hostname, client_id, client_secret, realm,
                      redirect_host, redirect_port,
-                     serviceaccount_id, serviceaccount_secret):
+                     serviceaccount_id, serviceaccount_secret, force_code):
     """Get an access token for a client id and secret"""
     host = options.get_hostname()
-    click.echo(auth_lib.get_token(host, realm, redirect_host, redirect_port))
+    click.echo(auth_lib.get_token(host, realm, redirect_host, redirect_port, force_code))
 
 @auth.command()
 def print_token():
@@ -59,6 +60,7 @@ def get_admin_token(hostname, username, password):
 @arg.client_secret()
 @arg.serviceaccount_id()
 @arg.serviceaccount_secret()
+@arg.force_code()
 def login(hostname,
           realm,
           redirect_host,
@@ -68,6 +70,7 @@ def login(hostname,
           serviceaccount,
           serviceaccount_id,
           serviceaccount_secret,
+          force_code,
           ):
     """Authenticate as a user or service account"""
     host = options.get_hostname()
@@ -77,4 +80,5 @@ def login(hostname,
                    redirect_host,
                    redirect_port,
                    token_type,
+                   force_code,
                    )

@@ -586,6 +586,12 @@ auth_client = Option(
     help='Client to authenticate a user with'
 )
 
+force_code = Option (
+    '--force-code',
+    help = 'Force manual verification code flow (non-local browser)',
+    is_flag=True
+)
+
 def get_serviceaccount_id():
     ctx = click.get_current_context()
 
