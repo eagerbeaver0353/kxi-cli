@@ -204,17 +204,17 @@ def mock_helm_get_values(mocker, data, throw_exception=False, exception_msg='Get
 def mock_helm_repo_list(mocker, name='kx-insights', url=const.test_chart_repo_url):
     mocker.patch('kxicli.resources.helm.repo_list', return_value=[{'name': name, 'url': url}])
 
-def mocked_helm_history_rollback(release, output, show_operator,current_operator_version, current_operator_release):
+def mocked_helm_history_rollback(release, output, show_operator,current_operator_version, current_operator_release, namespace):
         res1 =[{"release": release, "revision": 1, "chart": "insights-1.2.3", "app_version":"1.2.3", "status": "deployed"}, {"release": release, "revision": 2, "chart": "insights-1.4.0", "app_version": "1.4.0", "status": "uninstalled"}]
         res2 =[{"release": release, "revision": 1, "chart": "kxi-operator-1.2.3", "app_version": "1.2.3", "status": "uninstalled"},{"release": release, "revision": 2, "chart": "kxi-operator-1.4.0", "app_version": "1.4.0", "status": "uninstalled"}]
         return res1,res2
 
-def mocked_helm_history_rollback_broken(release, output, show_operator,current_operator_version, current_operator_release):
+def mocked_helm_history_rollback_broken(release, output, show_operator,current_operator_version, current_operator_release, namespace):
         res1 =[{"release": release, "revision": 1, "chart": "insights-2.2.3", "app_version":"2.2.3", "status": "deployed"}, {"release": release, "revision": 2, "chart": "insights-1.4.0", "app_version": "1.4.0", "status": "uninstalled"}]
         res2 =[{"release": release, "revision": 1, "chart": "kxi-operator-2.2.3", "app_version": "2.2.3", "status": "uninstalled"},{"release": release, "revision": 2, "chart": "kxi-operator-1.4.0", "app_version": "1.4.0", "status": "uninstalled"}]
         return res1,res2
 
-def mocked_helm_history_rollback_same_operator(release, output, show_operator, current_operator_version, current_operator_release):
+def mocked_helm_history_rollback_same_operator(release, output, show_operator, current_operator_version, current_operator_release, namespace):
         res1 =[{"release": release, "revision": 1, "chart": "insights-1.4.1", "app_version":"1.4.1", "status": "deployed"}, {"release": release, "revision": 2, "chart": "insights-1.4.0", "app_version": "1.4.0", "status": "uninstalled"}]
         res2 =[{"release": release, "revision": 1, "chart": "kxi-operator-1.4.1", "app_version": "1.4.1", "status": "uninstalled"},{"release": release, "revision": 2, "chart": "kxi-operator-1.4.0", "app_version": "1.4.0", "status": "uninstalled"}]
         return res1,res2

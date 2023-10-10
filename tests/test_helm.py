@@ -262,12 +262,12 @@ def test_history_success_json(mocker):
     mocker.patch('subprocess.run', mocked_helm_history_json)
     release = "myrelease"
     output = [{"revision": 1, "status": "deployed"}, {"revision": 2, "status": "uninstalled"}]
-    assert helm.history(release, 'json', None, None, 'kxi-operator') == (output, output)
+    assert helm.history(release, 'json', None, None, 'kxi-operator', 'test') == (output, output)
 
 def test_history_success(mocker):
     mocker.patch('subprocess.run', mocked_helm_history)
     release = "myrelease"
-    res = helm.history(release, None, None, None, 'kxi-operator')
+    res = helm.history(release, None, None, None, 'kxi-operator', 'test')
     assert res is None
 
 def test_history_fail(mocker):
@@ -275,14 +275,14 @@ def test_history_fail(mocker):
     mocker.patch('subprocess.run').side_effect = subprocess.CalledProcessError(1, "helm", error_msg)
     release = "myrelease"
     output = []
-    assert helm.history(release, False, None, None, 'kxi-operator') == output
+    assert helm.history(release, False, None, None, 'kxi-operator', 'test') == output
 
 def test_history_fail_json(mocker):
     error_msg = "command not found: helm"
     mocker.patch('subprocess.run').side_effect = subprocess.CalledProcessError(1, "helm", error_msg)
     release = "myrelease"
     output = []
-    assert helm.history(release, False, None, None, 'kxi-operator') == output
+    assert helm.history(release, False, None, None, 'kxi-operator', 'test') == output
 
 def test_repo_exists(mocker):
     utils.mock_helm_repo_list(mocker, const.test_chart_repo_name, const.test_chart_repo_url)
