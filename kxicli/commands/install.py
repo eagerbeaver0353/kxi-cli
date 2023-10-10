@@ -1331,7 +1331,7 @@ def rollback(insights_revision, release, operator_revision, namespace, image_pul
 
     skip_operator_rollback = False
     current_operator_version, current_operator_release  = get_installed_operator_versions(operator_namespace)
-    insights_history,operator_history = helm.history(release, 'json', None, current_operator_version, current_operator_release[0])
+    insights_history,operator_history = helm.history(release, 'json', None, current_operator_version, current_operator_release[0], namespace)
 
     if insights_history == []:
         raise click.ClickException(f'Cannot find a release history of: {release}')
@@ -1346,7 +1346,7 @@ def rollback(insights_revision, release, operator_revision, namespace, image_pul
         skip_operator_rollback = True
 
     # Get the rollback base command for insights
-    base_command,insights_rollback_version,insights_revision = insights_rollback(release, insights_history, insights_revision)
+    base_command,insights_rollback_version,insights_revision = insights_rollback(release, insights_history, insights_revision, namespace)
 
     # Get the rollback base command for operator
     operator_details,base_command_operator = rollback_operator(operator_revision, skip_operator_rollback, operator_history, current_operator_release, insights_rollback_version, insights_revision, current_operator_version, force)
@@ -1373,13 +1373,13 @@ def rollback(insights_revision, release, operator_revision, namespace, image_pul
 
     reapply_assemblies(assembly_backup_filepath, namespace, deleted)
 
-def insights_rollback(release, insights_history, insights_revision):
+def insights_rollback(release, insights_history, insights_revision, namespace):
     if insights_revision is None:
         base_command = ['helm', 'rollback', release]
         insights_revision = insights_history[len(insights_history)-2]['revision']
         insights_rollback_version = insights_history[len(insights_history)-2]['app_version']
     else:
-        base_command = ['helm', 'rollback', release, insights_revision]
+        base_command = ['helm', 'rollback', release, insights_revision, '--namespace', namespace]
         try:
             insights_rollback_version = next(entry['app_version'] for entry in insights_history if entry['revision'] == int(insights_revision))
         except StopIteration:
@@ -1428,12 +1428,13 @@ def try_rollback(base_command, phrase):
 @install.command()
 @arg.release()
 @arg.operator_history()
-def history(release, show_operator):
+@arg.namespace()
+def history(release, show_operator, namespace):
     """
     List the revision history of a kdb Insights Enterprise install
     """
     current_operator_version, current_operator_release  = get_installed_operator_versions(operator_namespace)
-    helm.history(options.chart_repo_name.prompt(release, silent=True), None, show_operator, current_operator_version, current_operator_release[0])
+    helm.history(options.chart_repo_name.prompt(release, silent=True), None, show_operator, current_operator_version, current_operator_release[0], namespace)
 
 def check_operator_rollback_version(from_version, to_version):
     v1 = semver.VersionInfo.parse(from_version)

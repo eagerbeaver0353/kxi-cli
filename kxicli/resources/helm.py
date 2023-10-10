@@ -192,12 +192,12 @@ def get_values(release, namespace=None):
 
     return values
 
-def history(release, output, show_operator, current_operator_version, current_operator_release):
+def history(release, output, show_operator, current_operator_version, current_operator_release, namespace):
     """Call 'helm history <release>' using subprocess.run"""
     log.debug('Attempting to call: helm history' + f'{release}')
     try:
         if output == 'json':
-            result1 = subprocess.run(['helm', 'history', release, '--output', 'json'], check=True, capture_output=True, text=True)
+            result1 = subprocess.run(['helm', 'history', release, '--namespace', namespace, '--output', 'json'], check=True, capture_output=True, text=True)
             res1 = json.loads(result1.stdout)
             try:
                 result2 = subprocess.run(['helm', 'history', current_operator_release, '--namespace', 'kxi-operator', '--output', 'json'], check=True, capture_output=True, text=True)
@@ -206,7 +206,7 @@ def history(release, output, show_operator, current_operator_version, current_op
                 res2 = []
             return res1,res2
         else:
-            result1 = subprocess.run(['helm', 'history', release],  stdout=subprocess.PIPE, check=True)
+            result1 = subprocess.run(['helm', 'history', release, '--namespace', namespace],  stdout=subprocess.PIPE, check=True)
             output1 = result1.stdout.decode('utf-8')
             if not show_operator:
                 return print(output1)
