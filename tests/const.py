@@ -1,6 +1,7 @@
 from pathlib import Path
 
 test_namespace = "test-namespace"
+test_management_namespace = 'kxi-management'
 test_cluster = "test-context"
 
 test_host = "https://test.kx.com"
@@ -19,3 +20,4 @@ test_lic_file = str(Path(__file__).parent / "files" / "kx.lic")
 insights_tgz = str(Path(__file__).parent / "files/helm/insights-1.5.0.tgz")
 operator_tgz = str(Path(__file__).parent / "files/helm/kxi-operator-1.5.0.tgz")
 operator_tgz_123 = str(Path(__file__).parent / "files/helm/kxi-operator-1.2.3.tgz")
+management_tgz = str(Path(__file__).parent / "files/helm/kxi-management-service-0.1.3.tgz")

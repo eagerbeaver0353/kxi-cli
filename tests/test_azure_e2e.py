@@ -20,7 +20,8 @@ from test_install_e2e import mock_copy_secret, mock_delete_crd, mocked_installed
     mock_get_operator_version, test_operator_helm_name, mocked_read_secret, mocked_helm_version_checked,\
     mock_read_cached_crd_data, mock_subprocess_run, install_upgrade_checks, \
     check_subprocess_run_commands, mock_set_insights_operator_and_crd_installed_state, \
-    HelmCommand, HelmCommandInsightsInstall, HelmCommandOperatorInstall, HelmCommandDelete, cleanup_env_globals
+    HelmCommand, HelmCommandInsightsInstall, HelmCommandOperatorInstall, HelmCommandDelete, cleanup_env_globals, \
+    mock_get_management_version, HelmCommandManagementInstall, mocked_helm_list_returns_valid_json_management
 
 a_test_asm_str: str = 'a test asm file'
 default_config_file = str(Path(__file__).parent / 'files' / 'test-cli-config')
@@ -107,6 +108,7 @@ def install_mocks(mocker, k8s):
                                    image_pull_secret_name=default_docker_config_secret_name)
                                )
     mock_get_operator_version(mocker)
+    mock_get_management_version(mocker)
     mock_copy_secret(mocker, k8s)
     mock_subprocess_run(mocker)
 
@@ -127,6 +129,7 @@ def upgrade_mocks(mocker, k8s):
     utils.mock_helm_get_values(mocker, fake_values)
     utils.mock_helm_env(mocker)
     mock_delete_crd(mocker, k8s)
+    # mock_get_management_version(mocker)
     mocker.patch(fun_get_helm_version_checked, mocked_helm_version_checked)
     mocker.patch('kxicli.commands.install.read_cached_crd_files', mock_read_cached_crd_data)
 
@@ -139,6 +142,10 @@ class HelmCommandAzureInstall(HelmCommandInsightsInstall):
     keycloak_importUsers: Optional[str] = 'false'
 
 
+@dataclass
+class HelmCommandManagementAzureInstall(HelmCommandManagementInstall):
+    management_chart: str = f'{fake_chart_repo_url}/kxi-management-service'
+    
 @dataclass
 class HelmCommandAzureOperator(HelmCommandOperatorInstall):
     chart: str = f'{fake_chart_repo_url}/kxi-operator'
@@ -189,7 +196,8 @@ def test_install(mocker: MockerFixture, cleanup_env_globals, k8s):
                                  ),
         HelmCommandAzureInstall(values=values_file,
                                 keycloak_importUsers='true'
-                                )
+                                ),
+        HelmCommandManagementAzureInstall(values=values_file)
     ]
     install_upgrade_checks(actual_res,
                            helm_commands=expected_helm_commands,
@@ -256,7 +264,8 @@ def test_upgrade(mocker: MockerFixture, cleanup_env_globals, k8s):
                               HelmCommandFetch(chart='kxi-operator'),
                               HelmCommandAzureOperator(values=values_file_name),
                               HelmCommandFetch(chart='insights'),
-                              HelmCommandAzureInstall(values=values_file_name)
+                              HelmCommandAzureInstall(values=values_file_name),
+                              HelmCommandManagementAzureInstall(values=values_file_name)
     ]
     install_upgrade_checks(result,
                            helm_commands=expected_helm_commands,
@@ -291,7 +300,8 @@ def test_upgrade_with_no_assemblies_running(mocker: MockerFixture, cleanup_env_g
                               HelmCommandFetch(chart='kxi-operator'),
                               HelmCommandAzureOperator(values=values_file_name),
                               HelmCommandFetch(chart='insights'),
-                              HelmCommandAzureInstall(values=values_file_name)
+                              HelmCommandAzureInstall(values=values_file_name),
+                              HelmCommandManagementAzureInstall(values=values_file_name)
     ]
     install_upgrade_checks(result,
                            helm_commands=expected_helm_commands,
@@ -334,7 +344,10 @@ def test_upgrade_with_chart_repo_url(mocker: MockerFixture, cleanup_env_globals,
                               HelmCommandFetch(repo=test_chart_repo_url, chart='insights'),
                               HelmCommandAzureInstall(values=values_file_name,
                                                       chart=f'{test_chart_repo_url}/insights'
-                                                      )
+                                                      ),
+                              HelmCommandManagementAzureInstall(values=values_file_name,
+                                                                management_chart=f'{test_chart_repo_url}/kxi-management-service'
+                                                                )
                               ]
     install_upgrade_checks(result,
                            helm_commands=expected_helm_commands,
@@ -345,6 +358,7 @@ def test_upgrade_with_chart_repo_url(mocker: MockerFixture, cleanup_env_globals,
 
 def test_upgrade_without_filepath(mocker: MockerFixture, cleanup_env_globals, k8s):
     upgrade_mocks(mocker, k8s)
+    mocker.patch('kxicli.commands.install.get_installed_charts', mocked_helm_list_returns_valid_json_management)
 
     runner = CliRunner()
     result = runner.invoke(
@@ -362,7 +376,8 @@ def test_upgrade_without_filepath(mocker: MockerFixture, cleanup_env_globals, k8
                               HelmCommandFetch(chart='kxi-operator'),
                               HelmCommandAzureOperator(values='-'),
                               HelmCommandFetch(chart='insights'),
-                              HelmCommandAzureInstall(values='-')
+                              HelmCommandAzureInstall(values='-'),
+                              HelmCommandManagementAzureInstall(values='-')
     ]
     install_upgrade_checks(result,
                            helm_commands=expected_helm_commands,

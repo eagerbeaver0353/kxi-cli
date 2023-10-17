@@ -274,11 +274,12 @@ def list_versions(chart_repo_name):
         raise ClickException(str(e))
 
 
-def get_operator_versions(
-    chart: helm_chart.Chart
+def get_chart_versions(
+    chart: helm_chart.Chart,
+    name: str
 ) -> list[str]:
-    log.debug(f"Searching {chart.repo_name} for versions of kxi-operator")
+    log.debug(f"Searching {chart.repo_name} for versions of {name}")
     extra_args = ['--versions', '--devel', '--output', 'json']
-    res = search_repo(f'{chart.repo_name}/kxi-operator', extra_args)
+    res = search_repo(f'{chart.repo_name}/{name}', extra_args)
     versions = [x['version'] for x in json.loads(res.stdout)]
     return versions

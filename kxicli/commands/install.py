@@ -64,6 +64,8 @@ CRD_NAMES = [
 license_key = 'license.secret'
 image_pull_key = 'image.pullSecret'
 
+management_service_namespace = 'kxi-management'
+management_service_release = 'kxi-management-service'
 
 @cli.group('install', cls=ProfileAwareGroup, aliases=['azure'])
 def install():
@@ -231,13 +233,14 @@ def setup(namespace, chart_repo_name, chart_repo_url, chart_repo_username,
 @arg.force()
 @arg.import_users()
 @arg.chart()
+@arg.management_version()
 @click.pass_context
 def run(ctx, namespace, chart_repo_name, chart_repo_url, chart_repo_username,
           license_secret, license_as_env_var, license_filepath,
           client_cert_secret, image_repo, image_repo_user, image_pull_secret, gui_client_secret, operator_client_secret,
           keycloak_secret, keycloak_postgresql_secret, keycloak_auth_url, hostname,
           ingress_cert_secret, ingress_cert, ingress_key,
-          output_file, filepath, release, version, operator_version, force, import_users, chart):
+          output_file, filepath, release, version, operator_version, force, import_users, chart, management_version):
     """Install kdb Insights Enterprise with a values file"""
     # Run setup prompts if necessary
     if filepath is None:
@@ -252,10 +255,10 @@ def run(ctx, namespace, chart_repo_name, chart_repo_url, chart_repo_username,
 
     docker_config = get_docker_config_secret(namespace, cast(str, image_pull_secret), DOCKER_SECRET_KEY)
 
-    if is_valid_upgrade_version(release, namespace, version):
+    if is_valid_upgrade_version(release, namespace, version, phrases.check_installed):
         if click.confirm(f'Would you like to upgrade to version {version}?'):
             return perform_upgrade(namespace, release, insights_chart, None, version, operator_version, image_pull_secret,
-                    license_secret, filepath, import_users, docker_config, force)
+                    license_secret, filepath, import_users, docker_config, force, management_version)
         else:
             return
 
@@ -265,6 +268,11 @@ def run(ctx, namespace, chart_repo_name, chart_repo_url, chart_repo_username,
     install_operator_and_release(release, namespace, version, operator_version, operator_release, filepath,
                                  image_pull_secret, license_secret, insights_chart, import_users, docker_config,
                                  install_operator, is_op_upgrade, crd_data, is_upgrade=False)
+    
+    check_management_install(release, namespace, version, filepath, image_pull_secret, license_secret,insights_chart,
+                            docker_config, management_version, force)
+
+
 
 @install.command()
 @arg.namespace()
@@ -281,8 +289,9 @@ def run(ctx, namespace, chart_repo_name, chart_repo_url, chart_repo_username,
 @arg.force()
 @arg.import_users()
 @arg.chart()
+@arg.management_version()
 def upgrade(namespace, release, chart_repo_name, chart_repo_url, chart_repo_username, assembly_backup_filepath, version, operator_version, image_pull_secret,
-            license_secret, filepath, force, import_users, chart):
+            license_secret, filepath, force, import_users, chart, management_version):
     """Upgrade kdb Insights Enterprise"""
     click.secho(phrases.header_upgrade, bold=True)
 
@@ -292,12 +301,12 @@ def upgrade(namespace, release, chart_repo_name, chart_repo_url, chart_repo_user
 
     insights_chart = parse_chart_cli_params(chart, chart_repo_name, chart_repo_url, chart_repo_username)
 
-    is_valid_upgrade_version(release, namespace, version)
+    is_valid_upgrade_version(release, namespace, version, phrases.check_installed)
 
     docker_config = get_docker_config_secret(namespace, cast(str, image_pull_secret), DOCKER_SECRET_KEY)
 
     perform_upgrade(namespace, release, insights_chart, assembly_backup_filepath, version, operator_version, image_pull_secret,
-                    license_secret, filepath, import_users, docker_config, force)
+                    license_secret, filepath, import_users, docker_config, force, management_version)
 
 
 def parse_chart_cli_params(
@@ -349,7 +358,7 @@ def setup_helm_repo(
     return chart_repo_name, chart_repo_url, username
 
 def perform_upgrade(namespace, release, chart, assembly_backup_filepath, version, operator_version, image_pull_secret,
-                    license_secret, filepath, import_users, docker_config, force):
+                    license_secret, filepath, import_users, docker_config, force, management_version):
 
     upgraded = False
 
@@ -380,6 +389,9 @@ def perform_upgrade(namespace, release, chart, assembly_backup_filepath, version
 
     if upgraded:
         click.secho(str.format(phrases.upgrade_complete, version=version), bold=True)
+    
+    check_management_install(release, namespace, version, filepath, image_pull_secret, license_secret, chart,
+                            docker_config, management_version, force)
 
 
 @install.command(aliases=['uninstall'])
@@ -501,15 +513,26 @@ def get_operator_version(
                         )
     return cast(str, operator_version)
 
+def get_management_version(
+    chart: helm_chart.Chart,
+    management_version: Optional[str]
+):
+    """Determine kxi version to use. Retrieve the most recent kxi-management-service minor"""
+    if management_version is None:
+        if chart.is_remote:
+            management_version = helm.get_chart_versions(chart, management_service_namespace)
+        else:
+            management_version = local_chart_versions(chart, prefix=management_service_namespace)
+    return management_version[0]
 
 def available_operator_versions(chart: helm_chart.Chart) -> list[str]:
     if chart.is_remote:
-        return helm.get_operator_versions(chart)
+        return helm.get_chart_versions(chart, operator_namespace)
     else:
-        return local_operator_versions(chart)
+        return local_chart_versions(chart)
 
 
-def local_operator_versions(
+def local_chart_versions(
     chart: helm_chart.Chart,
     prefix: str = 'kxi-operator-',
     suffix: str = '.tgz',
@@ -1042,6 +1065,130 @@ def install_operator_and_release(
 
     return True
 
+def check_management_install(
+    release,
+    namespace,
+    version,
+    values_file,
+    image_pull_secret,
+    license_secret,
+    insights_chart,
+    docker_config,
+    management_version,
+    force
+):
+
+    management_version = get_management_version(insights_chart, management_version)
+    
+    if is_valid_upgrade_version(management_service_release, management_service_namespace, 
+                                management_version, phrases.management_check_installed):
+        if force or click.confirm(f'Would you like to upgrade to version {management_version}?'):
+            upgrade_management_service(release, namespace, version, values_file, image_pull_secret,
+                                        license_secret, insights_chart, docker_config, management_version,
+                                        management_service_install = False, 
+                                        is_management_upgrade = True)
+            return
+        else:
+            return
+    
+    install_management_service(release,namespace, version, values_file, image_pull_secret,
+                                license_secret, insights_chart, docker_config, management_version,
+                                management_service_install = True, 
+                                is_management_upgrade = False)
+
+def install_management_service(
+    release,
+    namespace,
+    version,
+    values_file,
+    image_pull_secret,
+    license_secret,
+    chart,
+    docker_config,
+    management_version,
+    management_service_install = True,
+    is_management_upgrade = None,
+):
+    """Install management service"""
+
+    existing_values = None
+    
+    if management_service_install:
+        if values_file is None:
+            raise ClickException(phrases.values_filepath_missing)
+        click.secho(str.format(phrases.management_install, release_name = management_service_release,  version=management_version), bold=True)
+        setup_upgrade(namespace, values_file, image_pull_secret, license_secret, 
+                chart, docker_config, is_management_upgrade, existing_values,
+                component_namespace=management_service_namespace, 
+                component_version = management_version, 
+                component_release = management_service_release)
+        click.secho(phrases.install_management, bold=True)
+        return True
+
+    if is_management_upgrade and values_file is None:
+        existing_values = yaml.safe_dump(helm.get_values(release, namespace))
+
+    chart_full_ref = get_management_location(chart, management_version)
+    helm.upgrade_install(release=management_service_release, chart=chart_full_ref, values_file=values_file,
+                        args=[], version=management_version, namespace=management_service_namespace, 
+                        docker_config=docker_config, existing_values=existing_values)
+
+    return True
+
+def upgrade_management_service(
+    release,
+    namespace,
+    version,
+    values_file,
+    image_pull_secret,
+    license_secret,
+    insights_chart,
+    docker_config,
+    management_version,
+    management_service_install = True,
+    is_management_upgrade = None,
+):
+    """Install management service"""
+
+    upgraded = False
+    existing_values = None
+    
+    if not management_service_installed(management_service_namespace):
+        click.echo(phrases.upgrade_skip_to_install)     
+        install_management_service(release, namespace, version, values_file, image_pull_secret,
+                                    license_secret, insights_chart, docker_config, management_version,
+                                    management_service_install = True, 
+                                    is_management_upgrade = False)
+        click.secho(str.format(phrases.upgrade_complete, version=version), bold=True)
+        return
+    
+    click.secho(phrases.upgrade_management, bold=True)
+    upgraded = install_management_service(release,namespace, version, values_file, image_pull_secret,
+                                license_secret, insights_chart, docker_config, management_version,
+                                management_service_install = False, 
+                                is_management_upgrade = True)
+    
+
+    if upgraded:
+        click.secho(str.format(phrases.upgrade_complete, version=management_version), bold=True)
+
+
+def setup_upgrade(namespace, values_file, image_pull_secret, license_secret, 
+                  chart, docker_config, is_upgrade, existing_values, component_namespace, component_version, 
+                  component_release):
+    pyk8s.models.V1Namespace.ensure(component_namespace)
+
+    copy_secret(image_pull_secret, namespace, component_namespace)
+    copy_secret(license_secret, namespace, component_namespace)
+
+    if is_upgrade and values_file is None:
+        existing_values = yaml.safe_dump(helm.get_values(component_release, component_namespace))
+
+    component_full_ref = get_management_location(chart, component_version)
+    helm.upgrade_install(component_release, chart=component_full_ref, values_file=values_file,
+                    version=component_version, namespace=component_namespace, args = [],
+                    docker_config=docker_config, existing_values=existing_values)
+
 def run_chart_actions(
     insights_chart: helm_chart.Chart,
     release: str,
@@ -1143,6 +1290,20 @@ def get_operator_location(
 
     return operator
 
+def get_management_location(
+    insights_chart: helm_chart.Chart,
+    management_version: str,
+    chart_name: str = 'kxi-management-service',
+) -> str:
+    if insights_chart.is_remote:
+        management = f'{insights_chart.repo_name}/{chart_name}'
+    else:
+        # For local install, we only support find the operator in the same folder as the Insights
+        # chart with the naming convention kxi-operator-{version}.tgz currently
+        management = str(Path(insights_chart.full_ref).parent / f'{chart_name}-{management_version}.tgz')
+
+    return management
+
 def delete_release_operator_and_crds(release, namespace, force, uninstall_operator, assembly_backup_filepath):
     """Delete insights, operator and CRDs"""
 
@@ -1188,6 +1349,10 @@ def insights_installed(release, namespace):
     """Check if a helm release of insights exists"""
     return len(get_installed_charts(release, namespace)) > 0
 
+
+def management_service_installed(namespace):
+    """Check if a helm release of insights exists"""
+    return len(get_installed_charts(management_service_release, namespace)) > 0
 
 def get_installed_charts(release, namespace):
     """Retrieve running helm charts"""
@@ -1448,11 +1613,11 @@ def check_upgrade_version(from_version, to_version):
     if v1 > v2:
         raise click.ClickException(f'Cannot upgrade from version {from_version} to version {to_version}. Target version must be higher than currently installed version.')
 
-def is_valid_upgrade_version(release, namespace, version):
+def is_valid_upgrade_version(release, namespace, version, phrase):
     insights_installed_charts = get_installed_charts(release, namespace)
     if len(insights_installed_charts) > 0:
         insights_installed_version = insights_installed_charts[0]["app_version"]
-        click.echo(f'kdb Insights Enterprise is already installed with version {insights_installed_version}')
+        click.secho(str.format(phrase, insights_installed_version=insights_installed_version), bold=True)
         check_upgrade_version(insights_installed_version, version)
         return True
     else:
