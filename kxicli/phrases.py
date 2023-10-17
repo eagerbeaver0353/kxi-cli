@@ -84,6 +84,7 @@ upgrade_asm_persist = 'Assembly data will be persisted and state will be recover
 upgrade_insights= '\nUpgrading insights'
 upgrade_complete = '\nUpgrade to version {version} complete'
 rollback_asm_persist = 'Assembly data will be persisted and state will be recovered post-rollback'
+check_installed = 'kdb Insights Enterprise is already installed with version {insights_installed_version}'
 
 # Passwords
 password_reenter = 'Re-enter to confirm (input hidden)'
@@ -103,3 +104,9 @@ rollback_start = '\nRolling back Insights'
 
 # Helm
 helm_get_values_fail = 'Failed to get values for release {release} in namespace {namespace}, error from helm is "{helm_error}"'
+
+# Management Service
+install_management = '\nInstall complete for the KXI Management Service'
+upgrade_management = '\nUpgrading KXI Management Service'
+management_install = '\nInstalling {release_name} to version {version}'
+management_check_installed = 'kxi-management-service is already installed with version {insights_installed_version}'

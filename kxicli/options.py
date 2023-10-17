@@ -23,7 +23,7 @@ from kxicli.common import key_install_outputFile, key_chart_repo_name, \
     key_install_filepath, key_assembly_backup_file, \
     key_namespace, key_hostname, key_version, key_operator_version, \
     key_client_id, key_client_secret, key_admin_username, key_serviceaccount_id, key_serviceaccount_secret, \
-    key_cache_file, key_auth_client
+    key_cache_file, key_auth_client, key_management_version
 from kxicli.common import enter_password
 
 
@@ -590,6 +590,13 @@ force_code = Option (
     '--force-code',
     help = 'Force manual verification code flow (non-local browser)',
     is_flag=True
+)
+
+management_version = Option(
+    '--management-version',
+    config_name = key_management_version,
+    help = help_text(key_management_version),
+    type = click.STRING
 )
 
 def get_serviceaccount_id():

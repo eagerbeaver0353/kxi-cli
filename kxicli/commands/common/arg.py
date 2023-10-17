@@ -119,6 +119,8 @@ serviceaccount = options.serviceaccount.decorator()
 
 force_code = options.force_code.decorator()
 
+management_version = options.management_version.decorator()
+
 chart = partial(
     click.argument, 'chart', default=f"{default_val(key_chart_repo_name)}/insights"
 )

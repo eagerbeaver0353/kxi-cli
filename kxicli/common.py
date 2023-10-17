@@ -52,6 +52,7 @@ key_namespace = 'namespace'
 key_hostname = 'hostname'
 key_version = 'version'
 key_operator_version = 'operator.version'
+key_management_version = 'management.version'
 key_client_id = 'client.id'
 key_client_secret = 'client.secret'
 key_admin_username = 'admin.username'
@@ -100,7 +101,8 @@ HELP_TEXT = {
     key_keycloak_realm: 'Name of Keycloak realm',
     key_version: 'Version to install',
     key_operator_version: 'Version of the operator to install',
-    key_admin_username: 'Administrator username'
+    key_admin_username: 'Administrator username',
+    key_management_version: 'Version of the management service to install'
 }
 
 # Default values for commands if needed

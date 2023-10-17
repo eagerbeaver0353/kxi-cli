@@ -38,6 +38,8 @@ def test_tgz_only_calls_helm_upgrade(mocker, k8s):
     utils.mock_validate_secret(mocker)
     e2e.mock_set_insights_operator_and_crd_installed_state(mocker, False, False, False)
     e2e.mock_get_operator_version(mocker)
+    e2e.mock_get_management_version(mocker)
+    e2e.mock_copy_secret(mocker, k8s)
     extra_args = [
         "--version",    "1.5.0",
         "--filepath",   utils.test_val_file,
@@ -57,6 +59,7 @@ def test_tgz_only_calls_helm_upgrade(mocker, k8s):
     e2e.check_subprocess_run_commands([
         e2e.HelmCommandOperatorInstall(chart=c.operator_tgz, version="1.5.0"),
         e2e.HelmCommandInsightsInstall(chart=c.insights_tgz, version="1.5.0"),
+        e2e.HelmCommandManagementInstall(management_chart=c.management_tgz),
         e2e.HelmCommandOperatorInstall(chart=c.operator_tgz, version="1.5.0"),
         e2e.HelmCommandInsightsInstall(chart=c.insights_tgz, version="1.5.0")
     ])
@@ -97,6 +100,7 @@ def test_tgz_only_calls_helm_rollback(mocker, k8s):
     e2e.upgrades_mocks(mocker, k8s)
     e2e.mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
     e2e.mock_get_operator_version(mocker)
+    e2e.mock_get_management_version(mocker)
     utils.mock_validate_secret(mocker)
     utils.mock_kube_crd_api(k8s, create=e2e.mocked_create_crd)
     utils.mock_helm_env(mocker)
@@ -155,6 +159,7 @@ def test_tgz_only_calls_helm_rollback_fail(mocker, k8s):
     e2e.upgrades_mocks(mocker, k8s)
     e2e.mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
     e2e.mock_get_operator_version(mocker)
+    e2e.mock_get_management_version(mocker)
     utils.mock_validate_secret(mocker)
     utils.mock_kube_crd_api(k8s, create=e2e.mocked_create_crd, delete=e2e.mocked_delete_crd)
     utils.mock_helm_env(mocker)

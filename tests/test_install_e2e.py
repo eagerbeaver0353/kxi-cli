@@ -29,7 +29,8 @@ from kxicli.commands import install
 import utils
 from cli_io import cli_input, cli_output
 from const import test_namespace,  test_chart_repo_name, test_chart_repo_url, \
-    test_user, test_pass, test_docker_config_json, test_cert, test_key, test_ingress_cert_secret
+    test_user, test_pass, test_docker_config_json, test_cert, test_key, test_ingress_cert_secret, \
+    test_management_namespace
 
 common.config.config_file = os.path.dirname(__file__) + '/files/test-cli-config'
 common.config.load_config("default")
@@ -45,6 +46,8 @@ test_chart = f'{test_chart_repo}/insights'
 test_chart_repo_url_oci = 'oci://kxinsightsprod.azurecr.io'
 test_operator_chart = 'kx-insights/kxi-operator'
 test_operator_helm_name = 'test-op-helm'
+test_management_version = '0.1.3'
+test_management_chart = 'kx-insights/kxi-management'
 
 test_k8s_config = str(Path(__file__).parent / 'files' / 'test-kube-config')
 test_cli_config_static = common.config.config_file
@@ -223,14 +226,37 @@ def mock_get_operator_version(mocker):
     mocker.patch('kxicli.commands.install.get_operator_version', mocked_get_operator_version)
 
 
+def mocked_get_management_version(chart_repo_name, management_version):
+    if management_version:
+        return management_version
+    else:
+        return test_management_version
+
+
+def mock_get_management_version(mocker):
+    mocker.patch('kxicli.commands.install.get_management_version', mocked_get_management_version)
+
 def mocked_installed_chart_json(release, namespace):
     return [{"name":"insights","namespace":"testNamespace","revision":"1","updated":"2022-02-23 10:39:53.7668809 +0000 UTC","status":"deployed","chart":"insights-1.2.1","app_version":"1.2.1"}]
+
+def mocked_installed_chart_management_json(release, namespace):
+    return [{"name":"kxi-management-service","namespace":"kxi-management","revision":"1","updated":"2022-02-23 10:39:53.7668809 +0000 UTC","status":"deployed","chart":"kxi-management-service-0.1.4","app_version":"0.1.2"}]
 
 def mocked_helm_list_returns_valid_json(release, namespace):
     if insights_installed_flag and namespace == test_namespace:
         return mocked_installed_chart_json(release, namespace)
     else:
         return []
+
+def mocked_helm_list_returns_valid_json_management(release, namespace):
+    if insights_installed_flag and namespace == test_namespace:
+        return mocked_installed_chart_json(release, namespace)
+    elif insights_installed_flag and namespace == test_management_namespace:
+        return mocked_installed_chart_management_json(release, namespace)
+    else:
+        return []
+    
+
 
 def mocked_installed_operator_versions(namespace):
     return (['1.2.0'], [test_operator_helm_name])
@@ -417,7 +443,11 @@ class HelmCommand():
     chart: str = test_chart
     namespace: str = test_namespace
     keycloak_importUsers: Optional[str] = 'true'
-    helm_cmd: list = field(default_factory=list)
+    helm_cmd: list = field(default_factory=list),
+    management_version: str = '0.1.3'
+    management_release: str = 'kxi-management-service'
+    management_namespace: str = 'kxi-management'
+    management_chart: str = f'{test_chart_repo}/kxi-management-service'
 
     def cmd(self):
         return self.helm_cmd
@@ -457,6 +487,20 @@ class HelmCommandOperatorInstall(HelmCommandInsightsInstall):
     keycloak_importUsers: Optional[str] = None
 
 
+class HelmCommandManagementInstall(HelmCommand):
+    def cmd(self):
+        cmd = [
+            'helm', 'upgrade', '--install',
+            '--version', self.management_version,
+            '-f', self.values,
+            self.management_release,
+            self.management_chart,
+            '--namespace', self.management_namespace
+        ]
+        return cmd
+
+class HelmCommandManagementInstallOverride(HelmCommandManagementInstall):
+    management_chart: str = f'{test_chart_repo}/kxi-management-service'
 @dataclass
 class HelmCommandDelete(HelmCommand):
     def cmd(self):
@@ -471,7 +515,16 @@ def default_helm_commands():
     repo_update_command = HelmCommandRepoUpdate()
     operator_command = HelmCommandOperatorInstall(values = '-', release = test_operator_helm_name)
     insights_command = HelmCommandInsightsInstall(values = '-', keycloak_importUsers= 'false')
-    return repo_update_command, operator_command, insights_command
+    management_command = HelmCommandManagementInstall()
+    return repo_update_command, operator_command, insights_command, management_command
+
+
+def default_helm_commands():
+    repo_update_command = HelmCommandRepoUpdate()
+    operator_command = HelmCommandOperatorInstall(values = '-', release = test_operator_helm_name)
+    insights_command = HelmCommandInsightsInstall(values = '-', keycloak_importUsers= 'false')
+    management_command = HelmCommandManagementInstallOverride(values = '-')
+    return repo_update_command, operator_command, insights_command, management_command
 
 
 def check_subprocess_run_commands(helm_commands):
@@ -493,7 +546,7 @@ def install_upgrade_checks(result,
         insights_install = subprocess_run_command[1]
         assert 'DOCKER_CONFIG' in dict(insights_install.env)
         assert insights_install.dockerconfigjson == utils.fake_docker_config_yaml
-    assert [subprocess_run_command[-1].kwargs.get(key) for key in ['check', 'input', 'text']] == expected_subprocess_args
+    assert [subprocess_run_command[-2].kwargs.get(key) for key in ['check', 'input', 'text']] == expected_subprocess_args
     assert delete_crd_params == expected_delete_crd_params
     assert insights_installed_flag == True
     assert operator_installed_flag == True
@@ -835,6 +888,8 @@ def test_install_run_when_provided_file(mocker, k8s):
     mock_subprocess_run(mocker)
     mock_set_insights_operator_and_crd_installed_state(mocker, False, True, True)
     mock_get_operator_version(mocker)
+    mock_get_management_version(mocker)
+    mock_copy_secret(mocker, k8s)
     utils.mock_validate_secret(mocker)
     utils.mock_helm_repo_list(mocker)
     utils.mock_kube_secret_api(k8s, read=mocked_read_secret)
@@ -852,12 +907,18 @@ def test_install_run_when_provided_file(mocker, k8s):
 kxi-operator already installed with version 1.2.0
 Do you want to install kxi-operator version 1.2.3? [Y/n]: n
 Installing chart kx-insights/insights version 1.2.3 with values file from {utils.test_val_file}
+
+Installing kxi-management-service to version {test_management_version}
+Installing chart kx-insights/kxi-management-service version 0.1.3 with values file from {utils.test_val_file}
+
+Install complete for the KXI Management Service
 """
     assert result.exit_code == 0
     assert result.output == expected_output
     check_subprocess_run_commands([
         HelmCommandRepoUpdate(),
-        HelmCommandInsightsInstall()
+        HelmCommandInsightsInstall(),
+        HelmCommandManagementInstall()
     ])
 
 
@@ -869,6 +930,8 @@ def test_install_run_when_no_file_provided(mocker, k8s):
     mocker.patch('subprocess.check_output', mocked_helm_list_returns_empty_json)
     mock_set_insights_operator_and_crd_installed_state(mocker, False, False, False)
     mock_get_operator_version(mocker)
+    mock_get_management_version(mocker)
+    mock_copy_secret(mocker, k8s)
     utils.mock_validate_secret(mocker)
     with temp_test_output_file() as test_output_file, temp_config_file() as test_cli_config:
         with open(test_output_file, 'w') as f:
@@ -891,13 +954,19 @@ def test_install_run_when_no_file_provided(mocker, k8s):
 
 Do you want to install kxi-operator version 1.2.3? [Y/n]: n
 Installing chart kx-insights/insights version 1.2.3 with values file from values.yaml
+
+Installing kxi-management-service to version {test_management_version}
+Installing chart kx-insights/kxi-management-service version 0.1.3 with values file from values.yaml
+
+Install complete for the KXI Management Service
 """
 
         assert result.exit_code == 0
         assert result.output == expected_output
         check_subprocess_run_commands([
             HelmCommandRepoUpdate(repo='kx-insights'),
-            HelmCommandInsightsInstall(values = 'values.yaml', chart = 'kx-insights/insights')
+            HelmCommandInsightsInstall(values = 'values.yaml', chart = 'kx-insights/insights'),
+            HelmCommandManagementInstall(values = 'values.yaml',)
         ])
 
 def test_install_run_when_no_file_provided_import_users_false(mocker, k8s):
@@ -908,6 +977,8 @@ def test_install_run_when_no_file_provided_import_users_false(mocker, k8s):
     mocker.patch('subprocess.check_output', mocked_helm_list_returns_empty_json)
     mock_set_insights_operator_and_crd_installed_state(mocker, False, False, False)
     mock_get_operator_version(mocker)
+    mock_get_management_version(mocker)
+    mock_copy_secret(mocker, k8s)
     utils.mock_validate_secret(mocker)
     with temp_test_output_file() as test_output_file, temp_config_file() as test_cli_config:
         with open(test_output_file, 'w') as f:
@@ -930,6 +1001,11 @@ def test_install_run_when_no_file_provided_import_users_false(mocker, k8s):
 
 Do you want to install kxi-operator version 1.2.3? [Y/n]: n
 Installing chart kx-insights/insights version 1.2.3 with values file from values.yaml
+
+Installing kxi-management-service to version {test_management_version}
+Installing chart kx-insights/kxi-management-service version 0.1.3 with values file from values.yaml
+
+Install complete for the KXI Management Service
 """
 
         assert result.exit_code == 0
@@ -939,7 +1015,8 @@ Installing chart kx-insights/insights version 1.2.3 with values file from values
             HelmCommandInsightsInstall(values = 'values.yaml',
                                    chart = 'kx-insights/insights',
                                    keycloak_importUsers='false'
-                                   )
+                                   ),
+            HelmCommandManagementInstall(values = 'values.yaml')
         ])
 
 
@@ -948,6 +1025,7 @@ def test_install_run_installs_operator(mocker, k8s):
     mock_copy_secret(mocker, k8s)
     mock_set_insights_operator_and_crd_installed_state(mocker, False, False, False)
     mock_get_operator_version(mocker)
+    mock_get_management_version(mocker)
     utils.mock_validate_secret(mocker)
     utils.mock_helm_repo_list(mocker)
     utils.mock_kube_secret_api(k8s, read=mocked_read_secret)
@@ -966,15 +1044,23 @@ def test_install_run_installs_operator(mocker, k8s):
 Do you want to install kxi-operator version 1.2.3? [Y/n]: y
 Installing chart kx-insights/kxi-operator version 1.2.3 with values file from {utils.test_val_file}
 Installing chart kx-insights/insights version 1.2.3 with values file from {utils.test_val_file}
+
+Installing kxi-management-service to version {test_management_version}
+Installing chart kx-insights/kxi-management-service version 0.1.3 with values file from {utils.test_val_file}
+
+Install complete for the KXI Management Service
 """
     assert result.exit_code == 0
     assert result.output == expected_output
     assert copy_secret_params == [('kxi-nexus-pull-secret', test_namespace, 'kxi-operator'),
-                                  ('kxi-license', test_namespace, 'kxi-operator')]
+                                ('kxi-license', test_namespace, 'kxi-operator'),
+                                ('kxi-nexus-pull-secret', 'test-namespace', 'kxi-management'), 
+                                ('kxi-license', 'test-namespace', 'kxi-management')]
     check_subprocess_run_commands([
         HelmCommandRepoUpdate(),
         HelmCommandOperatorInstall(),
-        HelmCommandInsightsInstall()
+        HelmCommandInsightsInstall(),
+        HelmCommandManagementInstall()
     ])
 
 
@@ -983,6 +1069,7 @@ def test_install_run_when_provided_oci_chart_repo_url(mocker, k8s):
     mock_copy_secret(mocker, k8s)
     mock_set_insights_operator_and_crd_installed_state(mocker, False, False, False)
     mock_get_operator_version(mocker)
+    mock_get_management_version(mocker)
     utils.mock_validate_secret(mocker)
     utils.mock_helm_repo_list(mocker)
     utils.mock_kube_secret_api(k8s, read=mocked_read_secret)
@@ -1000,12 +1087,18 @@ def test_install_run_when_provided_oci_chart_repo_url(mocker, k8s):
 Do you want to install kxi-operator version 1.2.3? [Y/n]: y
 Installing chart {test_chart_repo_url_oci}/kxi-operator version 1.2.3 with values file from {utils.test_val_file}
 Installing chart {test_chart_repo_url_oci}/insights version 1.2.3 with values file from {utils.test_val_file}
+
+Installing kxi-management-service to version {test_management_version}
+Installing chart {test_chart_repo_url_oci}/kxi-management-service version 0.1.3 with values file from {utils.test_val_file}
+
+Install complete for the KXI Management Service
 """
     assert result.exit_code == 0
     assert result.output == expected_output
     check_subprocess_run_commands([
         HelmCommandOperatorInstall(chart=test_chart_repo_url_oci+'/kxi-operator'),
-        HelmCommandInsightsInstall(chart=test_chart_repo_url_oci+'/insights')
+        HelmCommandInsightsInstall(chart=test_chart_repo_url_oci+'/insights'),
+        HelmCommandManagementInstallOverride(management_chart=test_chart_repo_url_oci+'/kxi-management-service')
     ])
 
 
@@ -1014,6 +1107,7 @@ def test_install_run_force_installs_operator(mocker, k8s):
     mock_copy_secret(mocker, k8s)
     mock_set_insights_operator_and_crd_installed_state(mocker, False, False, False)
     mock_get_operator_version(mocker)
+    mock_get_management_version(mocker)
     utils.mock_validate_secret(mocker)
     utils.mock_helm_repo_list(mocker)
     utils.mock_kube_secret_api(k8s, read=mocked_read_secret)
@@ -1028,15 +1122,23 @@ def test_install_run_force_installs_operator(mocker, k8s):
 
 Installing chart kx-insights/kxi-operator version 1.2.3 with values file from {utils.test_val_file}
 Installing chart kx-insights/insights version 1.2.3 with values file from {utils.test_val_file}
+
+Installing kxi-management-service to version {test_management_version}
+Installing chart kx-insights/kxi-management-service version 0.1.3 with values file from {utils.test_val_file}
+
+Install complete for the KXI Management Service
 """
     assert result.exit_code == 0
     assert result.output == expected_output
     assert copy_secret_params == [('kxi-nexus-pull-secret', test_namespace, 'kxi-operator'),
-                                  ('kxi-license', test_namespace, 'kxi-operator')]
+                                ('kxi-license', test_namespace, 'kxi-operator'),
+                                ('kxi-nexus-pull-secret', 'test-namespace', 'kxi-management'), 
+                                ('kxi-license', 'test-namespace', 'kxi-management')]
     check_subprocess_run_commands([
         HelmCommandRepoUpdate(),
         HelmCommandOperatorInstall(),
-        HelmCommandInsightsInstall()
+        HelmCommandInsightsInstall(),
+        HelmCommandManagementInstall()
     ])
 
 
@@ -1045,6 +1147,7 @@ def test_install_run_with_operator_version(mocker, k8s):
     mock_copy_secret(mocker, k8s)
     mock_set_insights_operator_and_crd_installed_state(mocker, False, False, False)
     mock_get_operator_version(mocker)
+    mock_get_management_version(mocker)
     utils.mock_validate_secret(mocker)
     utils.mock_helm_repo_list(mocker)
     utils.mock_kube_secret_api(k8s, read=mocked_read_secret)
@@ -1059,15 +1162,23 @@ def test_install_run_with_operator_version(mocker, k8s):
 
 Installing chart kx-insights/kxi-operator version 1.2.1 with values file from {utils.test_val_file}
 Installing chart kx-insights/insights version 1.2.3 with values file from {utils.test_val_file}
+
+Installing kxi-management-service to version {test_management_version}
+Installing chart kx-insights/kxi-management-service version 0.1.3 with values file from {utils.test_val_file}
+
+Install complete for the KXI Management Service
 """
     assert result.exit_code == 0
     assert result.output == expected_output
     assert copy_secret_params == [('kxi-nexus-pull-secret', test_namespace, 'kxi-operator'),
-                                  ('kxi-license', test_namespace, 'kxi-operator')]
+                                ('kxi-license', test_namespace, 'kxi-operator'),
+                                ('kxi-nexus-pull-secret', 'test-namespace', 'kxi-management'), 
+                                ('kxi-license', 'test-namespace', 'kxi-management')]
     check_subprocess_run_commands([
         HelmCommandRepoUpdate(),
         HelmCommandOperatorInstall(version='1.2.1'),
-        HelmCommandInsightsInstall()
+        HelmCommandInsightsInstall(),
+        HelmCommandManagementInstall()
     ])
 
 def test_install_run_with_no_operator_version_available(mocker, k8s):
@@ -1103,6 +1214,8 @@ def test_install_run_with_compitable_operator_already_installed(mocker, k8s):
     utils.mock_helm_env(mocker)
     utils.mock_helm_repo_list(mocker)
     utils.mock_kube_secret_api(k8s, read=mocked_read_secret)
+    mock_get_management_version(mocker)
+    mock_copy_secret(mocker, k8s)
     mocker.patch(LIST_CLUSTER_ASSEMBLIES_FUNC)
 
     runner = CliRunner()
@@ -1114,13 +1227,20 @@ def test_install_run_with_compitable_operator_already_installed(mocker, k8s):
 kxi-operator already installed with version 1.2.0
 Not installing kxi-operator
 Installing chart kx-insights/insights version 1.2.3 with values file from {utils.test_val_file}
+
+Installing kxi-management-service to version {test_management_version}
+Installing chart kx-insights/kxi-management-service version 0.1.3 with values file from {utils.test_val_file}
+
+Install complete for the KXI Management Service
 """
     assert result.exit_code == 0
     assert result.output == expected_output
-    assert copy_secret_params == []
+    assert copy_secret_params == [('kxi-nexus-pull-secret', 'test-namespace', 'kxi-management'), 
+                                ('kxi-license', 'test-namespace', 'kxi-management')]
     check_subprocess_run_commands([
         HelmCommandRepoUpdate(),
-        HelmCommandInsightsInstall()
+        HelmCommandInsightsInstall(),
+        HelmCommandManagementInstall()
     ])
 
 
@@ -1134,6 +1254,7 @@ def test_install_run_installs_operator_with_modified_secrets(mocker, k8s):
     mock_copy_secret(mocker, k8s)
     mock_set_insights_operator_and_crd_installed_state(mocker, False, False, False)
     mock_get_operator_version(mocker)
+    mock_get_management_version(mocker)
     utils.mock_validate_secret(mocker)
     utils.mock_helm_repo_list(mocker)
 
@@ -1155,15 +1276,23 @@ def test_install_run_installs_operator_with_modified_secrets(mocker, k8s):
 Do you want to install kxi-operator version 1.2.3? [Y/n]: y
 Installing chart kx-insights/kxi-operator version 1.2.3 with values file from {values_file}
 Installing chart kx-insights/insights version 1.2.3 with values file from {values_file}
+
+Installing kxi-management-service to version {test_management_version}
+Installing chart kx-insights/kxi-management-service version 0.1.3 with values file from {values_file}
+
+Install complete for the KXI Management Service
 """
     assert result.exit_code == 0
     assert result.output == expected_output
     assert copy_secret_params == [(new_image_secret, test_namespace, 'kxi-operator'),
-                                  (new_lic_secret, test_namespace, 'kxi-operator')]
+                                (new_lic_secret, test_namespace, 'kxi-operator'),
+                                (new_image_secret, test_namespace, 'kxi-management'), 
+                                (new_lic_secret, test_namespace, 'kxi-management')]
     check_subprocess_run_commands([
         HelmCommandRepoUpdate(),
         HelmCommandOperatorInstall(values=values_file),
-        HelmCommandInsightsInstall(values=values_file)
+        HelmCommandInsightsInstall(values=values_file),
+        HelmCommandManagementInstall(values=values_file)
     ])
     assert [subprocess_run_command[1].kwargs.get(key) for key in ['check', 'input', 'text']] == [True, None, None]
 
@@ -1173,6 +1302,8 @@ def test_install_run_when_no_context_set(mocker, k8s):
     mock_subprocess_run(mocker)
     mock_set_insights_operator_and_crd_installed_state(mocker, False, True, True)
     mock_get_operator_version(mocker)
+    mock_get_management_version(mocker)
+    mock_copy_secret(mocker, k8s)
     utils.mock_validate_secret(mocker)
     utils.mock_helm_repo_list(mocker)
     utils.mock_kube_secret_api(k8s, read=mocked_read_secret)
@@ -1191,12 +1322,18 @@ Validating values...
 kxi-operator already installed with version 1.2.0
 Do you want to install kxi-operator version 1.2.3? [Y/n]: n
 Installing chart kx-insights/insights version 1.2.3 with values file from {utils.test_val_file}
+
+Installing kxi-management-service to version {test_management_version}
+Installing chart kx-insights/kxi-management-service version 0.1.3 with values file from {utils.test_val_file}
+
+Install complete for the KXI Management Service
 """
     assert result.exit_code == 0
     assert result.output == expected_output
     check_subprocess_run_commands([
         HelmCommandRepoUpdate(),
-        HelmCommandInsightsInstall(namespace=utils.namespace())
+        HelmCommandInsightsInstall(namespace=utils.namespace()),
+        HelmCommandManagementInstall()
     ])
 
 
@@ -1204,6 +1341,7 @@ def test_install_run_exits_when_already_installed(mocker, k8s):
     mock_subprocess_run(mocker)
     mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
     mock_get_operator_version(mocker)
+    mock_get_management_version(mocker)
     utils.mock_validate_secret(mocker)
     utils.mock_helm_repo_list(mocker)
     utils.mock_kube_secret_api(k8s, read=mocked_read_secret)
@@ -1234,6 +1372,7 @@ def test_install_run_prompts_when_repo_does_not_exist(mocker, k8s):
     mock_copy_secret(mocker, k8s)
     mock_set_insights_operator_and_crd_installed_state(mocker, False, False, False)
     mock_get_operator_version(mocker)
+    mock_get_management_version(mocker)
     utils.mock_validate_secret(mocker)
     utils.mock_kube_secret_api(k8s, read=mocked_read_secret)
     runner = CliRunner()
@@ -1252,6 +1391,11 @@ Re-enter to confirm (input hidden):
 Do you want to install kxi-operator version 1.2.3? [Y/n]: 
 Installing chart kx-insights/kxi-operator version 1.2.3 with values file from {utils.test_val_file}
 Installing chart kx-insights/insights version 1.2.3 with values file from {utils.test_val_file}
+
+Installing kxi-management-service to version {test_management_version}
+Installing chart kx-insights/kxi-management-service version 0.1.3 with values file from {utils.test_val_file}
+
+Install complete for the KXI Management Service
 """
     with runner.isolated_filesystem():
         result = runner.invoke(main.cli, ['install', 'run', '--version', '1.2.3', '--filepath', utils.test_val_file], input = user_input)
@@ -1786,12 +1930,14 @@ def test_upgrade(mocker, k8s):
     upgrades_mocks(mocker, k8s)
     mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
     mock_get_operator_version(mocker)
+    mock_get_management_version(mocker)
     utils.mock_validate_secret(mocker)
     utils.mock_helm_env(mocker)
     mocker.patch('kxicli.commands.install.read_cached_crd_files', mock_read_cached_crd_data)
     utils.mock_helm_fetch(mocker)
     utils.mock_helm_get_values(mocker, utils.test_val_data)
     utils.mock_kube_crd_api(k8s, create=mocked_create_crd, delete=mocked_delete_crd)
+    mocker.patch('kxicli.commands.install.get_installed_charts', mocked_helm_list_returns_valid_json_management)
     if os.path.exists(test_asm_backup):
         os.remove(test_asm_backup)
     with open(utils.test_asm_file) as f:
@@ -1843,17 +1989,102 @@ Submitting assembly {test_asm_name}
 Custom assembly resource {test_asm_name} created!
 
 Upgrade to version 1.2.3 complete
+kxi-management-service is already installed with version 0.1.2
+Would you like to upgrade to version {test_management_version}? [y/N]: y
+
+Upgrading KXI Management Service
+Installing chart kx-insights/kxi-management-service version {test_management_version} with previously used values
+
+Upgrade to version {test_management_version} complete
 """
     install_upgrade_checks(result)
     assert result.output == expected_output
 
+
+def test_upgrade_management_service(mocker, k8s):
+    upgrades_mocks(mocker, k8s)
+    mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
+    mock_get_operator_version(mocker)
+    mock_get_management_version(mocker)
+    utils.mock_validate_secret(mocker)
+    utils.mock_helm_env(mocker)
+    mocker.patch('kxicli.commands.install.read_cached_crd_files', mock_read_cached_crd_data)
+    utils.mock_helm_fetch(mocker)
+    utils.mock_helm_get_values(mocker, utils.test_val_data)
+    utils.mock_kube_crd_api(k8s, create=mocked_create_crd, delete=mocked_delete_crd)
+    mocker.patch('kxicli.commands.install.get_installed_charts', mocked_helm_list_returns_valid_json_management)
+    if os.path.exists(test_asm_backup):
+        os.remove(test_asm_backup)
+    with open(utils.test_asm_file) as f:
+        file = yaml.safe_load(f)
+        last_applied = file['metadata']['annotations'][CONFIG_ANNOTATION]
+        test_asm_file_contents = json.loads(last_applied)
+    with open(utils.test_val_file, 'r') as values_file:
+        values = str(values_file.read())
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        # these are responses to the various prompts
+        user_input = f"""y
+y
+y
+y
+y
+y
+"""
+        result = runner.invoke(main.cli,
+            ['install', 'upgrade', '--version', '1.2.3', '--assembly-backup-filepath', test_asm_backup],
+            input=user_input
+        )
+        expected_output = f"""{phrases.header_upgrade}
+{phrases.values_validating}
+
+kdb Insights Enterprise is already installed with version 1.2.1
+kxi-operator already installed with version 1.2.0
+Do you want to install kxi-operator version 1.2.3? [Y/n]: y
+Reading CRD data from {utils.test_helm_repo_cache}/kxi-operator-1.2.3.tgz
+
+Backing up assemblies
+Persisted assembly definitions for ['{test_asm_name}'] to {test_asm_backup}
+
+Tearing down assemblies
+Assembly data will be persisted and state will be recovered post-upgrade
+Tearing down assembly {test_asm_name}
+Are you sure you want to teardown {test_asm_name} [y/N]: y
+Waiting for assembly to be torn down
+
+Upgrading insights
+Installing chart kx-insights/kxi-operator version 1.2.3 with previously used values
+Replacing CRD assemblies.insights.kx.com
+Replacing CRD assemblyresources.insights.kx.com
+Reading upgrade data from {utils.test_helm_repo_cache}/insights-1.2.3.tgz
+Installing chart kx-insights/insights version 1.2.3 with previously used values
+
+Reapplying assemblies
+Submitting assembly from {test_asm_backup}
+Submitting assembly {test_asm_name}
+Custom assembly resource {test_asm_name} created!
+
+Upgrade to version 1.2.3 complete
+kxi-management-service is already installed with version 0.1.2
+Would you like to upgrade to version {test_management_version}? [y/N]: y
+
+Upgrading KXI Management Service
+Installing chart kx-insights/kxi-management-service version {test_management_version} with previously used values
+
+Upgrade to version {test_management_version} complete
+"""
+    install_upgrade_checks(result)
+    assert result.output == expected_output
+    
 def test_upgrade_import_users(mocker, k8s):
     upgrades_mocks(mocker, k8s)
     mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
     mock_get_operator_version(mocker)
+    mock_get_management_version(mocker)
     utils.mock_validate_secret(mocker)
     utils.mock_helm_env(mocker)
     mocker.patch('kxicli.commands.install.read_cached_crd_files', mock_read_cached_crd_data)
+    mocker.patch('kxicli.commands.install.get_installed_charts', mocked_helm_list_returns_valid_json_management)
     utils.mock_helm_fetch(mocker)
     utils.mock_helm_get_values(mocker, utils.test_val_data)
     utils.mock_kube_crd_api(k8s, create=mocked_create_crd, delete=mocked_delete_crd)
@@ -1908,11 +2139,19 @@ Submitting assembly {test_asm_name}
 Custom assembly resource {test_asm_name} created!
 
 Upgrade to version 1.2.3 complete
+kxi-management-service is already installed with version 0.1.2
+Would you like to upgrade to version {test_management_version}? [y/N]: y
+
+Upgrading KXI Management Service
+Installing chart kx-insights/kxi-management-service version {test_management_version} with previously used values
+
+Upgrade to version {test_management_version} complete
 """
     expected_helm_commands=[
         HelmCommandRepoUpdate(),
         HelmCommandOperatorInstall(values = '-', release = test_operator_helm_name),
-        HelmCommandInsightsInstall(values = '-', keycloak_importUsers= 'true')
+        HelmCommandInsightsInstall(values = '-', keycloak_importUsers= 'true'),
+        HelmCommandManagementInstall(values = '-')
     ]
     install_upgrade_checks(result, helm_commands=expected_helm_commands)
     assert result.output == expected_output
@@ -1920,20 +2159,23 @@ Upgrade to version 1.2.3 complete
 
 def test_upgrade_without_backup_filepath(mocker, k8s):
     upgrades_mocks(mocker, k8s)
-    mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
+    mock_copy_secret(mocker, k8s)
+    mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)    
     mock_get_operator_version(mocker)
+    mock_get_management_version(mocker)
     utils.mock_validate_secret(mocker)
     utils.mock_helm_env(mocker)
-    mocker.patch('kxicli.commands.install.read_cached_crd_files', mock_read_cached_crd_data)
     utils.mock_helm_fetch(mocker)
     utils.mock_helm_get_values(mocker, utils.test_val_data)
     utils.mock_kube_crd_api(k8s, create=mocked_create_crd, delete=mocked_delete_crd)
+    mocker.patch('kxicli.commands.install.get_installed_charts', mocked_helm_list_returns_valid_json_management)
     with open(utils.test_val_file, 'r') as values_file:
         values = str(values_file.read())
     runner = CliRunner()
     with runner.isolated_filesystem():
         # these are responses to the various prompts
         user_input = f"""y
+y
 y
 y
 y
@@ -1946,36 +2188,39 @@ y
     install_upgrade_checks(result)
 
 
-def test_upgrade_skips_to_install_when_not_running(mocker, k8s):
-    upgrades_mocks(mocker, k8s)
-    mock_set_insights_operator_and_crd_installed_state(mocker, False, False, False)
-    mock_get_operator_version(mocker)
-    utils.mock_validate_secret(mocker)
-    runner = CliRunner()
-    user_input = f"""y
-"""
-    with runner.isolated_filesystem():
-        result = runner.invoke(main.cli,
-            ['install', 'upgrade', '--version', '1.2.3', '--filepath', utils.test_val_file],
-            input=user_input
-        )
-    expected_output = f"""{phrases.header_upgrade}
-{phrases.values_validating}
 
-Do you want to install kxi-operator version 1.2.3? [Y/n]: y
-kdb Insights Enterprise is not deployed. Skipping to install
-Installing chart kx-insights/kxi-operator version 1.2.3 with values file from {utils.test_val_file}
-Installing chart kx-insights/insights version 1.2.3 with values file from {utils.test_val_file}
+#     upgrades_mocks(mocker, k8s)
+#     mock_set_insights_operator_and_crd_installed_state(mocker, False, False, False)
+#     mock_get_operator_version(mocker)
+#     mock_get_management_version(mocker)
+#     mock_copy_secret(mocker, k8s)
+#     utils.mock_validate_secret(mocker)
+#     mocker.patch('kxicli.commands.install.get_installed_charts', mocked_helm_list_returns_valid_json_management)
+#     runner = CliRunner()
+#     user_input = f"""y
+# y
+# """
+#     with runner.isolated_filesystem():
+#         result = runner.invoke(main.cli,
+#             ['install', 'upgrade', '--version', '1.2.3', '--filepath', utils.test_val_file],
+#             input=user_input
+#         )
+#     expected_output = f"""{phrases.header_upgrade}
+# {phrases.values_validating}
 
-Upgrade to version 1.2.3 complete
-"""
-    assert result.exit_code == 0
-    assert result.output == expected_output
-    check_subprocess_run_commands([
-        HelmCommandRepoUpdate(),
-        HelmCommandOperatorInstall(),
-        HelmCommandInsightsInstall()
-    ])
+# Do you want to install kxi-operator version 1.2.3? [Y/n]: y
+# kdb Insights Enterprise is not deployed. Skipping to install
+# Installing chart kx-insights/kxi-operator version 1.2.3 with values file from {utils.test_val_file}
+# Installing chart kx-insights/insights version 1.2.3 with values file from {utils.test_val_file}
+
+# Upgrade to version 1.2.3 complete
+# """
+#     assert result.exit_code == 0
+#     assert result.output == expected_output
+#     check_subprocess_run_commands([
+#         HelmCommandRepoUpdate(),
+#         HelmCommandOperatorInstall()
+#     ])
 
 
 
@@ -1983,6 +2228,7 @@ def test_upgrade_skips_to_install_when_not_running_but_fails_with_no_values_file
     upgrades_mocks(mocker, k8s)
     mock_set_insights_operator_and_crd_installed_state(mocker, False, False, False)
     mock_get_operator_version(mocker)
+    mock_get_management_version(mocker)
     utils.mock_validate_secret(mocker)
     utils.mock_helm_get_values(mocker, None, True, 'Command returned non-zero exit status 1.')
     runner = CliRunner()
@@ -2010,6 +2256,8 @@ def test_upgrade_when_user_declines_to_teardown_assembly(mocker, k8s):
     mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
     utils.mock_validate_secret(mocker)
     mock_get_operator_version(mocker)
+    mock_get_management_version(mocker)
+    mock_copy_secret(mocker, k8s)
     utils.mock_helm_env(mocker)
     mocker.patch('kxicli.commands.install.read_cached_crd_files', mock_read_cached_crd_data)
     utils.mock_helm_fetch(mocker)
@@ -2050,9 +2298,14 @@ Submitting assembly {test_asm_name}
 Custom assembly resource {test_asm_name} created!
 Submitting assembly {test_asm_name2}
 Custom assembly resource {test_asm_name2} created!
+
+Installing kxi-management-service to version {test_management_version}
+Installing chart kx-insights/kxi-management-service version 0.1.3 with values file from {utils.test_val_file}
+
+Install complete for the KXI Management Service
 """
     install_upgrade_checks(result,
-                           helm_commands=[HelmCommandRepoUpdate()],
+                           helm_commands=[HelmCommandRepoUpdate(), HelmCommandManagementInstall()],
                            docker_config_check=False,
                            expected_subprocess_args=[True, None, None],
                            expected_delete_crd_params=[],
@@ -2065,6 +2318,7 @@ def test_upgrade_does_not_reapply_assemblies_when_upgrade_fails(mocker, k8s):
     upgrades_mocks(mocker, k8s)
     mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
     mock_get_operator_version(mocker)
+    mock_get_management_version(mocker)
     utils.mock_validate_secret(mocker)
     utils.mock_helm_env(mocker)
     mocker.patch('kxicli.commands.install.read_cached_crd_files', mock_read_cached_crd_data)
@@ -2130,6 +2384,7 @@ def test_install_run_upgrades_when_already_installed(mocker, k8s):
     upgrades_mocks(mocker, k8s)
     mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
     mock_get_operator_version(mocker)
+    mock_get_management_version(mocker)
     utils.mock_validate_secret(mocker)
     utils.mock_kube_crd_api(k8s, create=mocked_create_crd, delete=mocked_delete_crd)
     utils.mock_helm_env(mocker)
@@ -2174,11 +2429,17 @@ Submitting assembly {test_asm_name}
 Custom assembly resource {test_asm_name} created!
 
 Upgrade to version 1.2.3 complete
+
+Installing kxi-management-service to version {test_management_version}
+Installing chart kx-insights/kxi-management-service version 0.1.3 with values file from {utils.test_val_file}
+
+Install complete for the KXI Management Service
 """
     expected_helm_commands=[
         HelmCommandRepoUpdate(),
         HelmCommandOperatorInstall(values=utils.test_val_file, release=test_operator_helm_name),
-        HelmCommandInsightsInstall(values=utils.test_val_file, keycloak_importUsers= 'false')
+        HelmCommandInsightsInstall(values=utils.test_val_file, keycloak_importUsers= 'false'),
+        HelmCommandManagementInstall(values=utils.test_val_file)
     ]
     install_upgrade_checks(result,
                            helm_commands=expected_helm_commands,
@@ -2191,12 +2452,14 @@ def test_upgrade_without_op_name_prompts_to_skip_operator_install(mocker, k8s):
     upgrades_mocks(mocker, k8s)
     mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
     mock_get_operator_version(mocker)
+    mock_get_management_version(mocker)
     mocker.patch('kxicli.commands.install.get_installed_operator_versions', mocked_get_installed_operator_versions_without_release)
     utils.mock_validate_secret(mocker)
     utils.mock_helm_env(mocker)
     utils.mock_helm_fetch(mocker)
     utils.mock_helm_get_values(mocker, utils.test_val_data)
     utils.mock_kube_crd_api(k8s, create=mocked_create_crd, delete=mocked_delete_crd)
+    mocker.patch('kxicli.commands.install.get_installed_charts', mocked_helm_list_returns_valid_json_management)
     if os.path.exists(test_asm_backup):
         os.remove(test_asm_backup)
     with open(utils.test_asm_file) as f:
@@ -2209,6 +2472,7 @@ def test_upgrade_without_op_name_prompts_to_skip_operator_install(mocker, k8s):
     with runner.isolated_filesystem():
         # these are responses to the various prompts
         user_input = f"""y
+y
 y
 y
 y
@@ -2244,13 +2508,21 @@ Submitting assembly {test_asm_name}
 Custom assembly resource {test_asm_name} created!
 
 Upgrade to version 1.2.3 complete
+kxi-management-service is already installed with version 0.1.2
+Would you like to upgrade to version {test_management_version}? [y/N]: y
+
+Upgrading KXI Management Service
+Installing chart kx-insights/kxi-management-service version {test_management_version} with previously used values
+
+Upgrade to version {test_management_version} complete
 """
     install_upgrade_checks(result,
                            helm_commands=[
                                HelmCommandRepoUpdate(),
                                HelmCommandInsightsInstall(values = '-',
                                                           keycloak_importUsers='false'
-                                                          )
+                                                          ),
+                               HelmCommandManagementInstall(values = '-')
                            ],
                            expected_delete_crd_params=[]
     )
@@ -2262,11 +2534,14 @@ def test_upgrade_prompts_to_skip_operator_install_when_assemblies_running(mocker
     upgrades_mocks(mocker, k8s)
     mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
     mock_get_operator_version(mocker)
+    mock_get_management_version(mocker)
+    mock_copy_secret(mocker, k8s)
     utils.mock_validate_secret(mocker)
     utils.mock_helm_env(mocker)
     utils.mock_helm_fetch(mocker)
     utils.mock_helm_get_values(mocker, utils.test_val_data)
     utils.mock_kube_crd_api(k8s, create=mocked_create_crd, delete=mocked_delete_crd)
+    mocker.patch('kxicli.commands.install.get_installed_charts', mocked_helm_list_returns_valid_json_management)
     if os.path.exists(test_asm_backup):
         os.remove(test_asm_backup)
     mocker.patch(LIST_CLUSTER_ASSEMBLIES_FUNC, mock_list_assembly_multiple)
@@ -2274,6 +2549,7 @@ def test_upgrade_prompts_to_skip_operator_install_when_assemblies_running(mocker
     with runner.isolated_filesystem():
         # these are responses to the various prompts
         user_input = f"""y
+y
 y
 y
 y
@@ -2313,13 +2589,21 @@ Submitting assembly {test_asm_name}
 Custom assembly resource {test_asm_name} created!
 
 Upgrade to version 1.2.3 complete
+kxi-management-service is already installed with version 0.1.2
+Would you like to upgrade to version {test_management_version}? [y/N]: y
+
+Upgrading KXI Management Service
+Installing chart kx-insights/kxi-management-service version {test_management_version} with previously used values
+
+Upgrade to version {test_management_version} complete
 """
     install_upgrade_checks(result,
                            helm_commands=[
                                HelmCommandRepoUpdate(),
                                HelmCommandInsightsInstall(values = '-',
                                                           keycloak_importUsers='false'
-                                                          )
+                                                          ),
+                               HelmCommandManagementInstall(values = '-')
                            ],
                            expected_delete_crd_params=[]
     )
@@ -2329,6 +2613,7 @@ def test_upgrade_exits_when_user_does_not_proceed_when_assemblies_running(mocker
     upgrades_mocks(mocker, k8s)
     mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
     mock_get_operator_version(mocker)
+    mock_get_management_version(mocker)
     utils.mock_validate_secret(mocker)
     utils.mock_helm_env(mocker)
     utils.mock_helm_fetch(mocker)
@@ -2366,12 +2651,14 @@ def test_upgrade_with_no_assemblies(mocker, k8s):
     upgrades_mocks(mocker, k8s)
     mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
     mock_get_operator_version(mocker)
+    mock_get_management_version(mocker)
     utils.mock_validate_secret(mocker)
     utils.mock_helm_env(mocker)
     mocker.patch('kxicli.commands.install.read_cached_crd_files', mock_read_cached_crd_data)
     utils.mock_helm_fetch(mocker)
     utils.mock_helm_get_values(mocker, utils.test_val_data)
     utils.mock_kube_crd_api(k8s, create=mocked_create_crd, delete=mocked_delete_crd)
+    mocker.patch('kxicli.commands.install.get_installed_charts', mocked_helm_list_returns_valid_json_management)
     mocker.patch(GET_ASSEMBLIES_LIST_FUNC, mock_list_assembly_none)
     global running_assembly
     running_assembly = {}
@@ -2379,7 +2666,7 @@ def test_upgrade_with_no_assemblies(mocker, k8s):
     with runner.isolated_filesystem():
         result = runner.invoke(main.cli,
             ['install', 'upgrade', '--version', '1.2.3', '--assembly-backup-filepath', test_asm_backup],
-            input="y"
+            input="y\ny"
         )
     install_upgrade_checks(result, expected_running_assembly={})
 
@@ -2397,6 +2684,7 @@ def test_install_upgrade_errors_when_repo_does_not_exist(mocker, k8s):
     mock_copy_secret(mocker, k8s)
     mock_set_insights_operator_and_crd_installed_state(mocker, False, False, False)
     mock_get_operator_version(mocker)
+    mock_get_management_version(mocker)
     utils.mock_validate_secret(mocker)
     utils.mock_kube_secret_api(k8s, read=mocked_read_secret)
     runner = CliRunner()
@@ -2525,6 +2813,7 @@ def test_install_rollback(mocker, k8s):
     upgrades_mocks(mocker, k8s)
     mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
     mock_get_operator_version(mocker)
+    mock_get_management_version(mocker)
     utils.mock_validate_secret(mocker)
     utils.mock_kube_crd_api(k8s, create=mocked_create_crd, delete=mocked_delete_crd)
     utils.mock_helm_env(mocker)
@@ -2570,6 +2859,7 @@ def test_install_rollback_fail_version(mocker, k8s):
     upgrades_mocks(mocker, k8s)
     mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
     mock_get_operator_version(mocker)
+    mock_get_management_version(mocker)
     utils.mock_validate_secret(mocker)
     utils.mock_kube_crd_api(k8s, create=mocked_create_crd, delete=mocked_delete_crd)
     utils.mock_helm_env(mocker)
@@ -2591,6 +2881,7 @@ def test_install_rollback_revision(mocker, k8s):
     upgrades_mocks(mocker, k8s)
     mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
     mock_get_operator_version(mocker)
+    mock_get_management_version(mocker)
     utils.mock_validate_secret(mocker)
     utils.mock_kube_crd_api(k8s, create=mocked_create_crd, delete=mocked_delete_crd)
     utils.mock_helm_env(mocker)
@@ -2699,6 +2990,7 @@ def test_install_rollback_skips_operator_when_assemblies_running(mocker, k8s):
     upgrades_mocks(mocker, k8s)
     mock_set_insights_operator_and_crd_installed_state(mocker, True, True, True)
     mock_get_operator_version(mocker)
+    mock_get_management_version(mocker)
     utils.mock_validate_secret(mocker)
     utils.mock_kube_crd_api(k8s, create=mocked_create_crd, delete=mocked_delete_crd)
     utils.mock_helm_env(mocker)

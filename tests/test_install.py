@@ -8,7 +8,7 @@ import pytest
 import click
 from pathlib import Path
 
-from kxicli import common
+from kxicli import common, phrases
 from kxicli.commands import install
 from kxicli.resources import helm_chart
 import mocks
@@ -657,16 +657,16 @@ def test_check_upgrade_version_raises_exception_upon_downgrade():
 
 def test_is_valid_upgrade_version_allows_upgrade(mocker):
     mocker.patch('kxicli.commands.install.get_installed_charts', mocked_installed_chart_json)
-    assert install.is_valid_upgrade_version('test_release', test_ns, '1.4.0') == True
+    assert install.is_valid_upgrade_version('test_release', test_ns, '1.4.0', phrases.check_installed) == True
 
 def test_is_valid_upgrade_version_when_install_not_found(mocker):
     mocker.patch('kxicli.commands.install.get_installed_charts', lambda *args: [])
-    assert install.is_valid_upgrade_version('test_release', test_ns, '1.4.0') == False
+    assert install.is_valid_upgrade_version('test_release', test_ns, '1.4.0', phrases.check_installed) == False
 
 def test_is_valid_upgrade_version_raises_exception_upon_downgrade(mocker):
     mocker.patch('kxicli.commands.install.get_installed_charts', mocked_installed_chart_json)
     with pytest.raises(Exception) as e:
-        install.is_valid_upgrade_version('test_release', test_ns, '1.0.0')
+        install.is_valid_upgrade_version('test_release', test_ns, '1.0.0', phrases.check_installed)
     assert isinstance(e.value, click.ClickException)
     assert 'Cannot upgrade from version 1.2.1 to version 1.0.0. Target version must be higher than currently installed version.' in e.value.message
 
@@ -763,14 +763,14 @@ def test_get_operator_location_when_local(mocker):
     assert install.get_operator_location(chart, '1.2.3') == str(Path(__file__).parent / 'files/helm/kxi-operator-1.2.3.tgz')
 
 
-def test_local_operator_versions_happy_path():
+def test_local_chart_versions_happy_path():
     chart = helm_chart.Chart(str(insights_tgz))
-    assert install.local_operator_versions(chart) == ['1.2.3']
+    assert install.local_chart_versions(chart) == ['1.2.3']
 
 
-def test_local_operator_versions_returns_none_correctly():
+def test_local_chart_versions_returns_none_correctly():
     chart = helm_chart.Chart(str(insights_tgz))
-    assert install.local_operator_versions(chart, prefix = 'unknown-chart-') == []
+    assert install.local_chart_versions(chart, prefix = 'unknown-chart-') == []
 
 
 def test_get_chart_actions_with_no_upgrade_actions(mocker):
