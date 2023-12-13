@@ -40,7 +40,6 @@ target_cluster_provider = Provider.UNKNOWN
 
 
 def _determine_provider():
-    global target_cluster_provider
 
     click.secho('Determining cloud provider...', bold=True)
     try:
@@ -64,6 +63,34 @@ def _determine_provider():
             f'Exception when trying to list Kubernetes Nodes: {exception}\n')
 
 
+def _define_storage_details(obj_store_provider, stg_endpoint, stg_acc_name, stg_acc_key, stg_container_name):
+
+    click.secho('Defining storage details...', bold=True)
+
+    storage_details = {}
+    
+    if obj_store_provider == 'AZURE':
+        storage_details['provider'] = obj_store_provider.lower()
+        storage_details['username'] = stg_acc_name  
+        storage_details['password'] = stg_acc_key
+        storage_details['container'] = stg_container_name
+
+    elif obj_store_provider == 'AWS':
+        storage_details['provider'] = 's3'
+        storage_details['endpoint'] = stg_endpoint
+        storage_details['username'] = stg_acc_name  
+        storage_details['password'] = stg_acc_key
+        storage_details['bucket'] = stg_container_name
+
+    else:
+        click.secho('Error storage provider %s not supported.' % obj_store_provider)
+        sys.exit(1)
+
+    click.secho('Storage details defined[%s]' % storage_details)
+
+    return storage_details
+
+
 @cli.group(cls=ProfileAwareGroup)
 def backup():
     """Insights data backup related commands"""
@@ -71,19 +98,26 @@ def backup():
 
 @backup.command()
 @click.option(
-    '--az-stg-acc-name',
-    prompt='Please enter Azure storage account name',
+    '--stg-acc-name',
+    prompt='Please enter Azure storage account or AWS access key ID',
     type=click.STRING
 )
 @click.option(
-    '--az-stg-acc-key',
-    prompt='Please enter Azure storage account access key',
+    '--stg-acc-key',
+    prompt='Please enter Azure storage account key or AWS S3 secret access key',
     type=click.STRING
 )
-@arg.namespace()
-@click.password_option(
-    '--restic-pw',
-    prompt='Please enter custom Restic repo password'
+@click.option(
+    '--stg-container-name',
+    prompt='Please enter Azure container or AWS bucket name',
+    default='insights-backup',
+    type=click.STRING
+)
+@click.option(
+    '--stg-endpoint',
+    prompt='Please enter AWS storage endpoint URL (if applicable)',
+    default='N/A',
+    type=click.STRING
 )
 @click.option(
     '--obj-store-provider',
@@ -91,33 +125,43 @@ def backup():
     default=lambda: _determine_provider().value,
     type=click.STRING
 )
+@arg.namespace()
+@click.password_option(
+    '--restic-pw',
+    prompt='Please enter custom Restic repo password'
+)
+
 def init(
-        az_stg_acc_name: str,
-        az_stg_acc_key: str,
-        restic_pw: str,
+        namespace: str,
+        stg_acc_name: str,
+        stg_acc_key: str,
+        stg_container_name: str,
+        stg_endpoint: str,
         obj_store_provider: str,
-        namespace: str
+        restic_pw: str,
 ):
 
     click.secho('Init Backup for kdb Insights Enterprise', bold=True)
-
     _install_operator(namespace)
 
     _install_crd_definitions(namespace)
 
-    _create_secrets(az_stg_acc_name, az_stg_acc_key, restic_pw, namespace)
+    storage_details = _define_storage_details(obj_store_provider, stg_endpoint, \
+        stg_acc_name, stg_acc_key, stg_container_name)
+
+    _create_secrets(storage_details, restic_pw, namespace)
 
     _annotate_postgres(namespace)
 
 
 @backup.command()
-@click.option('--azure-blob-name', prompt='Please enter backup job blob container name')
+@click.option('--backup-name', prompt='Please enter backup job name')
 @arg.namespace()
-def snapshots(azure_blob_name, namespace):
+def snapshots(backup_name, namespace):
 
     click.secho('Check and list created snapshots', bold=True)
     try:
-        pod=_snapshot_pod_creation(azure_blob_name, namespace)
+        pod=_snapshot_pod_creation(backup_name, namespace)
 
         _snapshot_list_from_logs(pod)
 
@@ -129,50 +173,76 @@ def snapshots(azure_blob_name, namespace):
 @backup.command()
 @click.option('--backup-name', prompt='Please enter backup job name')
 @arg.namespace()
-@click.option('--azure-blob-name', prompt='Please enter backup job blob container name')
-def set_backup(backup_name, azure_blob_name, namespace):
+def set_backup(backup_name, namespace):
 
     click.secho('Configure and start a backup', bold=True)
 
     _annotate_rwo_pvcs(namespace)
 
-    _create_backup(backup_name, azure_blob_name, namespace)
+    _create_backup(backup_name, namespace)
 
 
-def _create_backup(backup_name, azure_blob_name, namespace):
+def _create_backup(backup_name, namespace):
     crd_api = pyk8s.cl.get_api(kind="Backup")
 
-    azure_crd_manifest = {
+    crd_manifest = {
         "apiVersion": "k8up.io/v1",
         "kind": "Backup",
         "metadata": {
             "name": backup_name,
             "namespace": namespace,
         },
-        "spec": {
+        "spec" : {
+            "tags": [ backup_name ],
             "failedJobsHistoryLimit": 2,
             "successfulJobsHistoryLimit": 2,
             "backend": {
                 "repoPasswordSecretRef": {
                     "name": "backup-repo",
                     "key": "password"
-                },
-                "azure": {
-                    "container": azure_blob_name,
-                    "accountNameSecretRef": {
-                        "name": "azure-blob-creds",
-                        "key": "username"
-                    },
-                    "accountKeySecretRef": {
-                        "name": "azure-blob-creds",
-                        "key": "password"
-                    }
                 }
-            },
-        },
+            }
+        }
     }
+
+    credential_store = pyk8s.cl.secrets.get(name='backup-storage-creds', namespace=namespace)['data']
+    provider = base64.b64decode(credential_store["provider"]).decode()
+
+    if provider == 'azure':
+
+        crd_manifest["spec"]["backend"][provider] = {
+            "container": base64.b64decode(credential_store["container"]).decode(),
+            "accountNameSecretRef": {
+                "name": "backup-storage-creds",
+                "key": "username"
+            },
+            "accountKeySecretRef": {
+                "name": "backup-storage-creds",
+                "key": "password"
+            }
+        }
+
+    elif provider == "s3":
+
+        crd_manifest["spec"]["backend"][provider] = {
+            "endpoint": base64.b64decode(credential_store["endpoint"]).decode('utf-8'),
+            "bucket": base64.b64decode(credential_store["bucket"]).decode(),
+            "accessKeyIDSecretRef": {
+                "name": "backup-storage-creds",
+                "key": "username"
+            },
+            "secretAccessKeySecretRef": {
+                "name": "backup-storage-creds",
+                "key": "password"
+            }
+        }
+
+    else:
+        click.secho("Prvider not supported")
+        sys.exit(1)
+
     try:
-        crd_creation_response = crd_api.create(azure_crd_manifest)
+        crd_creation_response = crd_api.create(crd_manifest)
         click.echo(
             f'K8up Backup CRD creation done: {crd_creation_response.metadata.name}')
     except Exception as e:
@@ -188,79 +258,123 @@ def _annotate_rwo_pvcs(namespace):
     click.echo("RWO PVC annotation done")
 
 
-def _snapshot_pod_creation(azure_blob_name, namespace):
+def _snapshot_pod_creation(backup_name, namespace):
+
     k8up_snapshot_list_manifest = {
         "apiVersion": "v1",
         "kind": "Pod",
         "metadata": {
-                "name": "k8up-snapshot-list-pod",
-                "namespace": namespace,
-                "labels": {
-                    "name": "k8up-snapshot-list-pod"
-                },
+            "name": "k8up-snapshot-list-pod",
+            "namespace": namespace,
+            "labels": {
+                "name": "k8up-snapshot-list-pod"
+            }
         },
         "spec": {
-            "containers": [
-                {
-                    "name": "k8up-snapshot-list",
-                    "command": [
-                            "/usr/local/bin/restic",
-                            "snapshots"
-                    ],
-                    "env": [
-                        {
-                            "name": "AZURE_ACCOUNT_KEY",
-                            "valueFrom": {
-                                "secretKeyRef": {
-                                    "key": "password",
-                                    "name": "azure-blob-creds"
-                                }
-                            }
-                        },
-                        {
-                            "name": "AZURE_ACCOUNT_NAME",
-                            "valueFrom": {
-                                "secretKeyRef": {
-                                    "key": "username",
-                                    "name": "azure-blob-creds"
-                                }
-                            }
-                        },
-                        {
-                            "name": "RESTIC_REPOSITORY",
-                            "value": "azure:"+azure_blob_name+":/"
-                        },
-                        {
-                            "name": "STATS_URL"
-                        },
-                        {
-                            "name": "AWS_ACCESS_KEY_ID"
-                        },
-                        {
-                            "name": "HOSTNAME",
-                            "value": "insights"
-                        },
-                        {
-                            "name": "AWS_SECRET_ACCESS_KEY"
-                        },
-                        {
-                            "name": "RESTIC_PASSWORD",
-                            "valueFrom": {
-                                "secretKeyRef": {
-                                    "key": "password",
-                                    "name": "backup-repo"
-                                }
-                            }
-                        }
-                    ],
-                    "image": K8UP_IMAGE,
-                    "imagePullPolicy": "IfNotPresent",
-                    "resources": {}
-                }
-            ],
-            "restartPolicy": "Never"
+            "restartPolicy": "Never",
+            "containers": []
         }
     }
+
+    container_details = {
+        "name": "k8up-snapshot-list",
+        "command": [
+            "/usr/local/bin/restic",
+            "snapshots"
+        ],
+        "args": [ "--tag",
+          backup_name
+        ],       
+        "image": K8UP_IMAGE,
+        "imagePullPolicy": "IfNotPresent",
+        "resources": {},
+    }
+
+    container_details["env"] = [
+        {
+            "name": "RESTIC_PASSWORD",
+            "valueFrom": {
+                "secretKeyRef": {
+                    "key": "password",
+                    "name": "backup-repo"
+                }
+            }
+        },
+        {
+            "name": "HOSTNAME",
+            "value": "insights"
+        },
+        {
+            "name": "STATS_URL"
+        }
+    ]
+
+    credential_store = pyk8s.cl.secrets.get(name='backup-storage-creds', namespace=namespace)['data']
+    provider = base64.b64decode(credential_store["provider"]).decode()
+
+    if provider == 'azure':
+
+        container_name = base64.b64decode(credential_store["container"]).decode()
+        credentials = [
+            {
+                "name": "RESTIC_REPOSITORY",
+                "value": "azure:" + container_name + ":/"
+            },
+            {
+                "name": "AZURE_ACCOUNT_KEY",
+                "valueFrom": {
+                    "secretKeyRef": {
+                        "key": "password",
+                        "name": "backup-storage-creds"
+                    }
+                }
+            },
+            {
+                "name": "AZURE_ACCOUNT_NAME",
+                "valueFrom": {
+                    "secretKeyRef": {
+                        "key": "username",
+                        "name": "backup-storage-creds"
+                    }
+                }
+            }
+        ]
+
+    elif provider == "s3":
+
+        bucket_name = base64.b64decode(credential_store["bucket"]).decode()
+        endpoint = base64.b64decode(credential_store["endpoint"]).decode()
+
+        credentials = [
+            {
+                "name": "RESTIC_REPOSITORY",
+                "value": "s3:" + endpoint + "/" + bucket_name
+            },
+            {
+                "name": "AWS_ACCESS_KEY_ID",
+                "valueFrom": {
+                    "secretKeyRef": {
+                        "key": "username",
+                        "name": "backup-storage-creds"
+                    }
+                }
+            },
+            {
+                "name": "AWS_SECRET_ACCESS_KEY",
+                "valueFrom": {
+                    "secretKeyRef": {
+                        "key": "password",
+                         "name": "backup-storage-creds"
+                    }
+                }
+            }
+        ]
+
+    for cred in credentials:
+        container_details["env"].append(cred)
+
+    k8up_snapshot_list_manifest["spec"]["containers"].append(container_details)
+
     try:
         job_creation_response = pyk8s.cl.pods.create(k8up_snapshot_list_manifest)
         click.echo(
@@ -300,11 +414,14 @@ def _snapshot_pod_deletion(namespace):
             f'Found exception in deleting pod: {pod.metadata.name}, {str(e)}')
 
 
-def _create_secrets(az_stg_acc_name, az_stg_acc_key, restic_pw, namespace):
+def _create_secrets(storage_details, restic_pw, namespace):
+
+    # Create the storage credentials secret 
     secret = pyk8s.models.V1Secret()
-    secret.metadata.name = 'azure-blob-creds'
-    secret.set("username", az_stg_acc_name)
-    secret.set("password", az_stg_acc_key)
+    secret.metadata.name = 'backup-storage-creds'
+
+    for key, value in storage_details.items():
+        secret.set(key, value)
 
     try:
         secret.create_(namespace=namespace)
@@ -313,8 +430,9 @@ def _create_secrets(az_stg_acc_name, az_stg_acc_key, restic_pw, namespace):
         traceback.print_exc()
         raise ClickException("%s" % (str(e)))
 
-    secret.set("password", restic_pw)
+    # Ceate the restic password secret 
     secret.metadata.name = 'backup-repo'
+    secret.set("password", restic_pw)
     try:
         secret.create_(namespace=namespace)
         click.echo(f'Secret created: {secret.metadata.name}')
